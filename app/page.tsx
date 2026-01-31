@@ -1,65 +1,231 @@
-import Image from "next/image";
+"use client"
 
-export default function Home() {
+import { RoleProvider, useRole, type ViewType } from "@/lib/role-context"
+import { DemoDataProvider } from "@/lib/demo-data-context"
+import { RoleSelector } from "@/components/role-selector"
+import { DashboardSidebar } from "@/components/dashboard/sidebar"
+import { DashboardHeader } from "@/components/dashboard/header"
+import { ExecutiveDashboard } from "@/components/dashboards/executive-dashboard"
+import { SupervisorDashboard } from "@/components/dashboards/supervisor-dashboard"
+import { NavigatorDashboard } from "@/components/dashboards/navigator-dashboard"
+import { PatientDashboard } from "@/components/dashboards/patient-dashboard"
+import { PatientProfile } from "@/components/patient-detail/patient-profile"
+import { PatientAppointments } from "@/components/patient/patient-appointments"
+import { PatientMedications } from "@/components/patient/patient-medications"
+import { PatientProfile as PatientPortalProfile } from "@/components/patient/patient-profile"
+import { NavigatorDirectory } from "@/components/supervisor/navigator-directory"
+import { NavigatorDetailView } from "@/components/supervisor/navigator-detail-view"
+import { ComplianceView } from "@/components/supervisor/compliance-view"
+import { AdverseEventsView } from "@/components/supervisor/adverse-events-view"
+import { NavigatorSchedule } from "@/components/navigator/navigator-schedule"
+import { ClinicalFeed } from "@/components/navigator/clinical-feed"
+import { AssessmentWizard } from "@/components/navigator/assessment-wizard"
+import { ReferralIntake } from "@/components/supervisor/referral-intake"
+import { ReferralReviewView } from "@/components/supervisor/referral-review-view"
+import { IntakeWorkspace } from "@/components/supervisor/intake-workspace"
+import { ChatInterface } from "@/components/messaging/chat-interface"
+import { AdminDashboard } from "@/components/dashboards/admin-dashboard"
+import { ClaimsManager } from "@/components/billing/claims-manager"
+import { SchedulingView } from "@/components/schedule/scheduling-view"
+import { InDevelopment } from "@/components/in-development"
+import { Toaster } from "@/components/ui/sonner"
+
+// Define which views are implemented for each role
+const implementedViews: Record<string, ViewType[]> = {
+  executive: ["dashboard", "revenue-cycle"],
+  supervisor: ["dashboard", "referrals", "navigators", "navigator-detail", "team-schedule", "compliance", "events", "patient-detail", "messages", "referral-intake", "intake-workspace"],
+  navigator: ["dashboard", "patients", "patient-detail", "schedule", "notes", "messages", "assessment-wizard"],
+  patient: ["dashboard", "appointments", "medications", "profile", "messages"],
+  admin: ["dashboard", "admin-payer-rates", "admin-audit-log", "revenue-cycle"],
+}
+
+// View titles for the header
+const viewTitles: Record<ViewType, { title: string; subtitle: string }> = {
+  dashboard: { title: "", subtitle: "" }, // Will be overridden by role-specific titles
+  "patient-detail": { title: "Patient Profile", subtitle: "Comprehensive patient information" },
+  "navigator-detail": { title: "Navigator Profile", subtitle: "Performance and patient roster" },
+  revenue: { title: "Revenue Analytics", subtitle: "Financial performance metrics" },
+  performance: { title: "Performance Metrics", subtitle: "Team and organizational KPIs" },
+  patients: { title: "Patient Management", subtitle: "View and manage your patients" },
+  navigators: { title: "Navigator Directory", subtitle: "Team oversight and performance metrics" },
+  compliance: { title: "Compliance Dashboard", subtitle: "Medication and PCP compliance tracking" },
+  events: { title: "Adverse Events", subtitle: "Track and manage active adverse events" },
+  schedule: { title: "My Schedule", subtitle: "Weekly appointments and calendar" },
+  "team-schedule": { title: "Team Schedule", subtitle: "Navigator shifts and team calendar" },
+  notes: { title: "Clinical Feed", subtitle: "Recent notes across all patients" },
+  appointments: { title: "My Appointments", subtitle: "Upcoming and past visits" },
+  medications: { title: "My Medications", subtitle: "Current prescriptions and refills" },
+  profile: { title: "My Profile", subtitle: "Personal information and preferences" },
+  settings: { title: "Settings", subtitle: "Application preferences" },
+  messages: { title: "Messages", subtitle: "Communicate with your care team" },
+  referrals: { title: "Pending Referrals", subtitle: "Review and process incoming patient referrals" },
+  "referral-intake": { title: "Referral Intake", subtitle: "Review and accept patient referrals" },
+  "intake-workspace": { title: "Match & Assign", subtitle: "Ranked navigator matching by distance, language, and load" },
+  "assessment-wizard": { title: "Risk Assessment", subtitle: "Initial home visit assessment" },
+  "admin-payer-rates": { title: "Payer Rates", subtitle: "Configure revenue rates by payer" },
+  "admin-audit-log": { title: "Audit Log", subtitle: "System activity and user actions" },
+  "revenue-cycle": { title: "Revenue Cycle Manager", subtitle: "Claims validation and CSV export" },
+}
+
+// Role-specific dashboard titles
+const dashboardTitles: Record<string, { title: string; subtitle: string }> = {
+  executive: { title: "Executive Dashboard", subtitle: "Business Intelligence Overview" },
+  supervisor: { title: "Supervisor Dashboard", subtitle: "Clinical Oversight & Team Performance" },
+  navigator: { title: "Navigator Dashboard", subtitle: "Patient Care Management" },
+  patient: { title: "My Health Portal", subtitle: "Your personalized care dashboard" },
+  admin: { title: "Admin Dashboard", subtitle: "System Governance & Configuration" },
+}
+
+function DashboardContent() {
+  const { currentUser, navigation } = useRole()
+
+  if (!currentUser) {
+    return <RoleSelector />
+  }
+
+  const isViewImplemented = implementedViews[currentUser.role]?.includes(navigation.view)
+  
+  // Get the appropriate title
+  const getHeaderTitle = () => {
+    if (navigation.view === "dashboard") {
+      return dashboardTitles[currentUser.role]
+    }
+    return viewTitles[navigation.view]
+  }
+
+  const { title, subtitle } = getHeaderTitle()
+
+  // Render the appropriate content
+  const renderContent = () => {
+    // Handle unimplemented views
+    if (!isViewImplemented) {
+      return <InDevelopment title={viewTitles[navigation.view]?.title || "This Feature"} />
+    }
+
+    // Handle dashboard views by role
+    if (navigation.view === "dashboard") {
+      switch (currentUser.role) {
+        case "executive":
+          return <ExecutiveDashboard />
+        case "supervisor":
+          return <SupervisorDashboard />
+        case "navigator":
+          return <NavigatorDashboard />
+        case "patient":
+          return <PatientDashboard />
+        case "admin":
+          return <AdminDashboard />
+      }
+    }
+
+    // Handle admin-specific views
+    if (currentUser.role === "admin") {
+      if (navigation.view === "admin-payer-rates" || navigation.view === "admin-audit-log") {
+        return <AdminDashboard />
+      }
+      if (navigation.view === "revenue-cycle") {
+        return <ClaimsManager />
+      }
+    }
+
+    // Handle executive Revenue Cycle Manager (CFO demo)
+    if (currentUser.role === "executive" && navigation.view === "revenue-cycle") {
+      return <ClaimsManager />
+    }
+
+    // Handle patient detail view
+    if (navigation.view === "patient-detail" && navigation.params?.patientId) {
+      return <PatientProfile patientId={navigation.params.patientId} />
+    }
+
+    // Handle patients list for navigator (show dashboard for now, clicking patients opens detail)
+    if (navigation.view === "patients" && currentUser.role === "navigator") {
+      return <NavigatorDashboard />
+    }
+
+    // Handle navigator-specific views
+    if (currentUser.role === "navigator") {
+      if (navigation.view === "schedule") {
+        return <NavigatorSchedule />
+      }
+      if (navigation.view === "notes") {
+        return <ClinicalFeed />
+      }
+      if (navigation.view === "assessment-wizard" && navigation.params?.patientId) {
+        return <AssessmentWizard patientId={navigation.params.patientId} />
+      }
+    }
+
+    // Handle supervisor-specific views
+    if (currentUser.role === "supervisor") {
+      if (navigation.view === "referrals") {
+        return <ReferralReviewView />
+      }
+      if (navigation.view === "navigators") {
+        return <NavigatorDirectory />
+      }
+      if (navigation.view === "navigator-detail" && navigation.params?.navigatorId) {
+        return <NavigatorDetailView navigatorId={navigation.params.navigatorId} />
+      }
+      if (navigation.view === "compliance") {
+        return <ComplianceView />
+      }
+      if (navigation.view === "events") {
+        return <AdverseEventsView />
+      }
+      if (navigation.view === "team-schedule") {
+        return <SchedulingView supervisorId={currentUser.id} />
+      }
+      if (navigation.view === "referral-intake" && navigation.params?.referralId) {
+        return <ReferralIntake referralId={navigation.params.referralId} />
+      }
+      if (navigation.view === "intake-workspace" && navigation.params?.referralId) {
+        return <IntakeWorkspace referralId={navigation.params.referralId} />
+      }
+    }
+
+    // Handle patient-specific views
+    if (currentUser.role === "patient") {
+      if (navigation.view === "appointments") {
+        return <PatientAppointments />
+      }
+      if (navigation.view === "medications") {
+        return <PatientMedications />
+      }
+      if (navigation.view === "profile") {
+        return <PatientPortalProfile />
+      }
+    }
+
+    // Handle messages view (available for supervisor, navigator, patient)
+    if (navigation.view === "messages") {
+      return <ChatInterface />
+    }
+
+    // Fallback for unhandled cases
+    return <InDevelopment title={viewTitles[navigation.view]?.title || "This Feature"} />
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+    <div className="min-h-screen bg-background">
+      <DashboardSidebar />
+      <main className="pl-64">
+        <DashboardHeader title={title} subtitle={subtitle} />
+        <div className="p-6">
+          {renderContent()}
         </div>
       </main>
     </div>
-  );
+  )
+}
+
+export default function HomePage() {
+  return (
+    <RoleProvider>
+      <DemoDataProvider>
+        <DashboardContent />
+        <Toaster richColors position="top-right" />
+      </DemoDataProvider>
+    </RoleProvider>
+  )
 }

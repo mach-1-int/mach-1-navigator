@@ -1,0 +1,391 @@
+"use client"
+
+import { useState } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { 
+  AlertTriangle, 
+  CheckCircle2,
+  Clock,
+  ChevronDown,
+  ChevronUp,
+  Activity,
+  User,
+  Users,
+  Calendar,
+  Building2,
+  Phone
+} from "lucide-react"
+import { useDemoData } from "@/lib/demo-data-context"
+import { useRole } from "@/lib/role-context"
+import { cn } from "@/lib/utils"
+import type { AdverseEvent } from "@/lib/types"
+
+export function AdverseEventsView() {
+  const { patients, navigators, adverseEvents } = useDemoData()
+  const { navigateTo } = useRole()
+  const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set())
+  
+  // Filter to team patients (supervisor 1's team)
+  const teamNavigators = navigators.filter(nav => nav.supervisorId === "sup1")
+  const teamPatients = patients.filter(p => 
+    teamNavigators.some(n => n.id === p.assignedNavigator)
+  )
+  const teamAdverseEvents = adverseEvents.filter(ae =>
+    teamPatients.some(p => p.id === ae.patientId)
+  )
+
+  // Categorize events
+  const activeEvents = teamAdverseEvents.filter(ae => ae.status !== "ended")
+  const inpatientEvents = teamAdverseEvents.filter(ae => ae.status === "currently_inpatient")
+  const edEvents = teamAdverseEvents.filter(ae => ae.status === "currently_ed")
+  const monitoringEvents = teamAdverseEvents.filter(ae => ae.status === "monitoring")
+  const resolvedEvents = teamAdverseEvents.filter(ae => ae.status === "ended")
+
+  const toggleExpanded = (eventId: string) => {
+    setExpandedEvents(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(eventId)) {
+        newSet.delete(eventId)
+      } else {
+        newSet.add(eventId)
+      }
+      return newSet
+    })
+  }
+
+  const getStatusConfig = (status: AdverseEvent["status"]) => {
+    switch (status) {
+      case "currently_inpatient":
+        return { label: "Inpatient", color: "destructive" as const, icon: Building2, bgColor: "bg-destructive/10" }
+      case "currently_ed":
+        return { label: "In ED", color: "destructive" as const, icon: AlertTriangle, bgColor: "bg-destructive/10" }
+      case "monitoring":
+        return { label: "Monitoring", color: "default" as const, icon: Clock, bgColor: "bg-amber-100" }
+      case "ended":
+        return { label: "Resolved", color: "secondary" as const, icon: CheckCircle2, bgColor: "bg-emerald-100" }
+    }
+  }
+
+  const getTypeLabel = (type: AdverseEvent["type"]) => {
+    switch (type) {
+      case "fall": return "Fall"
+      case "infection": return "Infection"
+      case "chronic_exacerbation": return "Chronic Exacerbation"
+      case "other": return "Other"
+    }
+  }
+
+  const getPatientInfo = (patientId: string) => {
+    const patient = patients.find(p => p.id === patientId)
+    const navigator = patient ? navigators.find(n => n.id === patient.assignedNavigator) : null
+    return { patient, navigator }
+  }
+
+  const renderEventCard = (event: AdverseEvent) => {
+    const statusConfig = getStatusConfig(event.status)
+    const StatusIcon = statusConfig.icon
+    const isExpanded = expandedEvents.has(event.id)
+    const { patient, navigator } = getPatientInfo(event.patientId)
+    
+    return (
+      <Collapsible 
+        key={event.id} 
+        open={isExpanded} 
+        onOpenChange={() => toggleExpanded(event.id)}
+      >
+        <Card className={cn(
+          "bg-card transition-all",
+          event.status !== "ended" && "border-l-4",
+          event.status === "currently_inpatient" && "border-l-destructive",
+          event.status === "currently_ed" && "border-l-destructive",
+          event.status === "monitoring" && "border-l-amber-500"
+        )}>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className={cn(
+                    "flex h-12 w-12 items-center justify-center rounded-lg",
+                    statusConfig.bgColor
+                  )}>
+                    <StatusIcon className={cn(
+                      "h-6 w-6",
+                      event.status === "ended" ? "text-emerald-600" : 
+                      event.status === "monitoring" ? "text-amber-600" : "text-destructive"
+                    )} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-base text-card-foreground">
+                        {patient?.name || "Unknown Patient"}
+                      </CardTitle>
+                      <Badge variant={statusConfig.color}>{statusConfig.label}</Badge>
+                    </div>
+                    <CardDescription className="mt-1">
+                      {getTypeLabel(event.type)} - {event.diagnosis}
+                    </CardDescription>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-card-foreground">
+                      Started: {new Date(event.startDate).toLocaleDateString()}
+                    </p>
+                    {event.endDate && (
+                      <p className="text-xs text-muted-foreground">
+                        Ended: {new Date(event.endDate).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Right Care:</span>
+                    {event.rightCareFlag ? (
+                      <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                    ) : (
+                      <AlertTriangle className="h-5 w-5 text-warning" />
+                    )}
+                  </div>
+                  {isExpanded ? (
+                    <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          
+          <CollapsibleContent>
+            <CardContent className="pt-0">
+              <div className="border-t border-border pt-4">
+                <div className="grid gap-6 md:grid-cols-2">
+                  {/* Event Details */}
+                  <div className="space-y-4">
+                    <h4 className="font-semibold text-card-foreground flex items-center gap-2">
+                      <Activity className="h-4 w-4" />
+                      Event Details
+                    </h4>
+                    <div className="grid gap-3 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Type</span>
+                        <span className="font-medium text-card-foreground">{getTypeLabel(event.type)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Diagnosis</span>
+                        <span className="font-medium text-card-foreground">{event.diagnosis}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Start Date</span>
+                        <span className="font-medium text-card-foreground">
+                          {new Date(event.startDate).toLocaleDateString()}
+                        </span>
+                      </div>
+                      {event.endDate && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">End Date</span>
+                          <span className="font-medium text-card-foreground">
+                            {new Date(event.endDate).toLocaleDateString()}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Follow-up Status</span>
+                        <Badge variant={
+                          event.followUpStatus === "completed" ? "default" :
+                          event.followUpStatus === "scheduled" ? "secondary" : "outline"
+                        }>
+                          {event.followUpStatus}
+                        </Badge>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Right Care Flag</span>
+                        <span className={cn(
+                          "font-medium",
+                          event.rightCareFlag ? "text-emerald-600" : "text-warning"
+                        )}>
+                          {event.rightCareFlag ? "Yes" : "Pending Review"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Care Team */}
+                  <div className="space-y-4">
+                    <h4 className="font-semibold text-card-foreground flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      Assigned Care Team
+                    </h4>
+                    <div className="space-y-3">
+                      {/* Navigator */}
+                      <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                          <User className="h-5 w-5 text-primary" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-card-foreground">{navigator?.name || "Unassigned"}</p>
+                          <p className="text-xs text-muted-foreground">Care Navigator</p>
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Phone className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      
+                      {/* Supervisor */}
+                      <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary">
+                          <Users className="h-5 w-5 text-secondary-foreground" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-card-foreground">Sarah Johnson</p>
+                          <p className="text-xs text-muted-foreground">Clinical Supervisor</p>
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Phone className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    {/* Patient Quick Link */}
+                    {patient && (
+                      <Button 
+                        variant="outline" 
+                        className="w-full mt-4 bg-transparent"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          navigateTo("patient-detail", { patientId: patient.id })
+                        }}
+                      >
+                        View Patient Record
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Summary Stats */}
+      <div className="grid gap-4 sm:grid-cols-4">
+        <Card className={cn("bg-card", activeEvents.length > 0 && "border-destructive/50")}>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className={cn(
+                "flex h-12 w-12 items-center justify-center rounded-lg",
+                activeEvents.length > 0 ? "bg-destructive/10" : "bg-muted"
+              )}>
+                <Activity className={cn(
+                  "h-6 w-6",
+                  activeEvents.length > 0 ? "text-destructive" : "text-muted-foreground"
+                )} />
+              </div>
+              <div>
+                <p className="text-3xl font-bold text-card-foreground">{activeEvents.length}</p>
+                <p className="text-sm text-muted-foreground">Active Events</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className={cn("bg-card", inpatientEvents.length > 0 && "border-destructive/50")}>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className={cn(
+                "flex h-12 w-12 items-center justify-center rounded-lg",
+                inpatientEvents.length > 0 ? "bg-destructive/10" : "bg-muted"
+              )}>
+                <Building2 className={cn(
+                  "h-6 w-6",
+                  inpatientEvents.length > 0 ? "text-destructive" : "text-muted-foreground"
+                )} />
+              </div>
+              <div>
+                <p className="text-3xl font-bold text-card-foreground">{inpatientEvents.length}</p>
+                <p className="text-sm text-muted-foreground">Currently Inpatient</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-amber-100">
+                <Clock className="h-6 w-6 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-3xl font-bold text-card-foreground">{monitoringEvents.length}</p>
+                <p className="text-sm text-muted-foreground">Monitoring</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-100">
+                <CheckCircle2 className="h-6 w-6 text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-3xl font-bold text-card-foreground">{resolvedEvents.length}</p>
+                <p className="text-sm text-muted-foreground">Resolved This Month</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Active Events Section */}
+      {activeEvents.length > 0 && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+            Active Adverse Events
+          </h3>
+          <div className="space-y-3">
+            {activeEvents.map(renderEventCard)}
+          </div>
+        </div>
+      )}
+
+      {/* Resolved Events Section */}
+      {resolvedEvents.length > 0 && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+            Recently Resolved
+          </h3>
+          <div className="space-y-3">
+            {resolvedEvents.map(renderEventCard)}
+          </div>
+        </div>
+      )}
+
+      {/* Empty State */}
+      {teamAdverseEvents.length === 0 && (
+        <Card className="bg-card">
+          <CardContent className="py-12">
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+                <CheckCircle2 className="h-8 w-8 text-emerald-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-card-foreground">No Adverse Events</h3>
+              <p className="text-muted-foreground max-w-md">
+                There are no adverse events to display for your team at this time.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
