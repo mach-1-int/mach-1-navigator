@@ -9,11 +9,11 @@ services:
       repo: mach-1-int/mach-1-navigator
       branch: main
       deploy_on_push: true
-    build_command: npm run build
+    build_command: npm ci && npm run build
     run_command: npm run start
     environment_slug: node-js
     instance_count: 1
-    instance_size_slug: apps-s-1vcpu-0.5gb
+    instance_size_slug: apps-s-1vcpu-1gb
     http_port: 3000
     routes:
       - path: /
@@ -22,6 +22,8 @@ services:
         value: production
       - key: NEXT_PUBLIC_APP_URL
         value: ${APP_URL}
+      - key: NODE_OPTIONS
+        value: "--max-old-space-size=768"
 
 alerts:
   - rule: DEPLOYMENT_FAILED

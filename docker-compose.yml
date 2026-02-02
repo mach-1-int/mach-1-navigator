@@ -2,50 +2,53 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: prd-m1nav-app
+      dockerfile: Dockerfile.dev
+    container_name: dev-m1nav-app
     ports:
       - "3100:3000"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://m1nav_user:m1nav_prod_password@db:5432/m1nav_prod
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://m1nav_user:m1nav_dev_password@db:5432/m1nav_dev
       - REDIS_URL=redis://cache:6379
     depends_on:
       db:
         condition: service_healthy
       cache:
         condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
     restart: unless-stopped
     networks:
-      - prd-m1nav-network
+      - dev-m1nav-network
 
   db:
     image: postgres:16-alpine
-    container_name: prd-m1nav-db
+    container_name: dev-m1nav-db
     ports:
       - "5480:5432"
     environment:
       POSTGRES_USER: m1nav_user
-      POSTGRES_PASSWORD: m1nav_prod_password
-      POSTGRES_DB: m1nav_prod
+      POSTGRES_PASSWORD: m1nav_dev_password
+      POSTGRES_DB: m1nav_dev
     volumes:
-      - prd-m1nav-postgres-data:/var/lib/postgresql/data
+      - dev-m1nav-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U m1nav_user -d m1nav_prod"]
+      test: ["CMD-SHELL", "pg_isready -U m1nav_user -d m1nav_dev"]
       interval: 5s
       timeout: 5s
       retries: 5
     restart: unless-stopped
     networks:
-      - prd-m1nav-network
+      - dev-m1nav-network
 
   cache:
     image: redis:7-alpine
-    container_name: prd-m1nav-cache
+    container_name: dev-m1nav-cache
     ports:
       - "6400:6379"
     volumes:
-      - prd-m1nav-cache-data:/data
+      - dev-m1nav-cache-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -53,12 +56,12 @@ services:
       retries: 5
     restart: unless-stopped
     networks:
-      - prd-m1nav-network
+      - dev-m1nav-network
 
 volumes:
-  prd-m1nav-postgres-data:
-  prd-m1nav-cache-data:
+  dev-m1nav-postgres-data:
+  dev-m1nav-cache-data:
 
 networks:
-  prd-m1nav-network:
+  dev-m1nav-network:
     driver: bridge
