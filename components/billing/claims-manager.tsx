@@ -75,6 +75,7 @@ export function ClaimsManager() {
     activePayerConfig,
     availablePayerConfigs,
     setActivePayerConfig,
+    sendNudge,
   } = useDemoData()
 
   // State
@@ -86,10 +87,10 @@ export function ClaimsManager() {
 
   // Generate all claims using active payer configuration
   const allClaims = useMemo(() => {
-    console.log("📊 ClaimsManager: Processing", timeLogs.length, "time logs for", patients.length, "patients")
-    console.log("📊 ClaimsManager: Using payer config:", activePayerConfig.name)
+    console.log(`📊 ClaimsManager: Processing ${timeLogs.length} time logs for ${patients.length} patients`)
+    console.log(`📊 ClaimsManager: Using payer config: ${activePayerConfig.name}`)
     const claims = generateMonthlyClaims(navigators, patients, timeLogs, activePayerConfig)
-    console.log("📊 ClaimsManager: Generated", claims.length, "claims")
+    console.log(`📊 ClaimsManager: Generated ${claims.length} claims`)
     return claims
   }, [navigators, patients, timeLogs, activePayerConfig])
 
@@ -114,10 +115,10 @@ export function ClaimsManager() {
     return filterClaimsByStatus(monthClaims, "MISSING_DATA")
   }, [monthClaims])
 
-  // Calculate revenue metrics
+  // Calculate revenue metrics using active payer rates
   const revenueMetrics = useMemo(() => {
-    return calculateTotalRevenue(monthClaims)
-  }, [monthClaims])
+    return calculateTotalRevenue(monthClaims, activePayerConfig)
+  }, [monthClaims, activePayerConfig])
 
   // Handle claim selection
   const handleSelectClaim = useCallback((claimId: string, checked: boolean) => {
@@ -178,17 +179,31 @@ export function ClaimsManager() {
 
   const confirmNudge = useCallback(() => {
     if (claimToNudge) {
-      // In a real app, this would send a message to the navigator
+      // Create the nudge message content
+      const issuesList = claimToNudge.validationErrors?.join(", ") || "Unknown issues"
+      const nudgeContent = `Billing Review: Patient ${claimToNudge.patientName} has claim issues that need attention. Issues: ${issuesList}. Please review and update the patient record.`
+
+      // Send the actual nudge message to the navigator
+      sendNudge(
+        claimToNudge.navigatorId,
+        claimToNudge.patientId,
+        claimToNudge.patientName,
+        nudgeContent,
+        "biller1", // Biller user ID
+        "Revenue Cycle Manager", // Biller name
+        "biller" // Sender role
+      )
+
       toast.success(
-        `Nudge sent to navigator for ${claimToNudge.patientName}`,
+        `Nudge sent to ${getNavigatorName(claimToNudge.navigatorId)}`,
         {
-          description: `Issues: ${claimToNudge.validationErrors?.join(", ")}`,
+          description: `Issues: ${issuesList}`,
         }
       )
     }
     setNudgeDialogOpen(false)
     setClaimToNudge(null)
-  }, [claimToNudge])
+  }, [claimToNudge, sendNudge])
 
   // Format codes display: "G0023 (1 Unit)" and "G0023 (1 Unit) + G0024 (1 Unit)"
   const formatCodesDisplay = (claim: BillableClaim): string => {
@@ -606,28 +621,30 @@ export function ClaimsManager() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Send Nudge to Navigator?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {claimToNudge && (
-                <>
-                  <p className="mb-2">
-                    This will send a notification to{" "}
-                    <strong>{getNavigatorName(claimToNudge.navigatorId)}</strong> about:
-                  </p>
-                  <div className="bg-muted p-3 rounded-lg space-y-1">
-                    <p>
-                      <strong>Patient:</strong> {claimToNudge.patientName}
+            <AlertDialogDescription asChild>
+              <div className="text-muted-foreground text-sm">
+                {claimToNudge && (
+                  <>
+                    <p className="mb-2">
+                      This will send a notification to{" "}
+                      <strong>{getNavigatorName(claimToNudge.navigatorId)}</strong> about:
                     </p>
-                    <p>
-                      <strong>Issues:</strong>
-                    </p>
-                    <ul className="list-disc list-inside text-sm">
-                      {claimToNudge.validationErrors?.map((error, idx) => (
-                        <li key={idx}>{error}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </>
-              )}
+                    <div className="bg-muted p-3 rounded-lg space-y-1">
+                      <p>
+                        <strong>Patient:</strong> {claimToNudge.patientName}
+                      </p>
+                      <p>
+                        <strong>Issues:</strong>
+                      </p>
+                      <ul className="list-disc list-inside text-sm">
+                        {claimToNudge.validationErrors?.map((error, idx) => (
+                          <li key={idx}>{error}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </>
+                )}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

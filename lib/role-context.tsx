@@ -29,6 +29,7 @@ export type ViewType =
   | "admin-payer-rates"
   | "admin-audit-log"
   | "revenue-cycle"
+  | "safety-map"
 
 interface NavigationState {
   view: ViewType

@@ -48,6 +48,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import { ICD10AddCombobox, ICD10DiagnosisCombobox } from "@/components/ui/icd10-combobox"
 import { useRole } from "@/lib/role-context"
 import { useDemoData } from "@/lib/demo-data-context"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -194,7 +195,9 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
   const [icdDialogOpen, setIcdDialogOpen] = useState(false)
   const [newIcdCode, setNewIcdCode] = useState("")
   const [newDiagnosis, setNewDiagnosis] = useState("")
-  
+  const [healthPlanEditOpen, setHealthPlanEditOpen] = useState(false)
+  const [healthPlanEditValue, setHealthPlanEditValue] = useState("")
+
   // Check if user is a supervisor
   const isSupervisor = currentUser?.role === "supervisor"
   
@@ -235,7 +238,8 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
         patient.name,
         nudgeText.trim(),
         currentUser.id,
-        currentUser.name
+        currentUser.name,
+        currentUser.role
       )
       setNudgeText("")
       setNudgeOpen(false)
@@ -460,15 +464,51 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
           </CardContent>
         </Card>
 
-        {/* Payer/Plan Card */}
+        {/* Payer/Plan Card - Health Plan is used for Member ID in billing (QA Scenario 3) */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium">Payer / Plan</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Health Plan</span>
-              <span className="text-sm font-medium">{patient.healthPlan}</span>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm text-muted-foreground">Health Plan (Member ID)</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">{patient.healthPlan || "(empty — Missing Member ID in billing)"}</span>
+                {(isSupervisor || currentUser?.role === "admin" || currentUser?.role === "biller") && (
+                  <Dialog open={healthPlanEditOpen} onOpenChange={(open) => { setHealthPlanEditOpen(open); if (open) setHealthPlanEditValue(patient.healthPlan) }}>
+                    <DialogTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-8 gap-1 text-xs">
+                        <Edit className="h-3 w-3" />
+                        Edit
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-sm">
+                      <DialogHeader>
+                        <DialogTitle>Edit Health Plan (Member ID)</DialogTitle>
+                        <DialogDescription>
+                          Used for billing. Clearing it moves the patient to &quot;Needs Attention&quot; with &quot;Missing Member ID&quot; until restored.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="py-3">
+                        <Label htmlFor="health-plan-edit" className="text-xs">Health Plan</Label>
+                        <Input
+                          id="health-plan-edit"
+                          className="mt-1"
+                          value={healthPlanEditValue}
+                          onChange={(e) => setHealthPlanEditValue(e.target.value)}
+                          placeholder="e.g. Mercy Care"
+                        />
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setHealthPlanEditOpen(false)}>Cancel</Button>
+                        <Button onClick={() => { updatePatient(patient.id, { healthPlan: healthPlanEditValue.trim() }); setHealthPlanEditOpen(false) }}>
+                          Save
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                )}
+              </div>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Enrolled</span>
@@ -623,43 +663,39 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
                     {/* Add New Code */}
                     <div className="space-y-2">
                       <Label className="text-sm font-medium">Add ICD-10 Code</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="e.g., E11.9, I10"
-                          value={newIcdCode}
-                          onChange={(e) => setNewIcdCode(e.target.value.toUpperCase())}
-                          className="flex-1"
-                        />
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            if (newIcdCode.trim()) {
-                              const currentCodes = patient.icdCodes || []
-                              if (!currentCodes.includes(newIcdCode.trim())) {
-                                updatePatient(patient.id, {
-                                  icdCodes: [...currentCodes, newIcdCode.trim()]
-                                })
-                              }
-                              setNewIcdCode("")
-                            }
-                          }}
-                          disabled={!newIcdCode.trim()}
-                        >
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      <ICD10AddCombobox
+                        onAdd={(code, description) => {
+                          const currentCodes = patient.icdCodes || []
+                          if (!currentCodes.includes(code)) {
+                            updatePatient(patient.id, {
+                              icdCodes: [...currentCodes, code]
+                            })
+                          }
+                        }}
+                        existingCodes={patient.icdCodes || []}
+                        placeholder="Search by condition or code..."
+                      />
                       <p className="text-xs text-muted-foreground">
-                        Common codes: E11.9 (Diabetes), I10 (Hypertension), I50.9 (Heart Failure), N18.6 (ESRD)
+                        Type a condition (e.g., &quot;diabetes&quot;) or code (e.g., &quot;E11&quot;) to search
                       </p>
                     </div>
 
                     {/* Primary Diagnosis */}
                     <div className="space-y-2">
                       <Label className="text-sm font-medium">Primary Diagnosis</Label>
-                      <Input
-                        placeholder="e.g., Type 2 Diabetes (E11.9)"
+                      <ICD10DiagnosisCombobox
                         value={newDiagnosis || patient.primaryDiagnosis || ""}
-                        onChange={(e) => setNewDiagnosis(e.target.value)}
+                        onSelect={(formattedDiagnosis, code) => {
+                          setNewDiagnosis(formattedDiagnosis)
+                          // Also add to ICD codes if not present
+                          const currentCodes = patient.icdCodes || []
+                          if (!currentCodes.includes(code)) {
+                            updatePatient(patient.id, {
+                              icdCodes: [...currentCodes, code]
+                            })
+                          }
+                        }}
+                        placeholder="Search for primary diagnosis..."
                       />
                     </div>
                   </div>

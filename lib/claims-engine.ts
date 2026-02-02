@@ -184,7 +184,7 @@ function validateClaimData(
   const hasMemberId = patient.healthPlan && patient.healthPlan.length > 0
 
   if (!hasMemberId) {
-    errors.push("Missing insurance/member ID")
+    errors.push("Missing Member ID")
   }
 
   // Check for diagnosis codes
@@ -296,8 +296,10 @@ export function generateMonthlyClaims(
       primaryCode = getHCodeForActivity(dominantActivity as import("./types").ActivityType)
       addOnCode = undefined // H-codes don't have add-on codes
     } else {
-      // Medicare G-codes: Use service type to determine codes
-      const gCodes = G_CODES[serviceType]
+      // Medicare G-codes: Use payer config's billing model to determine codes
+      // MEDICARE_PIN -> G0023/G0024, MEDICARE_CHI -> G0019/G0022
+      const billingServiceType = config.billingModel === "MEDICARE_PIN" ? "PIN" : "CHI"
+      const gCodes = G_CODES[billingServiceType]
       primaryCode = gCodes.base
       addOnCode = gCodes.addOn
     }

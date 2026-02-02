@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
-import type { Patient, PatientNote, Appointment, Navigator, AdverseEvent, Referral, SupervisorMessage, Message, UserRole, RiskAssessmentData, CareTemplate, CarePlan, PayerRate, AuditLog, AuditAction, NoteTemplate, NoteDraft, TemplateField, IntakeRecord, ZCode, TimeLog, ServiceType, AcuityScore, PayerConfig } from "./types"
+import type { Patient, PatientNote, Appointment, Navigator, AdverseEvent, Referral, SupervisorMessage, Message, UserRole, RiskAssessmentData, CareTemplate, CarePlan, PayerRate, AuditLog, AuditAction, NoteTemplate, NoteDraft, TemplateField, IntakeRecord, ZCode, TimeLog, ServiceType, AcuityScore, PayerConfig, NavigatorLocation, SafetyStatus } from "./types"
 import { getPayerConfig, getAllPayerConfigs } from "./payer-config"
 import {
   type StoreState,
@@ -39,6 +39,8 @@ interface DemoDataContextType {
   auditLogs: AuditLog[]
   noteTemplates: NoteTemplate[]
   noteDrafts: NoteDraft[]
+  // Navigator Safety Map
+  navigatorLocations: NavigatorLocation[]
   lastAssignedPatientId: string | null
   isHydrated: boolean
 
@@ -57,7 +59,7 @@ interface DemoDataContextType {
   submitAssessment: (patientId: string, assessmentData: Omit<RiskAssessmentData, 'riskScore' | 'calculatedTier' | 'completedAt'>, navigatorId: string) => void
 
   // Messages/Nudges (Legacy)
-  sendNudge: (toNavigatorId: string, patientId: string, patientName: string, content: string, supervisorId: string, supervisorName: string) => void
+  sendNudge: (toNavigatorId: string, patientId: string, patientName: string, content: string, senderId: string, senderName: string, senderRole?: UserRole) => void
   getNavigatorMessages: (navigatorId: string) => SupervisorMessage[]
   markMessageRead: (messageId: string) => void
 
@@ -133,6 +135,10 @@ interface DemoDataContextType {
   availablePayerConfigs: PayerConfig[]
   setActivePayerConfig: (configId: string) => void
 
+  // Navigator Safety Map
+  updateNavigatorLocation: (navigatorId: string, lat: number, lng: number, status?: SafetyStatus, currentTask?: string) => void
+  getNavigatorLocations: () => NavigatorLocation[]
+
   // Utility
   getPatient: (patientId: string) => Patient | undefined
   getNavigator: (navigatorId: string) => Navigator | undefined
@@ -169,7 +175,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
   }, [state, isHydrated])
 
   // Destructure state for easier access
-  const { patients, notes, navigators, adverseEvents, referrals, messages, directMessages, appointments, careTemplates, carePlans, payerRates, auditLogs, noteTemplates, noteDrafts, zCodes, intakeRecords, timeLogs, lastAssignedPatientId } = state
+  const { patients, notes, navigators, adverseEvents, referrals, messages, directMessages, appointments, careTemplates, carePlans, payerRates, auditLogs, noteTemplates, noteDrafts, zCodes, intakeRecords, timeLogs, navigatorLocations, lastAssignedPatientId } = state
 
   // ============================================================================
   // NOTE OPERATIONS
@@ -456,14 +462,15 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
     patientId: string,
     patientName: string,
     content: string,
-    supervisorId: string,
-    supervisorName: string
+    senderId: string,
+    senderName: string,
+    senderRole: UserRole = "supervisor"
   ) => {
     // Legacy SupervisorMessage for backwards compatibility
     const newSupervisorMessage: SupervisorMessage = {
       id: generateId(),
-      fromSupervisorId: supervisorId,
-      fromSupervisorName: supervisorName,
+      fromSupervisorId: senderId,
+      fromSupervisorName: senderName,
       toNavigatorId,
       patientId,
       patientName,
@@ -477,9 +484,9 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
     const navigator = navigators.find(n => n.id === toNavigatorId)
     const newDirectMessage: Message = {
       id: generateId(),
-      senderId: supervisorId,
-      senderName: supervisorName,
-      senderRole: "supervisor",
+      senderId: senderId,
+      senderName: senderName,
+      senderRole: senderRole,
       receiverId: toNavigatorId,
       receiverName: navigator?.name || "Navigator",
       receiverRole: "navigator",
@@ -1286,6 +1293,38 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
   }, [])
 
   // ============================================================================
+  // NAVIGATOR SAFETY MAP
+  // ============================================================================
+
+  const updateNavigatorLocation = useCallback((
+    navigatorId: string,
+    lat: number,
+    lng: number,
+    status?: SafetyStatus,
+    currentTask?: string
+  ) => {
+    setState(prev => ({
+      ...prev,
+      navigatorLocations: prev.navigatorLocations.map(loc =>
+        loc.navigatorId === navigatorId
+          ? {
+              ...loc,
+              lat,
+              lng,
+              lastCheckIn: new Date().toISOString(),
+              status: status || loc.status,
+              currentTask: currentTask !== undefined ? currentTask : loc.currentTask,
+            }
+          : loc
+      )
+    }))
+  }, [])
+
+  const getNavigatorLocations = useCallback(() => {
+    return navigatorLocations
+  }, [navigatorLocations])
+
+  // ============================================================================
   // RESET
   // ============================================================================
 
@@ -1394,6 +1433,11 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
       activePayerConfig,
       availablePayerConfigs,
       setActivePayerConfig,
+
+      // Navigator Safety Map
+      navigatorLocations,
+      updateNavigatorLocation,
+      getNavigatorLocations,
 
       // Utility
       getPatient,

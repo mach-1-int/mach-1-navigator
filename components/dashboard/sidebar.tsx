@@ -23,6 +23,7 @@ import {
   DollarSign,
   History,
   UserPlus,
+  Map,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -37,6 +38,7 @@ const roleNavItems: Record<string, { name: string; view: ViewType; icon: typeof 
   ],
   supervisor: [
     { name: "Overview", view: "dashboard", icon: LayoutDashboard },
+    { name: "Safety Map", view: "safety-map", icon: Map },
     { name: "Referrals", view: "referrals", icon: UserPlus },
     { name: "Navigators", view: "navigators", icon: Users },
     { name: "Team Schedule", view: "team-schedule", icon: CalendarDays },
@@ -63,6 +65,9 @@ const roleNavItems: Record<string, { name: string; view: ViewType; icon: typeof 
     { name: "Revenue Cycle Manager", view: "revenue-cycle", icon: DollarSign },
     { name: "Payer Rates", view: "admin-payer-rates", icon: Settings },
     { name: "Audit Log", view: "admin-audit-log", icon: History },
+  ],
+  biller: [
+    { name: "Revenue Cycle Manager", view: "dashboard", icon: DollarSign },
   ],
 }
 
@@ -98,6 +103,7 @@ export function DashboardSidebar() {
             {currentUser.role === "navigator" && "Care Management"}
             {currentUser.role === "patient" && "My Care"}
             {currentUser.role === "admin" && "System Admin"}
+            {currentUser.role === "biller" && "Revenue Cycle"}
           </p>
           {navItems.map((item) => {
             const isActive = navigation.view === item.view

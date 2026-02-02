@@ -17,6 +17,7 @@ import {
   Bell,
   ChevronRight,
   Clock,
+  ExternalLink,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useRole } from "@/lib/role-context"
@@ -33,7 +34,7 @@ interface ThreadPreview {
 }
 
 export function ChatInterface() {
-  const { currentUser, draftMessage, setDraftMessage } = useRole()
+  const { currentUser, draftMessage, setDraftMessage, navigateTo } = useRole()
   const {
     patients,
     navigators,
@@ -72,8 +73,8 @@ export function ChatInterface() {
           })
       }
     } else if (currentUser.role === "navigator") {
-      // Navigators can message their supervisor and assigned patients
-      const navigator = navigators.find((n) => n.name === currentUser.name)
+      // Navigators can message their supervisor, biller, and assigned patients
+      const navigator = navigators.find((n) => n.name === currentUser.name || n.id === currentUser.id)
       if (navigator) {
         // Add supervisor
         const supervisor = initialSupervisors.find((s) => s.id === navigator.supervisorId)
@@ -85,6 +86,13 @@ export function ChatInterface() {
             subtitle: "Supervisor",
           })
         }
+        // Add biller for billing nudges
+        contacts.push({
+          id: "biller1",
+          name: "Revenue Cycle Manager",
+          role: "biller" as UserRole,
+          subtitle: "Billing Department",
+        })
         // Add assigned patients
         patients
           .filter((p) => p.assignedNavigator === navigator.id)
@@ -280,6 +288,8 @@ export function ChatInterface() {
         return "default"
       case "navigator":
         return "secondary"
+      case "biller":
+        return "secondary"
       case "patient":
         return "outline"
       default:
@@ -351,7 +361,8 @@ export function ChatInterface() {
                     <AvatarFallback className={cn(
                       thread.partnerRole === "supervisor" && "bg-primary/20 text-primary",
                       thread.partnerRole === "navigator" && "bg-blue-100 text-blue-700",
-                      thread.partnerRole === "patient" && "bg-amber-100 text-amber-700"
+                      thread.partnerRole === "patient" && "bg-amber-100 text-amber-700",
+                      thread.partnerRole === "biller" && "bg-emerald-100 text-emerald-700"
                     )}>
                       {getInitials(thread.partnerName)}
                     </AvatarFallback>
@@ -401,7 +412,8 @@ export function ChatInterface() {
                     <AvatarFallback className={cn(
                       selectedContact.role === "supervisor" && "bg-primary/20 text-primary",
                       selectedContact.role === "navigator" && "bg-blue-100 text-blue-700",
-                      selectedContact.role === "patient" && "bg-amber-100 text-amber-700"
+                      selectedContact.role === "patient" && "bg-amber-100 text-amber-700",
+                      selectedContact.role === "biller" && "bg-emerald-100 text-emerald-700"
                     )}>
                       {getInitials(selectedContact.name)}
                     </AvatarFallback>
@@ -449,13 +461,29 @@ export function ChatInterface() {
                             msg.type === "nudge" && !isOwn && "border-l-4 border-amber-500 bg-amber-50"
                           )}
                         >
-                          {msg.type === "nudge" && msg.patientName && (
-                            <div className="mb-1 flex items-center gap-1 text-xs opacity-80">
+                          {msg.type === "nudge" && msg.patientName && msg.patientId && (
+                            <button
+                              type="button"
+                              onClick={() => navigateTo("patient-detail", { patientId: msg.patientId })}
+                              className="mb-2 flex items-center gap-1.5 text-xs font-medium text-amber-800 hover:text-amber-900 hover:underline transition-colors"
+                            >
                               <Bell className="h-3 w-3" />
-                              Re: {msg.patientName}
-                            </div>
+                              <span>Re: {msg.patientName}</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </button>
                           )}
                           <p className="whitespace-pre-wrap">{msg.content}</p>
+                          {msg.type === "nudge" && msg.patientId && (
+                            <button
+                              type="button"
+                              onClick={() => navigateTo("patient-detail", { patientId: msg.patientId })}
+                              className="mt-3 flex items-center gap-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-md transition-colors"
+                            >
+                              <User className="h-3 w-3" />
+                              View Patient Record
+                              <ExternalLink className="h-3 w-3" />
+                            </button>
+                          )}
                           <div
                             className={cn(
                               "mt-1 flex items-center gap-1 text-xs",

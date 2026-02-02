@@ -1,4 +1,4 @@
-/**
+3/**
  * Centralized Store for Mach 1 Care Navigator
  * 
  * This module provides:
@@ -36,6 +36,8 @@ import type {
   ScheduleEvent,
   NavigatorShift,
   TimeOffRequest,
+  // Navigator Safety Map
+  NavigatorLocation,
 } from "./types"
 import {
   initialPatients,
@@ -58,6 +60,8 @@ import {
   initialNavigatorShifts,
   // Supervisor Messages (Nudges)
   initialSupervisorMessages,
+  // Navigator Safety Map
+  initialNavigatorLocations,
 } from "./initial-data"
 
 // ============================================================================
@@ -98,6 +102,8 @@ export interface StoreState {
   scheduleEvents: ScheduleEvent[]
   navigatorShifts: NavigatorShift[]
   timeOffRequests: TimeOffRequest[]
+  // Navigator Safety Map
+  navigatorLocations: NavigatorLocation[]
   lastAssignedPatientId: string | null
   _version: number // For future migrations
 }
@@ -134,8 +140,10 @@ export const createInitialState = (): StoreState => ({
   scheduleEvents: initialScheduleEvents,
   navigatorShifts: initialNavigatorShifts,
   timeOffRequests: [],
+  // Navigator Safety Map
+  navigatorLocations: initialNavigatorLocations,
   lastAssignedPatientId: null,
-  _version: 4, // Bumped to add validation test patient and Revenue Cycle Manager fixes
+  _version: 7, // Bumped to add Navigator Safety Map
 })
 
 // ============================================================================
@@ -143,7 +151,7 @@ export const createInitialState = (): StoreState => ({
 // ============================================================================
 
 // Current schema version - bump this when seed data changes to force refresh
-const CURRENT_VERSION = 4
+const CURRENT_VERSION = 8 // Bumped for updated navigator locations (3 Phoenix pins)
 
 /**
  * Load state from localStorage, falling back to initial state if not found
@@ -203,6 +211,8 @@ export function loadState(): StoreState {
           scheduleEvents: parsed.scheduleEvents || initialState.scheduleEvents,
           navigatorShifts: parsed.navigatorShifts || initialState.navigatorShifts,
           timeOffRequests: parsed.timeOffRequests || initialState.timeOffRequests,
+          // Navigator Safety Map
+          navigatorLocations: parsed.navigatorLocations || initialState.navigatorLocations,
           _version: CURRENT_VERSION,
         }
       }

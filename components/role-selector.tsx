@@ -43,6 +43,11 @@ const roleConfig: Record<UserRole, { icon: typeof BarChart3; description: string
     description: "System configuration, payer rate management, and audit log monitoring",
     color: "text-chart-5",
   },
+  biller: {
+    icon: BarChart3,
+    description: "Claims validation, payer toggle (Medicaid H-codes / Medicare G-codes), and CSV export",
+    color: "text-emerald-600",
+  },
 }
 
 export function RoleSelector() {

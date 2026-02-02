@@ -24,6 +24,8 @@ import type {
   // CMS Billing Types (Phase 2.1)
   CPTDefinition,
   ZCode,
+  // Navigator Safety Map
+  NavigatorLocation,
 } from "./types"
 
 // ============================================================================
@@ -36,6 +38,7 @@ export const initialUsers: User[] = [
   { id: "nav1", name: "Emily Rodriguez", role: "navigator", email: "emily.rodriguez@gellert.health" },
   { id: "pt1", name: "James Thompson", role: "patient", email: "james.t@email.com" },
   { id: "admin1", name: "Alex Rivera", role: "admin", email: "alex.rivera@gellert.health" },
+  { id: "biller1", name: "Revenue Cycle Manager", role: "biller", email: "billing@gellert.health" },
   // Matching Engine Test Navigators
   {
     id: "nav-maria",
@@ -2086,6 +2089,58 @@ export const initialTimeLogs: TimeLog[] = [
     verifiedAt: "2026-01-17T17:00:00-07:00",
     billingPeriod: "2026-01",
     activityType: "CHECK_IN", // -> H0038 (Peer Support)
+  },
+]
+
+// ============================================================================
+// NAVIGATOR SAFETY MAP - Real-time Locations
+// ============================================================================
+
+/**
+ * Initial navigator locations in Phoenix metro area
+ * Demonstrates different safety statuses for the supervisor "God Mode" view
+ */
+export const initialNavigatorLocations: NavigatorLocation[] = [
+  // Maria Gonzalez - ACTIVE, West Valley (Glendale)
+  {
+    id: "loc-maria",
+    navigatorId: "nav-maria",
+    navigatorName: "Maria Gonzalez",
+    lat: 33.5387,
+    lng: -112.1859, // Glendale - West Valley
+    lastCheckIn: new Date(Date.now() - 10 * 60 * 1000).toISOString(), // 10 mins ago
+    status: "ACTIVE",
+    currentTask: "Transporting Patient",
+    currentPatientId: "pt1",
+    speed: 25, // In transit
+    batteryLevel: 78,
+  },
+  // John Mitchell - RISK_ALERT, East Valley (Mesa) - Overdue check-out
+  {
+    id: "loc-john",
+    navigatorId: "nav-john",
+    navigatorName: "John Mitchell",
+    lat: 33.4152,
+    lng: -111.8315, // Mesa - East Valley
+    lastCheckIn: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours ago - RISK!
+    status: "RISK_ALERT",
+    currentTask: "Home Visit (High Acuity)",
+    currentPatientId: "pt3",
+    speed: 0,
+    batteryLevel: 15, // Low battery adds to concern
+  },
+  // Sarah Thompson - IDLE, Central (Downtown Phoenix)
+  {
+    id: "loc-sarah",
+    navigatorId: "nav-sarah",
+    navigatorName: "Sarah Thompson",
+    lat: 33.4484,
+    lng: -112.0740, // Downtown Phoenix - Central
+    lastCheckIn: new Date(Date.now() - 5 * 60 * 1000).toISOString(), // 5 mins ago
+    status: "IDLE",
+    currentTask: "Documentation",
+    speed: 0,
+    batteryLevel: 62,
   },
 ]
 

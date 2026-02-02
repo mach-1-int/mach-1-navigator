@@ -1,4 +1,4 @@
-export type UserRole = "executive" | "supervisor" | "navigator" | "patient" | "admin"
+export type UserRole = "executive" | "supervisor" | "navigator" | "patient" | "admin" | "biller"
 
 /**
  * Navigator-specific attributes for matching engine
@@ -786,4 +786,34 @@ export interface TimeOffRequest {
   reviewedBy?: string // Supervisor ID
   reviewedAt?: string // ISO timestamp
   createdAt: string
+}
+
+// ============================================================================
+// NAVIGATOR SAFETY MAP (Real-time Location Tracking)
+// ============================================================================
+
+/**
+ * Safety status for navigator field tracking
+ * - ACTIVE: Navigator is moving/working (green)
+ * - IDLE: No movement for 15+ minutes (yellow warning)
+ * - RISK_ALERT: No check-in for 30+ minutes or manual SOS (red alert)
+ */
+export type SafetyStatus = "ACTIVE" | "IDLE" | "RISK_ALERT"
+
+/**
+ * Real-time navigator location for safety tracking
+ */
+export interface NavigatorLocation {
+  id: string
+  navigatorId: string
+  navigatorName: string
+  lat: number
+  lng: number
+  lastCheckIn: string // ISO timestamp
+  status: SafetyStatus
+  currentTask?: string // e.g., "Home Visit: James T."
+  currentPatientId?: string // Link to patient if on a visit
+  speed?: number // mph - to detect if moving
+  heading?: number // degrees - direction of travel
+  batteryLevel?: number // 0-100 phone battery
 }

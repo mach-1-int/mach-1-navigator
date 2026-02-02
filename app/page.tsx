@@ -27,16 +27,18 @@ import { ChatInterface } from "@/components/messaging/chat-interface"
 import { AdminDashboard } from "@/components/dashboards/admin-dashboard"
 import { ClaimsManager } from "@/components/billing/claims-manager"
 import { SchedulingView } from "@/components/schedule/scheduling-view"
+import { NavigatorSafetyMap } from "@/components/supervisor/navigator-safety-map"
 import { InDevelopment } from "@/components/in-development"
 import { Toaster } from "@/components/ui/sonner"
 
 // Define which views are implemented for each role
 const implementedViews: Record<string, ViewType[]> = {
   executive: ["dashboard", "revenue-cycle"],
-  supervisor: ["dashboard", "referrals", "navigators", "navigator-detail", "team-schedule", "compliance", "events", "patient-detail", "messages", "referral-intake", "intake-workspace"],
+  supervisor: ["dashboard", "safety-map", "referrals", "navigators", "navigator-detail", "team-schedule", "compliance", "events", "patient-detail", "messages", "referral-intake", "intake-workspace"],
   navigator: ["dashboard", "patients", "patient-detail", "schedule", "notes", "messages", "assessment-wizard"],
   patient: ["dashboard", "appointments", "medications", "profile", "messages"],
   admin: ["dashboard", "admin-payer-rates", "admin-audit-log", "revenue-cycle"],
+  biller: ["dashboard"],
 }
 
 // View titles for the header
@@ -65,6 +67,7 @@ const viewTitles: Record<ViewType, { title: string; subtitle: string }> = {
   "admin-payer-rates": { title: "Payer Rates", subtitle: "Configure revenue rates by payer" },
   "admin-audit-log": { title: "Audit Log", subtitle: "System activity and user actions" },
   "revenue-cycle": { title: "Revenue Cycle Manager", subtitle: "Claims validation and CSV export" },
+  "safety-map": { title: "Navigator Safety Map", subtitle: "Real-time field team location tracking" },
 }
 
 // Role-specific dashboard titles
@@ -74,6 +77,7 @@ const dashboardTitles: Record<string, { title: string; subtitle: string }> = {
   navigator: { title: "Navigator Dashboard", subtitle: "Patient Care Management" },
   patient: { title: "My Health Portal", subtitle: "Your personalized care dashboard" },
   admin: { title: "Admin Dashboard", subtitle: "System Governance & Configuration" },
+  biller: { title: "Revenue Cycle Manager", subtitle: "Claims validation and CSV export" },
 }
 
 function DashboardContent() {
@@ -115,6 +119,8 @@ function DashboardContent() {
           return <PatientDashboard />
         case "admin":
           return <AdminDashboard />
+        case "biller":
+          return <ClaimsManager />
       }
     }
 
@@ -158,6 +164,9 @@ function DashboardContent() {
 
     // Handle supervisor-specific views
     if (currentUser.role === "supervisor") {
+      if (navigation.view === "safety-map") {
+        return <NavigatorSafetyMap />
+      }
       if (navigation.view === "referrals") {
         return <ReferralReviewView />
       }
