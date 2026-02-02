@@ -25,3 +25,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local credentials (DO NOT COMMIT)
+LOCAL_DEV_CREDS.md

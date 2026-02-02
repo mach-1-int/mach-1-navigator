@@ -1,0 +1,68 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mach1-navigator-app
+    ports:
+      - "3100:3000"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://mach1_user:mach1_dev_password@db:5432/mach1_navigator
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    restart: unless-stopped
+    networks:
+      - mach1-network
+
+  db:
+    image: postgres:16-alpine
+    container_name: mach1-navigator-db
+    ports:
+      - "5480:5432"
+    environment:
+      POSTGRES_USER: mach1_user
+      POSTGRES_PASSWORD: mach1_dev_password
+      POSTGRES_DB: mach1_navigator
+    volumes:
+      - mach1_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mach1_user -d mach1_navigator"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - mach1-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: mach1-navigator-redis
+    ports:
+      - "6400:6379"
+    volumes:
+      - mach1_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - mach1-network
+
+volumes:
+  mach1_postgres_data:
+  mach1_redis_data:
+
+networks:
+  mach1-network:
+    driver: bridge
