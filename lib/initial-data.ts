@@ -37,6 +37,7 @@ export const initialUsers: User[] = [
   { id: "sup1", name: "Marcus Williams", role: "supervisor", email: "marcus.williams@gellert.health" },
   { id: "nav1", name: "Emily Rodriguez", role: "navigator", email: "emily.rodriguez@gellert.health" },
   { id: "pt1", name: "James Thompson", role: "patient", email: "james.t@email.com" },
+  { id: "pt-elena", name: "Elena Rodriguez", role: "patient", email: "elena.rodriguez@email.com" }, // Patient Portal demo
   { id: "admin1", name: "Alex Rivera", role: "admin", email: "alex.rivera@gellert.health" },
   { id: "biller1", name: "Revenue Cycle Manager", role: "biller", email: "billing@gellert.health" },
   // Matching Engine Test Navigators
@@ -238,6 +239,55 @@ export const initialPatients: Patient[] = [
     // NOTE: Intentionally NO primaryDiagnosis and NO icdCodes to test validation
     billingTrack: "CHI",
   },
+  // ============================================================================
+  // PATIENT PORTAL DEMO: Elena Rodriguez
+  // Converted from referral to active patient for Golden Thread demo
+  // ============================================================================
+  {
+    id: "pt-elena",
+    name: "Elena Rodriguez",
+    dob: "1958-06-12",
+    chartNumber: "GH-2026-ELENA",
+    riskLevel: 2,
+    survivalStatus: "active",
+    assignedNavigator: "nav-maria", // Maria Gonzalez - Spanish-speaking navigator
+    assignedSupervisor: "sup1",
+    healthPlan: "Mercy Care",
+    enrollmentDate: "2026-01-28",
+    lastContactDate: "2026-01-30",
+    medicationCompliance: 88,
+    pcpCompliance: true,
+    upcomingAppointments: [
+      {
+        id: "apt-elena-pharmacy",
+        patientId: "pt-elena",
+        navigatorId: "nav-maria",
+        date: "2026-02-02", // Today/Tomorrow for demo
+        time: "14:00",
+        type: "clinic", // Using clinic type for pharmacy visit
+        status: "scheduled",
+        notes: "Pharmacy Pickup - CVS on Glendale Ave"
+      }
+    ],
+    medications: [
+      { id: "med-elena-1", name: "Metformin", dosage: "500mg", frequency: "Twice daily", nextRefillDate: "2026-02-02", compliance: true },
+      { id: "med-elena-2", name: "Gabapentin", dosage: "300mg", frequency: "Three times daily", nextRefillDate: "2026-02-10", compliance: true },
+    ],
+    adverseEvents: [],
+    address: {
+      street: "2145 W Glendale Ave",
+      city: "Phoenix",
+      state: "AZ",
+      zip: "85303"
+    },
+    phone: "(623) 555-0189",
+    email: "elena.rodriguez@email.com",
+    lat: 33.5387,
+    lng: -112.1859, // West Valley - Glendale
+    billingTrack: "PIN",
+    primaryDiagnosis: "Type 2 Diabetes with peripheral neuropathy (E11.42)",
+    icdCodes: ["E11.42", "G63.2"], // Diabetes with neuropathy
+  },
 ]
 
 // ============================================================================
@@ -248,6 +298,8 @@ export const initialAppointments: Appointment[] = [
   { id: "apt1", patientId: "pt1", navigatorId: "nav1", date: "2026-01-28", time: "10:00", type: "home_visit", status: "scheduled" },
   { id: "apt2", patientId: "pt2", navigatorId: "nav1", date: "2026-01-29", time: "14:00", type: "phone_call", status: "scheduled" },
   { id: "apt3", patientId: "pt4", navigatorId: "nav2", date: "2026-02-01", time: "09:00", type: "video_call", status: "scheduled" },
+  // Elena's pharmacy pickup for Patient Portal demo
+  { id: "apt-elena-pharmacy", patientId: "pt-elena", navigatorId: "nav-maria", date: "2026-02-02", time: "14:00", type: "clinic", status: "scheduled", notes: "Pharmacy Pickup - CVS on Glendale Ave" },
 ]
 
 // ============================================================================
@@ -1858,8 +1910,8 @@ export const initialTimeLogs: TimeLog[] = [
     patientId: "pt1",
     date: "2026-01-19",
     startTime: "2026-01-19T14:00:00-07:00",
-    endTime: "2026-01-19T15:00:00-07:00",
-    durationMinutes: 60,
+    endTime: "2026-01-19T14:30:00-07:00",
+    durationMinutes: 30, // Changed from 60 to 30 for demo: James now has 105 min total (45+30+30)
     modality: "In-Person",
     serviceType: "PIN",
     navigatorId: "nav-maria",
@@ -1904,8 +1956,9 @@ export const initialTimeLogs: TimeLog[] = [
     activityType: "PEER_SUPPORT", // -> H0038 (Peer Support)
   },
   // Robert Wilson (pt3) - PIN patient, January 2026
-  // Total: 25 min = 2 units under Medicaid H-codes (Rule of Eights: 23-37 = 2 units)
+  // Total: 45 min = 3 units under Medicaid H-codes (Rule of Eights: 38-52 = 3 units)
   // NOTE: This is READY under Medicaid (8+ mins) but MISSING_DATA under Medicare (needs 60 min)
+  // DEMO: Shows in "Needs Attention" tab to demonstrate the guardrail
   {
     id: "tl-006",
     patientId: "pt3",
@@ -1921,6 +1974,23 @@ export const initialTimeLogs: TimeLog[] = [
     verifiedAt: "2026-01-08T17:00:00-07:00",
     billingPeriod: "2026-01",
     activityType: "OUTREACH", // -> H0023 (Outreach)
+  },
+  // Additional log for Robert Wilson to reach 45 min total (for "Needs Attention" demo)
+  {
+    id: "tl-006b",
+    patientId: "pt3",
+    date: "2026-01-15",
+    startTime: "2026-01-15T10:00:00-07:00",
+    endTime: "2026-01-15T10:20:00-07:00",
+    durationMinutes: 20,
+    modality: "Phone",
+    serviceType: "PIN",
+    navigatorId: "nav2",
+    verified: true,
+    verifiedBy: "sup-sarah",
+    verifiedAt: "2026-01-15T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "CHECK_IN", // -> H0038 (Peer Support)
   },
   // Helen Garcia (pt4) - CHI patient, January 2026 (multiple visits, good volume)
   // Total: 195 min = 13 units under Medicaid H-codes (Rule of Eights)

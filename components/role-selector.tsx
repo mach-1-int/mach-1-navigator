@@ -119,7 +119,11 @@ export function RoleSelector() {
             <Card
               key={user.id}
               className="group cursor-pointer border-border bg-card transition-all hover:border-primary hover:bg-card/80"
-              onClick={() => setRole(user.role)}
+              onClick={() =>
+                user.role === "patient"
+                  ? loginAsPatient(user.id, user.name)
+                  : setRole(user.role)
+              }
             >
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-3">

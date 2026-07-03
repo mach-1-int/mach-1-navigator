@@ -374,7 +374,7 @@ export function NavigatorDashboard() {
                 const nextAppointment = patient.upcomingAppointments
                   .filter(apt => apt.status === "scheduled")
                   .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0]
-                const daysSinceContact = Math.floor((Date.now() - new Date(patient.lastContactDate).getTime()) / (1000 * 60 * 60 * 24))
+                const daysSinceContact = Math.max(0, Math.floor((Date.now() - new Date(patient.lastContactDate).getTime()) / (1000 * 60 * 60 * 24)))
                 const contactWarning = daysSinceContact > 14
                 
                 return (

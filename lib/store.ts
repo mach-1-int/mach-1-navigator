@@ -63,6 +63,7 @@ import {
   // Navigator Safety Map
   initialNavigatorLocations,
 } from "./initial-data"
+import { rebaseToToday } from "./date-rebase"
 
 // ============================================================================
 // STORAGE KEY
@@ -113,32 +114,34 @@ export interface StoreState {
 // ============================================================================
 
 export const createInitialState = (): StoreState => ({
-  patients: initialPatients,
+  // Operational dates are rebased to "today" so the demo never looks stale.
+  // DOBs and enrollmentDate are frozen inside rebaseToToday(). See date-rebase.ts.
+  patients: rebaseToToday(initialPatients),
   navigators: initialNavigators,
-  appointments: initialAppointments,
-  notes: initialNotes,
-  adverseEvents: initialAdverseEvents,
-  referrals: initialReferrals,
-  messages: initialSupervisorMessages,
+  appointments: rebaseToToday(initialAppointments),
+  notes: rebaseToToday(initialNotes),
+  adverseEvents: rebaseToToday(initialAdverseEvents),
+  referrals: rebaseToToday(initialReferrals),
+  messages: rebaseToToday(initialSupervisorMessages),
   directMessages: [],
   careTemplates: initialCareTemplates,
-  carePlans: initialCarePlans,
+  carePlans: rebaseToToday(initialCarePlans),
   payerRates: initialPayerRates,
-  auditLogs: initialAuditLogs,
+  auditLogs: rebaseToToday(initialAuditLogs),
   noteTemplates: initialNoteTemplates,
   noteDrafts: [],
   // CMS Billing Initial State (Phase 2.1)
   cptCodes: initialCPTCodes,
   zCodes: initialZCodes,
   intakeRecords: [],
-  timeLogs: initialTimeLogs,
+  timeLogs: rebaseToToday(initialTimeLogs),
   monthlyTimeSummaries: [],
   billingEncounters: [],
   // Payer-Agnostic Billing (Phase 2.2) - Default to Medicaid BH for demo
   activePayerConfigId: "medicaid-bh",
   // Scheduling Initial State (Phase 4)
-  scheduleEvents: initialScheduleEvents,
-  navigatorShifts: initialNavigatorShifts,
+  scheduleEvents: rebaseToToday(initialScheduleEvents),
+  navigatorShifts: rebaseToToday(initialNavigatorShifts),
   timeOffRequests: [],
   // Navigator Safety Map
   navigatorLocations: initialNavigatorLocations,
@@ -151,7 +154,7 @@ export const createInitialState = (): StoreState => ({
 // ============================================================================
 
 // Current schema version - bump this when seed data changes to force refresh
-const CURRENT_VERSION = 8 // Bumped for updated navigator locations (3 Phoenix pins)
+const CURRENT_VERSION = 10 // Bumped for date rebasing: operational dates now relative to today
 
 /**
  * Load state from localStorage, falling back to initial state if not found

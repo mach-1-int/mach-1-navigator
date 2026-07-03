@@ -18,6 +18,7 @@ import { NavigatorDetailView } from "@/components/supervisor/navigator-detail-vi
 import { ComplianceView } from "@/components/supervisor/compliance-view"
 import { AdverseEventsView } from "@/components/supervisor/adverse-events-view"
 import { NavigatorSchedule } from "@/components/navigator/navigator-schedule"
+import { NavigatorPatients } from "@/components/navigator/navigator-patients"
 import { ClinicalFeed } from "@/components/navigator/clinical-feed"
 import { AssessmentWizard } from "@/components/navigator/assessment-wizard"
 import { ReferralIntake } from "@/components/supervisor/referral-intake"
@@ -144,9 +145,9 @@ function DashboardContent() {
       return <PatientProfile patientId={navigation.params.patientId} />
     }
 
-    // Handle patients list for navigator (show dashboard for now, clicking patients opens detail)
+    // Handle patients list for navigator (dedicated roster + quick-note view)
     if (navigation.view === "patients" && currentUser.role === "navigator") {
-      return <NavigatorDashboard />
+      return <NavigatorPatients />
     }
 
     // Handle navigator-specific views

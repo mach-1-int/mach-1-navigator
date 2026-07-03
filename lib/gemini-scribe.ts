@@ -40,7 +40,7 @@ export async function parseEncounterTranscript(
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     // Build field descriptions for the prompt
     const fieldDescriptions = templateFields.map((field) => {
