@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { TeamCalendar } from "./team-calendar"
 import { AddShiftModal } from "./add-shift-modal"
-import { loadState, saveState } from "@/lib/store"
-import type { NavigatorShift, ScheduleEvent, Navigator } from "@/lib/types"
+import { useDemoData } from "@/lib/demo-data-context"
+import type { NavigatorShift, ScheduleEvent } from "@/lib/types"
 
 interface SchedulingViewProps {
   supervisorId: string
@@ -19,46 +19,32 @@ interface SchedulingViewProps {
  * - View and manage all team events
  */
 export function SchedulingView({ supervisorId }: SchedulingViewProps) {
+  const { scheduleEvents, navigatorShifts, getTeamNavigators, addShift, isHydrated } = useDemoData()
   const [showAddShift, setShowAddShift] = useState(false)
-  const [selectedEvent, setSelectedEvent] = useState<ScheduleEvent | null>(null)
-  const [navigators, setNavigators] = useState<Navigator[]>([])
-  const [events, setEvents] = useState<ScheduleEvent[]>([])
-  const [shifts, setShifts] = useState<NavigatorShift[]>([])
+  const [, setSelectedEvent] = useState<ScheduleEvent | null>(null)
 
-  // Load state on mount
-  useEffect(() => {
-    const state = loadState()
-    setNavigators(state.navigators)
-    setEvents(state.scheduleEvents)
-    setShifts(state.navigatorShifts)
-  }, [])
+  // Get navigators for this supervisor's team (supervisorId = logged-in user)
+  const teamNavigators = getTeamNavigators(supervisorId)
 
-  // Get navigators for this supervisor's team
-  const teamNavigators = navigators.filter(
-    (nav) => nav.supervisorId === supervisorId || nav.supervisorId === "sup1" // Include sup1 team for demo
-  )
-
-  // Handle adding a new shift
-  const handleAddShift = (shift: NavigatorShift, _publish: boolean) => {
-    const state = loadState()
-    const newShifts = [...state.navigatorShifts, shift]
-    saveState({ ...state, navigatorShifts: newShifts })
-    setShifts(newShifts)
+  // Handle adding a new shift (persistence goes through context)
+  const handleAddShift = (shift: Omit<NavigatorShift, "id" | "createdAt" | "updatedAt">) => {
+    addShift(shift)
   }
 
   // Handle clicking an event
   const handleEventClick = (event: ScheduleEvent) => {
     setSelectedEvent(event)
     // Could open an event detail modal here
-    console.log("Event clicked:", event)
   }
+
+  if (!isHydrated) return null
 
   return (
     <div className="h-[calc(100vh-140px)]">
       <TeamCalendar
         navigators={teamNavigators}
-        events={events}
-        shifts={shifts}
+        events={scheduleEvents}
+        shifts={navigatorShifts}
         supervisorId={supervisorId}
         onAddShift={() => setShowAddShift(true)}
         onEventClick={handleEventClick}
@@ -69,6 +55,7 @@ export function SchedulingView({ supervisorId }: SchedulingViewProps) {
         onOpenChange={setShowAddShift}
         navigators={teamNavigators}
         supervisorId={supervisorId}
+        existingShifts={navigatorShifts}
         onAddShift={handleAddShift}
       />
     </div>

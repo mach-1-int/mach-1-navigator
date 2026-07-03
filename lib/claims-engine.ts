@@ -13,10 +13,14 @@
  *    - PIN: G0023 (base) + G0024 (add-on)
  *    - CHI: G0019 (base) + G0022 (add-on)
  *    - 60 minutes minimum for base code
+ *
+ * All calculations require an explicit PayerConfig — thresholds, codes, and
+ * rates always come from the payer configuration (no legacy fallbacks).
  */
 
 import type {
   BillableClaim,
+  IntakeRecord,
   TimeLog,
   Patient,
   Navigator,
@@ -27,37 +31,8 @@ import type {
 import {
   calculateBillingUnits as calculateUnitsFromConfig,
   calculateClaimValue as calculateValueFromConfig,
-  getHCodeForActivity,
-  getPayerConfig,
-  DEFAULT_PAYER_CONFIG_ID,
-  PAYER_CONFIGS,
+  getDominantHCode,
 } from "./payer-config"
-
-/**
- * G-code mappings by service type (for backward compatibility)
- */
-const G_CODES: Record<ServiceType, { base: string; addOn: string }> = {
-  PIN: { base: "G0023", addOn: "G0024" },
-  CHI: { base: "G0019", addOn: "G0022" },
-}
-
-/**
- * Legacy billing thresholds (for backward compatibility)
- * Use PayerConfig.baseMinimum and unitIncrement instead
- */
-const BILLING_THRESHOLDS = {
-  BASE_MINIMUM: 60,
-  ADD_ON_INCREMENT: 30,
-}
-
-/**
- * Legacy revenue rates (for backward compatibility)
- * Use PayerConfig.revenueRates instead
- */
-export const REVENUE_RATES = {
-  BASE_UNIT: 125.00,    // $125 per base unit (60 min) - Medicare
-  ADD_ON_UNIT: 62.50,   // $62.50 per add-on unit (30 min) - Medicare
-}
 
 /**
  * Generate a unique claim ID
@@ -95,73 +70,66 @@ function groupTimeLogsByPatientAndMonth(
 }
 
 /**
- * Calculate billing units from total minutes
- * Supports both legacy Medicare logic and payer-agnostic billing
+ * Calculate billing units from total minutes using payer-specific rules
+ * (Rule of Eights for Medicaid, 60-min base + 30-min add-on for Medicare)
  *
  * @param totalMinutes Total minutes of service
- * @param payerConfig Optional payer configuration (defaults to Medicare CHI for backward compatibility)
+ * @param payerConfig Payer configuration
  */
 export function calculateBillingUnits(
   totalMinutes: number,
-  payerConfig?: PayerConfig
+  payerConfig: PayerConfig
 ): {
   primaryUnits: number
   addOnUnits: number
 } {
-  // If payer config provided, use the unified calculator
-  if (payerConfig) {
-    return calculateUnitsFromConfig(totalMinutes, payerConfig)
-  }
-
-  // Legacy behavior for backward compatibility (Medicare 60-minute rule)
-  if (totalMinutes < BILLING_THRESHOLDS.BASE_MINIMUM) {
-    return { primaryUnits: 0, addOnUnits: 0 }
-  }
-
-  // Base code covers first 60 minutes = 1 unit
-  const primaryUnits = 1
-
-  // Add-on units for each additional 30 minutes
-  const remainingMinutes = totalMinutes - BILLING_THRESHOLDS.BASE_MINIMUM
-  const addOnUnits = Math.floor(remainingMinutes / BILLING_THRESHOLDS.ADD_ON_INCREMENT)
-
-  return { primaryUnits, addOnUnits }
+  return calculateUnitsFromConfig(totalMinutes, payerConfig)
 }
 
 /**
- * Calculate estimated revenue for a claim
- * Supports both legacy Medicare rates and payer-agnostic billing
+ * Calculate estimated revenue for a claim using the payer's rate card
  *
  * @param primaryUnits Number of base code units
  * @param addOnUnits Number of add-on code units
- * @param payerConfig Optional payer configuration (defaults to Medicare rates)
+ * @param payerConfig Payer configuration
  */
 export function calculateClaimValue(
   primaryUnits: number,
   addOnUnits: number,
-  payerConfig?: PayerConfig
+  payerConfig: PayerConfig
 ): number {
-  // If payer config provided, use its rates
-  if (payerConfig) {
-    return calculateValueFromConfig(primaryUnits, addOnUnits, payerConfig)
-  }
-
-  // Legacy behavior for backward compatibility (Medicare rates)
-  return (primaryUnits * REVENUE_RATES.BASE_UNIT) + (addOnUnits * REVENUE_RATES.ADD_ON_UNIT)
+  return calculateValueFromConfig(primaryUnits, addOnUnits, payerConfig)
 }
 
 /**
  * Validate claim data and return any errors
- * Supports payer-specific thresholds (8 min for Medicaid, 60 min for Medicare)
+ *
+ * Checks (in order):
+ * - Payer-specific minimum time threshold (8 min Medicaid, 60 min Medicare)
+ * - Member ID present (real memberId or legacy healthPlan-derived)
+ * - Diagnosis codes (ICD-10) on the patient record
+ * - Consent documented at intake (CMS G-code requirement)
+ * - Initiating visit date recorded
+ * - Initiating visit within 12 months of the claim month (re-initiation rule)
+ * - CHI claims carry at least one SDOH Z-code in the combined diagnosis set
+ * - Patient has an assigned payer (payerId FK)
  *
  * @param patient Patient record
+ * @param intakeRecord Intake record for the patient (consent/initiating visit)
  * @param totalMinutes Total minutes of service
  * @param payerConfig Payer configuration for threshold validation
+ * @param month Claim billing month ("YYYY-MM")
+ * @param serviceType Claim service type (PIN or CHI)
+ * @param diagnosisCodes Combined diagnosis set (patient ICD + intake Z-codes)
  */
 function validateClaimData(
   patient: Patient | undefined,
+  intakeRecord: IntakeRecord | undefined,
   totalMinutes: number,
-  payerConfig?: PayerConfig
+  payerConfig: PayerConfig,
+  month: string,
+  serviceType: ServiceType,
+  diagnosisCodes: string[]
 ): string[] {
   const errors: string[] = []
 
@@ -170,18 +138,15 @@ function validateClaimData(
     return errors
   }
 
-  // Get threshold from payer config or use legacy Medicare threshold
-  const minThreshold = payerConfig?.baseMinimum ?? BILLING_THRESHOLDS.BASE_MINIMUM
-  const thresholdLabel = payerConfig?.useRuleOfEights ? "8" : "60"
-
-  // Check for minimum time requirement
-  if (totalMinutes < minThreshold) {
-    errors.push(`Insufficient Time (${totalMinutes}/${minThreshold} mins)`)
+  // Check for minimum time requirement (payer-specific threshold)
+  if (totalMinutes < payerConfig.baseMinimum) {
+    errors.push(`Insufficient Time (${totalMinutes}/${payerConfig.baseMinimum} mins)`)
   }
 
-  // Check for member ID (insurance ID)
-  // In demo, we'll derive from patient ID or health plan
-  const hasMemberId = patient.healthPlan && patient.healthPlan.length > 0
+  // Check for member ID (real insurance ID, or legacy healthPlan-derived fallback)
+  const hasMemberId =
+    (patient.memberId && patient.memberId.length > 0) ||
+    (patient.healthPlan && patient.healthPlan.length > 0)
 
   if (!hasMemberId) {
     errors.push("Missing Member ID")
@@ -193,6 +158,36 @@ function validateClaimData(
     if (!patient.primaryDiagnosis) {
       errors.push("Missing diagnosis codes (ICD-10)")
     }
+  }
+
+  // Consent guardrail: no intake on file, or intake without documented consent
+  if (!intakeRecord || !intakeRecord.consentObtained) {
+    errors.push("Patient consent not documented")
+  }
+
+  if (intakeRecord) {
+    if (!intakeRecord.initiatingVisitDate) {
+      errors.push("Initiating visit date not recorded")
+    } else {
+      // 12-month rule: initiating visit more than 12 months before the first
+      // day of the claim month requires re-initiation.
+      // Cutoff = first day of the claim month, minus 12 months (ISO compare).
+      const [yearStr, monthStr] = month.split("-")
+      const cutoff = `${parseInt(yearStr, 10) - 1}-${monthStr}-01`
+      if (intakeRecord.initiatingVisitDate < cutoff) {
+        errors.push("Initiating visit older than 12 months — re-initiation required")
+      }
+    }
+  }
+
+  // CHI claims must document at least one SDOH barrier (Z-code)
+  if (serviceType === "CHI" && !diagnosisCodes.some((code) => code.startsWith("Z"))) {
+    errors.push("CHI claim requires at least one SDOH Z-code")
+  }
+
+  // Payer identity: claims cannot be routed without an assigned payer
+  if (!patient.payerId) {
+    errors.push("Missing payer assignment")
   }
 
   return errors
@@ -223,10 +218,10 @@ function getPrimaryNavigator(timeLogs: TimeLog[]): string {
 }
 
 /**
- * Generate a member ID for a patient (demo purposes)
+ * Synthesize a member ID for a patient (legacy fallback only)
+ * Used when the patient record has no real memberId from the payer.
  */
 function generateMemberId(patient: Patient): string {
-  // In production, this would come from insurance data
   // For demo, create from health plan abbreviation + patient ID
   const planPrefix = patient.healthPlan
     ? patient.healthPlan.slice(0, 3).toUpperCase()
@@ -241,20 +236,20 @@ function generateMemberId(patient: Patient): string {
  * @param navigators - Array of navigators (for reference/name lookup)
  * @param patients - Array of patients
  * @param timeLogs - Array of time log entries
- * @param payerConfig - Optional payer configuration (defaults to Medicaid BH)
+ * @param payerConfig - Payer configuration (thresholds, codes, rates)
+ * @param intakeRecords - Intake records (consent, initiating visit, SDOH Z-codes)
  * @returns Array of BillableClaim objects
  */
 export function generateMonthlyClaims(
   navigators: Navigator[],
   patients: Patient[],
   timeLogs: TimeLog[],
-  payerConfig?: PayerConfig
+  payerConfig: PayerConfig,
+  intakeRecords: IntakeRecord[]
 ): BillableClaim[] {
-  // Use provided payer config or default to Medicaid BH
-  const config = payerConfig || getPayerConfig(DEFAULT_PAYER_CONFIG_ID)
-
-  // Create patient lookup map
+  // Create patient and intake lookup maps
   const patientMap = new Map(patients.map((p) => [p.id, p]))
+  const intakeMap = new Map(intakeRecords.map((r) => [r.patientId, r]))
 
   // Group time logs by patient and month
   const grouped = groupTimeLogsByPatientAndMonth(timeLogs)
@@ -265,6 +260,7 @@ export function generateMonthlyClaims(
   for (const [key, logs] of grouped) {
     const [patientId, month] = key.split(":")
     const patient = patientMap.get(patientId)
+    const intakeRecord = intakeMap.get(patientId)
 
     // Calculate total minutes
     const totalMinutes = logs.reduce((sum, log) => sum + log.durationMinutes, 0)
@@ -276,44 +272,20 @@ export function generateMonthlyClaims(
     let primaryCode: string
     let addOnCode: string | undefined
 
-    if (config.useRuleOfEights) {
-      // Medicaid H-codes: Determine code based on activity type
-      // Use the most common activity type from the logs
-      const activityCounts = new Map<string, number>()
-      for (const log of logs) {
-        const activity = log.activityType || "PEER_SUPPORT"
-        activityCounts.set(activity, (activityCounts.get(activity) || 0) + log.durationMinutes)
-      }
-      // Find most common activity
-      let dominantActivity = "PEER_SUPPORT"
-      let maxMinutes = 0
-      for (const [activity, minutes] of activityCounts) {
-        if (minutes > maxMinutes) {
-          maxMinutes = minutes
-          dominantActivity = activity
-        }
-      }
-      primaryCode = getHCodeForActivity(dominantActivity as import("./types").ActivityType)
+    if (payerConfig.useRuleOfEights) {
+      // Medicaid H-codes: bill under the dominant activity's H-code
+      primaryCode = getDominantHCode(logs)
       addOnCode = undefined // H-codes don't have add-on codes
     } else {
-      // Medicare G-codes: Use payer config's billing model to determine codes
-      // MEDICARE_PIN -> G0023/G0024, MEDICARE_CHI -> G0019/G0022
-      const billingServiceType = config.billingModel === "MEDICARE_PIN" ? "PIN" : "CHI"
-      const gCodes = G_CODES[billingServiceType]
-      primaryCode = gCodes.base
-      addOnCode = gCodes.addOn
+      // Medicare G-codes: base + add-on from the payer config's code set
+      primaryCode = payerConfig.codes.base
+      addOnCode = payerConfig.codes.addOn
     }
 
     // Calculate billing units using payer-specific logic
-    const { primaryUnits, addOnUnits } = calculateBillingUnits(totalMinutes, config)
+    const { primaryUnits, addOnUnits } = calculateBillingUnits(totalMinutes, payerConfig)
 
-    // Validate the claim with payer-specific thresholds
-    const validationErrors = validateClaimData(patient, totalMinutes, config)
-    const currentMonth = new Date().toISOString().slice(0, 7)
-    const status: BillableClaim["status"] =
-      validationErrors.length > 0 ? "NEEDS_ATTENTION" : month === currentMonth ? "DRAFT" : "VALIDATED"
-
-    // Collect diagnosis codes
+    // Collect diagnosis codes (patient ICD + intake-identified SDOH Z-codes)
     const diagnosisCodes: string[] = []
     if (patient?.icdCodes) {
       diagnosisCodes.push(...patient.icdCodes)
@@ -326,12 +298,35 @@ export function generateMonthlyClaims(
         diagnosisCodes.push(icdMatch[1])
       }
     }
+    // Merge intake barrier Z-codes (SDOH documentation)
+    if (intakeRecord) {
+      for (const barrier of intakeRecord.identifiedBarriers) {
+        diagnosisCodes.push(barrier.code)
+      }
+    }
+    const uniqueDiagnosisCodes = [...new Set(diagnosisCodes)]
+
+    // Validate the claim with payer-specific thresholds and intake guardrails
+    const validationErrors = validateClaimData(
+      patient,
+      intakeRecord,
+      totalMinutes,
+      payerConfig,
+      month,
+      serviceType,
+      uniqueDiagnosisCodes
+    )
+    const currentMonth = new Date().toISOString().slice(0, 7)
+    const status: BillableClaim["status"] =
+      validationErrors.length > 0 ? "NEEDS_ATTENTION" : month === currentMonth ? "DRAFT" : "VALIDATED"
 
     // Get primary navigator
     const navigatorId = getPrimaryNavigator(logs)
 
-    // Generate member ID
-    const memberId = patient ? generateMemberId(patient) : "UNKNOWN"
+    // Member ID: real payer-issued ID first, synthesized fallback if absent
+    const memberId = patient
+      ? patient.memberId || generateMemberId(patient)
+      : "UNKNOWN"
 
     // Create the claim
     const claim: BillableClaim = {
@@ -345,7 +340,7 @@ export function generateMonthlyClaims(
       primaryUnits,
       addOnCode: addOnUnits > 0 ? addOnCode : undefined,
       addOnUnits,
-      diagnosisCodes: [...new Set(diagnosisCodes)], // Deduplicate
+      diagnosisCodes: uniqueDiagnosisCodes,
       status,
       validationErrors: validationErrors.length > 0 ? validationErrors : undefined,
       timeLogIds: logs.map((log) => log.id),
@@ -353,8 +348,9 @@ export function generateMonthlyClaims(
       navigatorId,
       createdAt: new Date().toISOString(),
       // Payer-agnostic billing fields
-      billingModel: config.billingModel,
-      payerConfigId: config.id,
+      billingModel: payerConfig.billingModel,
+      payerConfigId: payerConfig.id,
+      payerId: patient?.payerId,
     }
 
     claims.push(claim)
@@ -392,15 +388,14 @@ export function filterClaimsByMonth(
 }
 
 /**
- * Calculate total revenue for an array of claims
- * Supports payer-agnostic revenue calculation
+ * Calculate total revenue for an array of claims using the payer's rate card
  *
  * @param claims Array of claims to calculate revenue for
- * @param payerConfig Optional payer configuration for rates (defaults to claim's config or Medicare)
+ * @param payerConfig Payer configuration for rates
  */
 export function calculateTotalRevenue(
   claims: BillableClaim[],
-  payerConfig?: PayerConfig
+  payerConfig: PayerConfig
 ): {
   totalValue: number
   readyValue: number
@@ -415,9 +410,7 @@ export function calculateTotalRevenue(
   let pendingCount = 0
 
   for (const claim of claims) {
-    // Use provided payer config, or fall back to claim's config, or use legacy rates
-    const config = payerConfig || (claim.payerConfigId ? getPayerConfig(claim.payerConfigId) : undefined)
-    const claimValue = calculateClaimValue(claim.primaryUnits, claim.addOnUnits, config)
+    const claimValue = calculateClaimValue(claim.primaryUnits, claim.addOnUnits, payerConfig)
     totalValue += claimValue
 
     // VALIDATED and DRAFT both count as billable-in-progress ("ready" bucket);
@@ -444,16 +437,13 @@ export function calculateTotalRevenue(
  * Format claim for CSV export
  * Includes billing model for payer-agnostic export
  */
-export function formatClaimForCSV(claim: BillableClaim, payerConfig?: PayerConfig): Record<string, string> {
-  // Get config for value calculation
-  const config = payerConfig || (claim.payerConfigId ? getPayerConfig(claim.payerConfigId) : undefined)
-
+export function formatClaimForCSV(claim: BillableClaim, payerConfig: PayerConfig): Record<string, string> {
   return {
     ClaimID: claim.id,
     PatientName: claim.patientName,
     MemberID: claim.memberId,
     BillingMonth: claim.month,
-    BillingModel: claim.billingModel || "MEDICARE_CHI",
+    BillingModel: claim.billingModel || payerConfig.billingModel,
     ServiceType: claim.serviceType,
     TotalMinutes: claim.totalMinutes.toString(),
     PrimaryCode: claim.primaryCode,
@@ -461,7 +451,7 @@ export function formatClaimForCSV(claim: BillableClaim, payerConfig?: PayerConfi
     AddOnCode: claim.addOnCode || "",
     AddOnUnits: claim.addOnUnits.toString(),
     DiagnosisCodes: claim.diagnosisCodes.join(";"),
-    EstimatedValue: calculateClaimValue(claim.primaryUnits, claim.addOnUnits, config).toFixed(2),
+    EstimatedValue: calculateClaimValue(claim.primaryUnits, claim.addOnUnits, payerConfig).toFixed(2),
     Status: claim.status,
     NavigatorID: claim.navigatorId,
     CreatedAt: claim.createdAt,
@@ -472,7 +462,7 @@ export function formatClaimForCSV(claim: BillableClaim, payerConfig?: PayerConfi
  * Generate CSV content from claims
  * Supports payer-agnostic export with correct value calculations
  */
-export function generateClaimsCSV(claims: BillableClaim[], payerConfig?: PayerConfig): string {
+export function generateClaimsCSV(claims: BillableClaim[], payerConfig: PayerConfig): string {
   if (claims.length === 0) return ""
 
   const formatted = claims.map(c => formatClaimForCSV(c, payerConfig))

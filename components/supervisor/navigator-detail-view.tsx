@@ -7,16 +7,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { 
-  ArrowLeft, 
-  Users, 
-  Activity, 
-  Calendar, 
-  AlertTriangle, 
+import {
+  ArrowLeft,
+  Users,
+  Activity,
+  AlertTriangle,
   CheckCircle2,
   XCircle,
-  TrendingUp,
-  Clock,
   Phone,
   Mail
 } from "lucide-react"
@@ -29,10 +26,11 @@ interface NavigatorDetailViewProps {
 }
 
 export function NavigatorDetailView({ navigatorId }: NavigatorDetailViewProps) {
-  const { navigators, patients, adverseEvents, getNudgesForNavigator } = useDemoData()
+  const { navigators, patients, adverseEvents, getNudgesForNavigator, getUser, getSupervisor } = useDemoData()
   const { goBack, navigateTo } = useRole()
-  
+
   const navigator = navigators.find(n => n.id === navigatorId)
+  const navigatorUser = getUser(navigatorId)
   const navPatients = patients.filter(p => p.assignedNavigator === navigatorId)
   const navAdverseEvents = adverseEvents.filter(ae => 
     navPatients.some(p => p.id === ae.patientId)
@@ -84,15 +82,17 @@ export function NavigatorDetailView({ navigatorId }: NavigatorDetailViewProps) {
                 <h2 className="text-2xl font-bold text-card-foreground">{navigator.name}</h2>
                 <Badge variant="secondary">{navigator.lengthOfService} months</Badge>
               </div>
-              <p className="text-muted-foreground mt-1">Care Navigator - Phoenix Metro Region</p>
+              <p className="text-muted-foreground mt-1">
+                Care Navigator - {getSupervisor(navigator.supervisorId)?.region ?? "—"}
+              </p>
               <div className="flex items-center gap-6 mt-4">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Phone className="h-4 w-4" />
-                  <span>(602) 555-{1000 + parseInt(navigatorId.replace(/\D/g, "") || "0")}</span>
+                  <span>{navigatorUser?.phone ?? "—"}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Mail className="h-4 w-4" />
-                  <span>{navigator.name.toLowerCase().replace(" ", ".")}@gellert.health</span>
+                  <span>{navigatorUser?.email ?? "—"}</span>
                 </div>
               </div>
             </div>

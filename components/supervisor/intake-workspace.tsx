@@ -32,14 +32,12 @@ import {
 import { cn } from "@/lib/utils"
 import { useRole } from "@/lib/role-context"
 import { useDemoData } from "@/lib/demo-data-context"
-import { initialUsers } from "@/lib/initial-data"
 import {
-  calculateMatchScore,
   rankNavigatorsForReferral,
   type NavigatorWithAttributes,
   type RankedNavigator,
 } from "@/lib/matching-logic"
-import type { Referral } from "@/lib/types"
+import type { NavigatorAttributes, Referral } from "@/lib/types"
 import { toast } from "sonner"
 
 interface IntakeWorkspaceProps {
@@ -48,7 +46,7 @@ interface IntakeWorkspaceProps {
 
 export function IntakeWorkspace({ referralId }: IntakeWorkspaceProps) {
   const { goBack } = useRole()
-  const { referrals, assignReferral, navigators: stateNavigators } = useDemoData()
+  const { referrals, assignReferral, getNavigatorsWithAttributes } = useDemoData()
   const [isAssigning, setIsAssigning] = useState(false)
   // Language override for QA Test B (toggle to es to see Sarah drop)
   const [languageOverride, setLanguageOverride] = useState<string | null>(null)
@@ -65,23 +63,11 @@ export function IntakeWorkspace({ referralId }: IntakeWorkspaceProps) {
     return referral
   }, [referral, languageOverride])
 
-  // Get navigators with attributes: merge initialUsers (geo, languages, acuity) with live caseload from state
-  const navigatorsWithAttributes = useMemo((): NavigatorWithAttributes[] => {
-    return initialUsers
-      .filter(user => user.role === "navigator" && user.attributes)
-      .map(user => {
-        const liveNav = stateNavigators.find(n => n.id === user.id)
-        const currentCaseload = liveNav?.patientCount ?? user.attributes!.currentCaseload
-        return {
-          id: user.id,
-          name: user.name,
-          attributes: {
-            ...user.attributes!,
-            currentCaseload,
-          },
-        }
-      })
-  }, [stateNavigators])
+  // Navigators with attributes (geo, languages, acuity) and live caseload from state
+  const navigatorsWithAttributes = useMemo(
+    (): NavigatorWithAttributes[] => getNavigatorsWithAttributes(),
+    [getNavigatorsWithAttributes]
+  )
 
   // Calculate and rank navigator matches using effective referral
   const rankedNavigators = useMemo((): RankedNavigator[] => {
@@ -187,6 +173,7 @@ export function IntakeWorkspace({ referralId }: IntakeWorkspaceProps) {
                       <NavigatorMatchCard
                         key={nav.navigatorId}
                         navigator={nav}
+                        attributes={navigatorsWithAttributes.find(n => n.id === nav.navigatorId)?.attributes}
                         rank={index + 1}
                         isTopMatch={index === 0 && nav.score > 0}
                         onAssign={() => handleAssign(nav.navigatorId, nav.navigatorName)}
@@ -392,6 +379,7 @@ function ReferralDocument({
 
 interface NavigatorMatchCardProps {
   navigator: RankedNavigator
+  attributes?: NavigatorAttributes
   rank: number
   isTopMatch: boolean
   onAssign: () => void
@@ -401,16 +389,13 @@ interface NavigatorMatchCardProps {
 
 function NavigatorMatchCard({
   navigator,
+  attributes: attrs,
   rank,
   isTopMatch,
   onAssign,
   isAssigning,
   referral,
 }: NavigatorMatchCardProps) {
-  // Get navigator attributes from initial users
-  const navUser = initialUsers.find(u => u.id === navigator.navigatorId)
-  const attrs = navUser?.attributes
-
   // Calculate match percentage (normalize score to 0-100)
   // Max possible score: 40 (distance) + 30 (capacity) + 20 (language) + 10 (acuity) = 100
   const matchPercentage = Math.max(0, Math.min(100, navigator.score))

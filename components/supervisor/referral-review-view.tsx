@@ -8,7 +8,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Select,
@@ -29,26 +28,33 @@ import { Separator } from "@/components/ui/separator"
 import {
   Database,
   FileCheck,
+  FileText,
   AlertTriangle,
   CheckCircle2,
   X,
   Building2,
   User,
   Calendar,
-  Phone,
-  Mail,
   MapPin,
   Stethoscope,
   CreditCard,
   UserPlus,
   ChevronRight,
   Users,
+  Zap,
 } from "lucide-react"
+import { toast } from "sonner"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
-import type { Referral, Patient } from "@/lib/types"
+import { SimulatedHL7Feed } from "@/lib/referral-ingestion"
+import type { Patient } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { AMDSourceIndicator } from "@/components/amd-source-indicator"
+import { HL7IngestDialog } from "@/components/supervisor/hl7-ingest-dialog"
+
+// Rotation state lives at module level in referral-ingestion, so a single
+// shared adapter instance is fine across re-renders.
+const simulatedFeed = new SimulatedHL7Feed()
 
 // Zod schema for intake form validation
 const intakeFormSchema = z.object({
@@ -80,16 +86,20 @@ function getRiskBadge(riskScore: 1 | 2 | 3) {
 }
 
 export function ReferralReviewView() {
-  const { getPendingReferrals, navigators, acceptReferral, rejectReferral } = useDemoData()
-  const { navigateTo } = useRole()
+  const { getPendingReferrals, navigators, acceptReferral, rejectReferral, ingestReferral } = useDemoData()
+  const { navigateTo, currentUser } = useRole()
   const [selectedReferralId, setSelectedReferralId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [hl7DialogOpen, setHl7DialogOpen] = useState(false)
 
   const pendingReferrals = getPendingReferrals()
-  const selectedReferral = pendingReferrals.find(r => r.id === selectedReferralId)
+  // Derived selection: fall back to the first pending referral when nothing is
+  // explicitly selected (or the selection was accepted/rejected away)
+  const selectedReferral =
+    pendingReferrals.find(r => r.id === selectedReferralId) ?? pendingReferrals[0]
 
-  // Get navigators for the supervisor's team (sup1)
-  const teamNavigators = navigators.filter((nav) => nav.supervisorId === "sup1")
+  // Get navigators for the logged-in supervisor's team
+  const teamNavigators = navigators.filter((nav) => nav.supervisorId === currentUser?.id)
 
   const form = useForm<IntakeFormValues>({
     resolver: zodResolver(intakeFormSchema),
@@ -110,13 +120,6 @@ export function ReferralReviewView() {
       assignedNavigator: "",
     },
   })
-
-  // Auto-select first referral on mount
-  useEffect(() => {
-    if (pendingReferrals.length > 0 && !selectedReferralId) {
-      setSelectedReferralId(pendingReferrals[0].id)
-    }
-  }, [pendingReferrals, selectedReferralId])
 
   // Populate form when referral is selected
   useEffect(() => {
@@ -180,15 +183,38 @@ export function ReferralReviewView() {
     setSelectedReferralId(null)
   }
 
+  const handleSimulateIncoming = () => {
+    const { parsed } = simulatedFeed.generateIncoming()
+    ingestReferral(parsed.referral)
+    toast.success(`New referral received from ${parsed.referral.rawData.PV1.facilityName}`)
+  }
+
+  const toolbar = (
+    <div className="flex items-center justify-end gap-2">
+      <Button variant="outline" size="sm" className="gap-2" onClick={handleSimulateIncoming}>
+        <Zap className="h-4 w-4" />
+        Simulate Incoming Referral
+      </Button>
+      <Button variant="outline" size="sm" className="gap-2" onClick={() => setHl7DialogOpen(true)}>
+        <FileText className="h-4 w-4" />
+        Paste HL7…
+      </Button>
+      <HL7IngestDialog open={hl7DialogOpen} onOpenChange={setHl7DialogOpen} />
+    </div>
+  )
+
   // Empty state when no pending referrals
   if (pendingReferrals.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12">
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
-          <CheckCircle2 className="h-8 w-8 text-muted-foreground" />
+      <div className="flex flex-col gap-4">
+        {toolbar}
+        <div className="flex flex-col items-center justify-center py-12">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
+            <CheckCircle2 className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <h3 className="text-lg font-semibold text-card-foreground">All Caught Up!</h3>
+          <p className="text-muted-foreground mt-2">No pending referrals to review.</p>
         </div>
-        <h3 className="text-lg font-semibold text-card-foreground">All Caught Up!</h3>
-        <p className="text-muted-foreground mt-2">No pending referrals to review.</p>
       </div>
     )
   }
@@ -196,7 +222,9 @@ export function ReferralReviewView() {
   const rawData = selectedReferral?.rawData
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[350px_1fr] h-[calc(100vh-180px)]">
+    <div className="flex flex-col gap-4 h-[calc(100vh-180px)]">
+      {toolbar}
+      <div className="grid gap-6 lg:grid-cols-[350px_1fr] flex-1 min-h-0">
       {/* Left Pane - Referral List */}
       <Card className="bg-card flex flex-col h-full">
         <CardHeader className="pb-3 flex-shrink-0">
@@ -213,7 +241,7 @@ export function ReferralReviewView() {
           <ScrollArea className="h-full">
             <CardContent className="space-y-2 pt-0 pb-4">
             {pendingReferrals.map((referral) => {
-              const isSelected = referral.id === selectedReferralId
+              const isSelected = referral.id === selectedReferral?.id
               const risk = getRiskBadge(referral.riskScore)
               return (
                 <div
@@ -298,6 +326,19 @@ export function ReferralReviewView() {
                 </div>
 
                 <Separator />
+
+                {/* Raw HL7v2 message (present when ingested via the HL7 adapter) */}
+                {selectedReferral.rawHL7 && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-amber-500" />
+                      <span className="text-sm font-semibold text-card-foreground">Raw HL7v2 Message</span>
+                    </div>
+                    <pre className="text-xs font-mono bg-muted/50 rounded-lg p-4 overflow-x-auto max-h-48 overflow-y-auto whitespace-pre">
+                      {selectedReferral.rawHL7.split(/\r\n|\r|\n/).join("\n")}
+                    </pre>
+                  </div>
+                )}
 
                 {/* PID Segment */}
                 <div className="space-y-3">
@@ -682,6 +723,7 @@ export function ReferralReviewView() {
           </CardContent>
         </Card>
       )}
+      </div>
     </div>
   )
 }

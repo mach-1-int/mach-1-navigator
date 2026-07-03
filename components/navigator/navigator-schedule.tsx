@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -23,13 +23,13 @@ import {
 } from "@/components/ui/select"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
-import { loadState, saveState } from "@/lib/store"
 import { useToast } from "@/hooks/use-toast"
-import { Plus, Home, Phone, Video, Building, ChevronLeft, ChevronRight, CheckCircle2, Calendar, Clock, Map, List, LogIn, LogOut, MapPin, BadgeCheck, CalendarClock, Info, Users } from "lucide-react"
+import { Plus, Home, Phone, Video, Building, ChevronLeft, ChevronRight, AlertTriangle, Calendar, Clock, Map, List, LogIn, LogOut, MapPin, BadgeCheck, CalendarClock, Info, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Appointment, NavigatorShift, ScheduleEvent, DayOfWeek } from "@/lib/types"
 import { RouteMap } from "./route-map"
-import { NavigatorCalendar } from "@/components/schedule/navigator-calendar"
+import { appointmentDraftToEvent, todayISO } from "@/lib/schedule-utils"
+import { validateScheduleEvent } from "@/lib/schedule-validation"
 
 const TIME_SLOTS = [
   "8:00 AM", "9:00 AM", "10:00 AM", "11:00 AM", 
@@ -75,11 +75,11 @@ const DAY_MAP: Record<number, DayOfWeek> = {
 }
 
 export function NavigatorSchedule() {
-  const { patients, navigators, scheduleAppointment, updateAppointment, checkInAppointment, checkOutAppointment, getSupervisor } = useDemoData()
+  const { patients, navigators, scheduleAppointment, updateAppointment, checkInAppointment, checkOutAppointment, getSupervisor, scheduleEvents, navigatorShifts, updateScheduleEvent, isHydrated } = useDemoData()
   const { currentUser } = useRole()
   const { toast } = useToast()
   const currentNavigator = navigators.find((n) => n.id === currentUser?.id) ?? navigators[0]
-  const myPatients = patients.filter((p) => p.assignedNavigator === currentNavigator.id)
+  const myPatients = patients.filter((p) => p.assignedNavigator === currentNavigator?.id)
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false)
@@ -92,31 +92,33 @@ export function NavigatorSchedule() {
   const [viewMode, setViewMode] = useState<ViewMode>("dual-track")
   const [showTeamView, setShowTeamView] = useState(false)
 
-  // State for shifts and schedule events from store
-  const [myShifts, setMyShifts] = useState<NavigatorShift[]>([])
-  const [scheduleEvents, setScheduleEvents] = useState<ScheduleEvent[]>([])
-  const [allShifts, setAllShifts] = useState<NavigatorShift[]>([])
+  // Shifts from context (published only)
+  const allShifts = navigatorShifts.filter((s) => s.isPublished)
+  const myShifts = allShifts.filter((shift) => shift.navigatorId === currentNavigator?.id)
 
-  // Load shifts and events on mount
-  useEffect(() => {
-    const state = loadState()
-    // Get this navigator's shifts
-    const navigatorShifts = state.navigatorShifts.filter(
-      (shift) => shift.navigatorId === currentNavigator.id && shift.isPublished
+  // Live validation of the "New Appointment" draft against existing schedule events
+  const draftValidation = useMemo(() => {
+    if (!currentNavigator || !selectedPatient || !selectedDate || !selectedTime) return null
+    const patient = patients.find((p) => p.id === selectedPatient)
+    if (!patient) return null
+    const draft = appointmentDraftToEvent(
+      patient,
+      currentNavigator.id,
+      currentNavigator.name,
+      selectedDate,
+      selectedTime,
+      selectedType
     )
-    setMyShifts(navigatorShifts)
-    setAllShifts(state.navigatorShifts.filter((s) => s.isPublished))
-    // Get this navigator's schedule events
-    const navigatorEvents = state.scheduleEvents.filter(
-      (event) => event.navigatorId === currentNavigator.id
-    )
-    setScheduleEvents(navigatorEvents)
-  }, [currentNavigator.id])
+    return validateScheduleEvent(draft, scheduleEvents)
+  }, [currentNavigator, selectedPatient, selectedDate, selectedTime, selectedType, patients, scheduleEvents])
+
+  const draftErrors = draftValidation?.conflicts.filter((c) => c.severity === "ERROR") ?? []
+  const draftWarnings = draftValidation?.conflicts.filter((c) => c.severity === "WARNING") ?? []
 
   // Get current shift for today
   const getTodayShift = (): NavigatorShift | null => {
     const today = new Date()
-    const dateStr = today.toISOString().split("T")[0]
+    const dateStr = todayISO()
     const dayOfWeek = DAY_MAP[today.getDay()]
 
     return myShifts.find((shift) => {
@@ -231,6 +233,7 @@ export function NavigatorSchedule() {
   }
 
   const handleSchedule = () => {
+    if (draftErrors.length > 0) return
     if (selectedPatient && selectedDate && selectedTime && selectedType) {
       scheduleAppointment(
         selectedPatient,
@@ -313,16 +316,9 @@ export function NavigatorSchedule() {
     return date.toDateString() === today.toDateString()
   }
 
-  // Handle event status change from NavigatorCalendar
+  // Handle event status change (e.g. EVV check-in on a schedule event)
   const handleEventStatusChange = (eventId: string, newStatus: ScheduleEvent["status"]) => {
-    setScheduleEvents((prev) => {
-      const next = prev.map((event) =>
-        event.id === eventId ? { ...event, status: newStatus } : event
-      )
-      const state = loadState()
-      saveState({ ...state, scheduleEvents: next })
-      return next
-    })
+    updateScheduleEvent(eventId, { status: newStatus })
     if (newStatus === "IN_PROGRESS") {
       const time = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
       toast({ title: `Checked in at ${time}` })
@@ -331,16 +327,11 @@ export function NavigatorSchedule() {
 
   // Handle reschedule (e.g. "Move to 11:00 AM") to clear travel conflict
   const handleEventReschedule = (eventId: string, newStartTime: string, newEndTime: string) => {
-    setScheduleEvents((prev) => {
-      const next = prev.map((event) =>
-        event.id === eventId ? { ...event, startTime: newStartTime, endTime: newEndTime } : event
-      )
-      const state = loadState()
-      saveState({ ...state, scheduleEvents: next })
-      return next
-    })
+    updateScheduleEvent(eventId, { startTime: newStartTime, endTime: newEndTime })
     toast({ title: "Event rescheduled", description: "Event moved to 11:00 AM" })
   }
+
+  if (!isHydrated || !currentNavigator) return null
 
   return (
     <div className="space-y-6">
@@ -503,12 +494,37 @@ export function NavigatorSchedule() {
                     </SelectContent>
                   </Select>
                 </div>
+                {/* Scheduling conflicts (ERROR blocks, WARNING allows) */}
+                {draftErrors.length > 0 && (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
+                      <div className="space-y-1">
+                        {draftErrors.map((conflict, index) => (
+                          <p key={index} className="text-sm">{conflict.message}</p>
+                        ))}
+                      </div>
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {draftWarnings.length > 0 && (
+                  <Alert className="border-amber-300 bg-amber-50 text-amber-800 [&>svg]:text-amber-600">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
+                      <div className="space-y-1">
+                        {draftWarnings.map((conflict, index) => (
+                          <p key={index} className="text-sm">{conflict.message}</p>
+                        ))}
+                      </div>
+                    </AlertDescription>
+                  </Alert>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-                <Button 
+                <Button
                   onClick={handleSchedule}
-                  disabled={!selectedPatient || !selectedDate || !selectedTime}
+                  disabled={!selectedPatient || !selectedDate || !selectedTime || draftErrors.length > 0}
                 >
                   Schedule
                 </Button>

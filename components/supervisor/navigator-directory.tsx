@@ -8,26 +8,36 @@ import { Button } from "@/components/ui/button"
 import { Users, ChevronRight, TrendingUp, TrendingDown, Minus } from "lucide-react"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
+import { calculateDurationMinutes } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
 export function NavigatorDirectory() {
-  const { navigators, patients, getNudgesForNavigator } = useDemoData()
-  const { navigateTo } = useRole()
-  
-  // Filter navigators under supervisor 1
-  const teamNavigators = navigators.filter(nav => nav.supervisorId === "sup1")
-  
+  const { navigators, patients, appointments, timeLogs, getNudgesForNavigator } = useDemoData()
+  const { navigateTo, currentUser } = useRole()
+
+  // Filter navigators under the current supervisor
+  const teamNavigators = navigators.filter(nav => nav.supervisorId === currentUser?.id)
+
   // Calculate additional metrics for each navigator
   const navigatorMetrics = teamNavigators.map(nav => {
     const navPatients = patients.filter(p => p.assignedNavigator === nav.id)
-    const avgCompliance = navPatients.length > 0 
+    const avgCompliance = navPatients.length > 0
       ? Math.round(navPatients.reduce((sum, p) => sum + p.medicationCompliance, 0) / navPatients.length)
       : 0
     const pendingMessages = getNudgesForNavigator(nav.id).filter(m => !m.readStatus).length
-    
-    // Mock average visit time (would come from real data)
-    const avgVisitTime = 35 + Math.floor(Math.random() * 20) // 35-55 minutes
-    
+
+    // Average visit time: mean duration of completed EVV-verified appointments,
+    // falling back to the navigator's logged time entries
+    const completedVisits = appointments.filter(a =>
+      a.navigatorId === nav.id && a.status === "completed" && a.checkInTime && a.checkOutTime
+    )
+    const navTimeLogs = timeLogs.filter(log => log.navigatorId === nav.id)
+    const avgVisitTime = completedVisits.length > 0
+      ? Math.round(completedVisits.reduce((sum, a) => sum + calculateDurationMinutes(a.checkInTime!, a.checkOutTime!), 0) / completedVisits.length)
+      : navTimeLogs.length > 0
+        ? Math.round(navTimeLogs.reduce((sum, log) => sum + log.durationMinutes, 0) / navTimeLogs.length)
+        : null
+
     // Determine load status
     const loadStatus = nav.patientCount > 50 ? "high" : nav.patientCount > 35 ? "medium" : "low"
     
@@ -40,6 +50,12 @@ export function NavigatorDirectory() {
       patientList: navPatients
     }
   })
+
+  // Team-wide average visit time (only navigators with visit data)
+  const navigatorsWithVisitTime = navigatorMetrics.filter(n => n.avgVisitTime !== null)
+  const teamAvgVisitTime = navigatorsWithVisitTime.length > 0
+    ? Math.round(navigatorsWithVisitTime.reduce((sum, n) => sum + (n.avgVisitTime ?? 0), 0) / navigatorsWithVisitTime.length)
+    : null
 
   const getLoadBadge = (status: string) => {
     switch (status) {
@@ -113,7 +129,7 @@ export function NavigatorDirectory() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-card-foreground">
-                  {Math.round(navigatorMetrics.reduce((sum, n) => sum + n.avgVisitTime, 0) / navigatorMetrics.length)} min
+                  {teamAvgVisitTime !== null ? `${teamAvgVisitTime} min` : "—"}
                 </p>
                 <p className="text-sm text-muted-foreground">Avg Visit Time</p>
               </div>
@@ -185,7 +201,7 @@ export function NavigatorDirectory() {
                       </div>
                     </TableCell>
                     <TableCell className="text-center text-card-foreground">
-                      {navigator.avgVisitTime} min
+                      {navigator.avgVisitTime !== null ? `${navigator.avgVisitTime} min` : "—"}
                     </TableCell>
                     <TableCell className="text-center">
                       <span className={cn(

@@ -28,6 +28,7 @@ import { useState } from "react"
 import { useRole } from "@/lib/role-context"
 import { useDemoData } from "@/lib/demo-data-context"
 import { AMDSourceIndicator } from "@/components/amd-source-indicator"
+import { daysSince, todayISO } from "@/lib/schedule-utils"
 import { ExternalLink } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { PatientNote } from "@/lib/types"
@@ -208,7 +209,7 @@ export function NavigatorDashboard() {
         />
         <StatCard
           title="Today's Appointments"
-          value={upcomingAppointments.filter((a) => a.date === "2026-01-26").length}
+          value={upcomingAppointments.filter((a) => a.date === todayISO()).length}
           subtitle="scheduled for today"
           icon={Calendar}
         />
@@ -374,7 +375,7 @@ export function NavigatorDashboard() {
                 const nextAppointment = patient.upcomingAppointments
                   .filter(apt => apt.status === "scheduled")
                   .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0]
-                const daysSinceContact = Math.max(0, Math.floor((Date.now() - new Date(patient.lastContactDate).getTime()) / (1000 * 60 * 60 * 24)))
+                const daysSinceContact = daysSince(patient.lastContactDate)
                 const contactWarning = daysSinceContact > 14
                 
                 return (

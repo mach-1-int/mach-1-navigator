@@ -22,11 +22,9 @@ import {
 import { cn } from "@/lib/utils"
 import { useDemoData } from "@/lib/demo-data-context"
 import {
-  calculateCurrentMonthBilling,
+  calculateCurrentMonthBillingProgress,
   formatBillingCodes,
-  estimateRevenue,
   getTimeLogsSummaryByDate,
-  type BillingCalculationResult,
 } from "@/lib/billing-engine"
 import type { ServiceType } from "@/lib/types"
 
@@ -39,6 +37,7 @@ interface BillingProgressBarProps {
 
 /**
  * Visual progress bar showing billing status for current month
+ * Payer-aware: renders Rule of Eights (Medicaid) or base + add-on (Medicare)
  */
 export function BillingProgressBar({
   patientId,
@@ -46,55 +45,54 @@ export function BillingProgressBar({
   showDetails = true,
   compact = false,
 }: BillingProgressBarProps) {
-  const { timeLogs, getPatient } = useDemoData()
+  const { timeLogs, getPatient, activePayerConfig } = useDemoData()
 
   const patient = getPatient(patientId)
   const effectiveServiceType = patient?.billingTrack || serviceType
 
-  // Calculate billing for current month
+  // Calculate billing progress for current month under the active payer
   const billingResult = useMemo(() => {
-    return calculateCurrentMonthBilling(timeLogs, patientId, effectiveServiceType)
-  }, [timeLogs, patientId, effectiveServiceType])
+    return calculateCurrentMonthBillingProgress(timeLogs, patientId, activePayerConfig)
+  }, [timeLogs, patientId, activePayerConfig])
+
+  const isRuleOfEights = billingResult.mode === "RULE_OF_EIGHTS"
+  const baseMinimum = activePayerConfig.baseMinimum
 
   // Get time logs summary for tooltip
   const logsSummary = useMemo(() => {
     return getTimeLogsSummaryByDate(timeLogs, patientId, billingResult.billingPeriod)
   }, [timeLogs, patientId, billingResult.billingPeriod])
 
-  // Estimated revenue
-  const estimatedRevenue = useMemo(() => {
-    return estimateRevenue(billingResult)
-  }, [billingResult])
+  // Estimated revenue (payer rate card)
+  const estimatedRevenue = billingResult.estimatedRevenue
 
-  // Calculate overall progress percentage (0-100 for first billable unit)
+  // Main progress bar value:
+  // - Medicaid: progress within the current 15-min unit window
+  // - Medicare: progress toward the base code threshold
   const overallProgress = useMemo(() => {
-    if (billingResult.totalMinutes >= 60) {
+    if (isRuleOfEights) {
+      return billingResult.progressToNextUnit
+    }
+    if (billingResult.totalMinutes >= baseMinimum) {
       return 100
     }
-    return (billingResult.totalMinutes / 60) * 100
-  }, [billingResult.totalMinutes])
+    return (billingResult.totalMinutes / baseMinimum) * 100
+  }, [isRuleOfEights, billingResult.progressToNextUnit, billingResult.totalMinutes, baseMinimum])
 
-  // Get progress bar color based on status
-  const getProgressColor = () => {
-    if (billingResult.statusLevel === "unbillable") {
-      return "bg-amber-500"
-    }
-    if (billingResult.statusLevel === "qualified") {
-      return "bg-green-500"
-    }
-    return "bg-blue-500"
-  }
+  // Compact/inline minutes label
+  const minutesLabel = isRuleOfEights
+    ? `${billingResult.totalMinutes} min • ${billingResult.unitsEarned} units earned`
+    : `${billingResult.totalMinutes}/${baseMinimum} min`
 
   // Get status icon
-  const StatusIcon = () => {
-    if (billingResult.statusLevel === "unbillable") {
-      return <Clock className="h-4 w-4 text-amber-600" />
-    }
-    if (billingResult.statusLevel === "qualified") {
-      return <CheckCircle2 className="h-4 w-4 text-green-600" />
-    }
-    return <TrendingUp className="h-4 w-4 text-blue-600" />
-  }
+  const statusIcon =
+    billingResult.statusLevel === "unbillable" ? (
+      <Clock className="h-4 w-4 text-amber-600" />
+    ) : billingResult.statusLevel === "qualified" ? (
+      <CheckCircle2 className="h-4 w-4 text-green-600" />
+    ) : (
+      <TrendingUp className="h-4 w-4 text-blue-600" />
+    )
 
   // Format month name
   const monthName = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })
@@ -119,7 +117,7 @@ export function BillingProgressBar({
                 />
               </div>
               <span className="text-xs text-muted-foreground">
-                {billingResult.totalMinutes}/{60} min
+                {minutesLabel}
               </span>
               {billingResult.isBillable && (
                 <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
@@ -161,17 +159,26 @@ export function BillingProgressBar({
             <DollarSign className="h-4 w-4" />
             Billing Progress - {monthName}
           </CardTitle>
-          <Badge
-            variant="outline"
-            className={cn(
-              "text-xs",
-              effectiveServiceType === "PIN"
-                ? "bg-purple-50 text-purple-700 border-purple-200"
-                : "bg-blue-50 text-blue-700 border-blue-200"
-            )}
-          >
-            {effectiveServiceType === "PIN" ? "Principal Illness" : "Community Health"}
-          </Badge>
+          {isRuleOfEights ? (
+            <Badge
+              variant="outline"
+              className="text-xs bg-teal-50 text-teal-700 border-teal-200"
+            >
+              {billingResult.payerName}
+            </Badge>
+          ) : (
+            <Badge
+              variant="outline"
+              className={cn(
+                "text-xs",
+                effectiveServiceType === "PIN"
+                  ? "bg-purple-50 text-purple-700 border-purple-200"
+                  : "bg-blue-50 text-blue-700 border-blue-200"
+              )}
+            >
+              {effectiveServiceType === "PIN" ? "Principal Illness" : "Community Health"}
+            </Badge>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -179,7 +186,7 @@ export function BillingProgressBar({
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-2">
-              <StatusIcon />
+              {statusIcon}
               <span className={cn(
                 "font-medium",
                 billingResult.statusLevel === "unbillable"
@@ -192,11 +199,11 @@ export function BillingProgressBar({
               </span>
             </div>
             <span className="text-muted-foreground font-mono">
-              {billingResult.totalMinutes}/60 min
+              {minutesLabel}
             </span>
           </div>
 
-          {/* Progress toward base code (60 min) */}
+          {/* Progress toward next unit (Medicaid) or base code (Medicare) */}
           <div className="relative">
             <Progress
               value={overallProgress}
@@ -219,14 +226,29 @@ export function BillingProgressBar({
           </div>
 
           {/* Threshold labels */}
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>0 min</span>
-            <span className="font-medium">60 min (Base Code)</span>
-          </div>
+          {isRuleOfEights ? (
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>
+                {billingResult.unitsEarned > 0
+                  ? `${billingResult.unitsEarned} unit${billingResult.unitsEarned > 1 ? "s" : ""} earned`
+                  : "0 units earned"}
+              </span>
+              <span className="font-medium">
+                {billingResult.unitsEarned === 0
+                  ? `${baseMinimum} min = 1st unit`
+                  : `${billingResult.minutesToNextUnit} min to next unit`}
+              </span>
+            </div>
+          ) : (
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>0 min</span>
+              <span className="font-medium">{baseMinimum} min (Base Code)</span>
+            </div>
+          )}
         </div>
 
-        {/* Add-on progress (if applicable) */}
-        {billingResult.totalMinutes > 60 && (
+        {/* Add-on progress (Medicare only) */}
+        {!isRuleOfEights && billingResult.totalMinutes > baseMinimum && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Add-on Progress</span>
@@ -240,7 +262,9 @@ export function BillingProgressBar({
               className="h-2 [&>div]:bg-blue-400"
             />
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{(billingResult.totalMinutes - 60) % 30} min into current unit</span>
+              <span>
+                {(billingResult.totalMinutes - baseMinimum) % activePayerConfig.unitIncrement} min into current unit
+              </span>
               <span>{billingResult.minutesToNextUnit} min to next unit</span>
             </div>
           </div>
@@ -343,19 +367,20 @@ export function BillingProgressBar({
  */
 export function BillingIndicator({
   patientId,
-  serviceType = "CHI",
 }: {
   patientId: string
   serviceType?: ServiceType
 }) {
-  const { timeLogs, getPatient } = useDemoData()
-
-  const patient = getPatient(patientId)
-  const effectiveServiceType = patient?.billingTrack || serviceType
+  const { timeLogs, activePayerConfig } = useDemoData()
 
   const billingResult = useMemo(() => {
-    return calculateCurrentMonthBilling(timeLogs, patientId, effectiveServiceType)
-  }, [timeLogs, patientId, effectiveServiceType])
+    return calculateCurrentMonthBillingProgress(timeLogs, patientId, activePayerConfig)
+  }, [timeLogs, patientId, activePayerConfig])
+
+  const isRuleOfEights = billingResult.mode === "RULE_OF_EIGHTS"
+  const minutesLabel = isRuleOfEights
+    ? `${billingResult.totalMinutes} min • ${billingResult.unitsEarned} units`
+    : `${billingResult.totalMinutes}/${activePayerConfig.baseMinimum} min`
 
   if (billingResult.totalMinutes === 0) {
     return (
@@ -378,7 +403,7 @@ export function BillingIndicator({
                   : "bg-blue-50 text-blue-700 border-blue-200"
             )}
           >
-            {billingResult.totalMinutes}/{60} min
+            {minutesLabel}
             {billingResult.isBillable && ` • ${billingResult.baseCode}`}
           </Badge>
         </TooltipTrigger>

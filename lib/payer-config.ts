@@ -6,7 +6,7 @@
  * - Medicare PIN/CHI (G-codes, 60-min base + 30-min add-on)
  */
 
-import type { ActivityType, BillingModel, HCodeDefinition, Patient, Payer, PayerConfig } from "./types"
+import type { ActivityType, BillingModel, HCodeDefinition, Patient, Payer, PayerConfig, TimeLog } from "./types"
 
 // ============================================================================
 // H-CODE DEFINITIONS (Medicaid Behavioral Health)
@@ -241,6 +241,33 @@ export function calculateClaimValue(
 export function getHCodeForActivity(activityType: ActivityType): string {
   const hCode = H_CODES.find((h) => h.activityTypes.includes(activityType))
   return hCode?.code || "H0038" // Default to peer support
+}
+
+/**
+ * Get the dominant H-code for a set of time logs (Medicaid billing)
+ * The dominant activity is the one with the most minutes logged;
+ * its mapped H-code becomes the claim's primary code.
+ *
+ * @param logs Time logs for a single patient/month
+ * @returns H-code string (e.g., "H0038", "H2015", "H0023")
+ */
+export function getDominantHCode(logs: TimeLog[]): string {
+  const activityMinutes = new Map<ActivityType, number>()
+  for (const log of logs) {
+    const activity = log.activityType || "PEER_SUPPORT"
+    activityMinutes.set(activity, (activityMinutes.get(activity) || 0) + log.durationMinutes)
+  }
+
+  let dominantActivity: ActivityType = "PEER_SUPPORT"
+  let maxMinutes = 0
+  for (const [activity, minutes] of activityMinutes) {
+    if (minutes > maxMinutes) {
+      maxMinutes = minutes
+      dominantActivity = activity
+    }
+  }
+
+  return getHCodeForActivity(dominantActivity)
 }
 
 /**

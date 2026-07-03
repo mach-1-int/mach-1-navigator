@@ -182,9 +182,6 @@ export function TeamCalendar({
     return getNavigatorEvents(navigatorId, date).length
   }
 
-  // Filter navigators by supervisor (in real app, would filter by supervisorId)
-  const teamNavigators = navigators.slice(0, 6) // Show first 6 for demo
-
   // Calculate team stats for the day
   const dayStats = useMemo(() => {
     const dateStr = getDateString(selectedDate)
@@ -195,9 +192,9 @@ export function TeamCalendar({
       medicalVisits: dayEvents.filter((e) => e.type === "MEDICAL_VISIT").length,
       navigatorVisits: dayEvents.filter((e) => e.type === "NAVIGATOR_VISIT").length,
       highRiskVisits: dayEvents.filter((e) => e.isHighSafetyRisk).length,
-      navigatorsScheduled: teamNavigators.filter((n) => hasShiftOnDate(n.id, selectedDate)).length,
+      navigatorsScheduled: navigators.filter((n) => hasShiftOnDate(n.id, selectedDate)).length,
     }
-  }, [events, selectedDate, teamNavigators, shifts])
+  }, [events, selectedDate, navigators, shifts])
 
   return (
     <Card className="h-full flex flex-col">
@@ -209,7 +206,7 @@ export function TeamCalendar({
               Team Calendar
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              {teamNavigators.length} navigators • {dayStats.navigatorsScheduled} scheduled today
+              {navigators.length} navigators • {dayStats.navigatorsScheduled} scheduled today
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -285,7 +282,7 @@ export function TeamCalendar({
             {/* Navigator Columns */}
             <div className="flex-1 overflow-x-auto">
               <div className="flex min-w-max h-full">
-                {teamNavigators.map((navigator) => {
+                {navigators.map((navigator) => {
                   const shift = hasShiftOnDate(navigator.id, selectedDate)
                   const navEvents = getNavigatorEvents(navigator.id, selectedDate)
 
@@ -415,7 +412,7 @@ export function TeamCalendar({
                 </tr>
               </thead>
               <tbody>
-                {teamNavigators.map((navigator) => (
+                {navigators.map((navigator) => (
                   <tr key={navigator.id} className="hover:bg-gray-50/50">
                     <td className="px-3 py-3 border-b border-r bg-gray-50/50">
                       <div className="font-medium text-sm">{navigator.name}</div>

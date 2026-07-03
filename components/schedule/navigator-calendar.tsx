@@ -74,11 +74,8 @@ export function NavigatorCalendar({
   showTeamToggle = false,
   onAddEvent,
 }: NavigatorCalendarProps) {
-  // Default to Jan 29 2026 so seed events (travel conflict, EVV, safety) are visible
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const seed = new Date("2026-01-29")
-    return seed
-  })
+  // Default to today - seed events are rebased to the current date anchor
+  const [selectedDate, setSelectedDate] = useState(() => new Date())
   const [showTeamView, setShowTeamView] = useState(false)
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null)
 

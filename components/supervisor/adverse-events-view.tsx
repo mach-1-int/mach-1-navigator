@@ -14,7 +14,6 @@ import {
   Activity,
   User,
   Users,
-  Calendar,
   Building2,
   Phone
 } from "lucide-react"
@@ -24,12 +23,12 @@ import { cn } from "@/lib/utils"
 import type { AdverseEvent } from "@/lib/types"
 
 export function AdverseEventsView() {
-  const { patients, navigators, adverseEvents } = useDemoData()
-  const { navigateTo } = useRole()
+  const { patients, navigators, adverseEvents, getUser, getSupervisor } = useDemoData()
+  const { navigateTo, currentUser } = useRole()
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set())
-  
-  // Filter to team patients (supervisor 1's team)
-  const teamNavigators = navigators.filter(nav => nav.supervisorId === "sup1")
+
+  // Filter to the current supervisor's team patients
+  const teamNavigators = navigators.filter(nav => nav.supervisorId === currentUser?.id)
   const teamPatients = patients.filter(p => 
     teamNavigators.some(n => n.id === p.assignedNavigator)
   )
@@ -89,7 +88,10 @@ export function AdverseEventsView() {
     const StatusIcon = statusConfig.icon
     const isExpanded = expandedEvents.has(event.id)
     const { patient, navigator } = getPatientInfo(event.patientId)
-    
+    const supervisor = patient ? getSupervisor(patient.assignedSupervisor) : undefined
+    const navigatorPhone = navigator ? getUser(navigator.id)?.phone : undefined
+    const supervisorPhone = supervisor ? getUser(supervisor.id)?.phone : undefined
+
     return (
       <Collapsible 
         key={event.id} 
@@ -228,23 +230,31 @@ export function AdverseEventsView() {
                           <p className="font-medium text-card-foreground">{navigator?.name || "Unassigned"}</p>
                           <p className="text-xs text-muted-foreground">Care Navigator</p>
                         </div>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <Phone className="h-4 w-4" />
-                        </Button>
+                        {navigatorPhone && (
+                          <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                            <a href={`tel:${navigatorPhone}`} aria-label={`Call ${navigator?.name}`}>
+                              <Phone className="h-4 w-4" />
+                            </a>
+                          </Button>
+                        )}
                       </div>
-                      
+
                       {/* Supervisor */}
                       <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary">
                           <Users className="h-5 w-5 text-secondary-foreground" />
                         </div>
                         <div className="flex-1">
-                          <p className="font-medium text-card-foreground">Sarah Johnson</p>
+                          <p className="font-medium text-card-foreground">{supervisor?.name ?? "Unassigned"}</p>
                           <p className="text-xs text-muted-foreground">Clinical Supervisor</p>
                         </div>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <Phone className="h-4 w-4" />
-                        </Button>
+                        {supervisorPhone && (
+                          <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                            <a href={`tel:${supervisorPhone}`} aria-label={`Call ${supervisor?.name}`}>
+                              <Phone className="h-4 w-4" />
+                            </a>
+                          </Button>
+                        )}
                       </div>
                     </div>
                     

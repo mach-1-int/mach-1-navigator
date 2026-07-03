@@ -3,7 +3,101 @@
  * Travel conflict detection and scheduling helpers
  */
 
-import type { ScheduleEvent } from "./types"
+import type { Appointment, Patient, ScheduleEvent } from "./types"
+
+// ============================================================================
+// DATE HELPERS
+// ============================================================================
+
+/**
+ * Today's LOCAL date as YYYY-MM-DD.
+ * (new Date().toISOString() would return the UTC date, which is wrong for
+ * evening hours in Arizona.)
+ */
+export function todayISO(): string {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, "0")
+  const day = String(now.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * Whole days elapsed since the given date (never negative)
+ */
+export function daysSince(date: string): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24)))
+}
+
+// ============================================================================
+// APPOINTMENT DRAFT ADAPTER
+// ============================================================================
+
+const APPOINTMENT_TYPE_LABELS: Record<Appointment["type"], string> = {
+  home_visit: "Home Visit",
+  video_call: "Video Call",
+  phone_call: "Phone Call",
+  clinic: "Clinic Visit",
+}
+
+/**
+ * Parse a display time like "8:00 AM" / "12:30 PM" into { hours, minutes } (24h)
+ */
+function parseDisplayTime(time: string): { hours: number; minutes: number } {
+  const match = time.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i)
+  if (!match) return { hours: 0, minutes: 0 }
+  let hours = parseInt(match[1], 10)
+  const minutes = parseInt(match[2], 10)
+  const meridiem = match[3]?.toUpperCase()
+  if (meridiem === "PM" && hours !== 12) hours += 12
+  if (meridiem === "AM" && hours === 12) hours = 0
+  return { hours, minutes }
+}
+
+/**
+ * Build a draft ScheduleEvent from the "New Appointment" dialog inputs so it
+ * can be run through validateScheduleEvent before committing.
+ *
+ * - Parses date ("YYYY-MM-DD") + display time ("9:00 AM") to an ISO start
+ * - End time defaults to start + 60 minutes
+ * - Location comes from the patient's address/zip
+ * - isHighSafetyRisk derives from patient riskLevel === 3
+ */
+export function appointmentDraftToEvent(
+  patient: Patient,
+  navigatorId: string,
+  navigatorName: string,
+  date: string, // YYYY-MM-DD
+  time: string, // e.g. "9:00 AM"
+  type: Appointment["type"]
+): Omit<ScheduleEvent, "id"> {
+  const { hours, minutes } = parseDisplayTime(time)
+  const [year, month, day] = date.split("-").map(Number)
+  const start = new Date(year, month - 1, day, hours, minutes)
+  const end = new Date(start.getTime() + 60 * 60000)
+
+  return {
+    patientId: patient.id,
+    patientName: patient.name,
+    navigatorId,
+    navigatorName,
+    type: "NAVIGATOR_VISIT",
+    title: `${APPOINTMENT_TYPE_LABELS[type]} - ${patient.name}`,
+    location: {
+      name: type === "home_visit" ? `${patient.name}'s Home` : APPOINTMENT_TYPE_LABELS[type],
+      address: patient.address
+        ? `${patient.address.street}, ${patient.address.city}, ${patient.address.state} ${patient.address.zip}`
+        : "Address on file",
+      zipCode: patient.address?.zip ?? "",
+      lat: patient.lat,
+      lng: patient.lng,
+    },
+    startTime: start.toISOString(),
+    endTime: end.toISOString(),
+    isHighSafetyRisk: patient.riskLevel === 3,
+    status: "SCHEDULED",
+  }
+}
 
 // ============================================================================
 // TRAVEL CONFLICT DETECTION

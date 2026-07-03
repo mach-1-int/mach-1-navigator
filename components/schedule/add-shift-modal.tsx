@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import {
   Dialog,
   DialogContent,
@@ -20,16 +20,22 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { NavigatorShift, DayOfWeek, Navigator } from "@/lib/types"
-import { generateId } from "@/lib/store"
+import { validateShift, type ScheduleConflict } from "@/lib/schedule-validation"
+
+/** Shift payload without server-assigned fields (context's addShift assigns them) */
+export type ShiftDraft = Omit<NavigatorShift, "id" | "createdAt" | "updatedAt">
 
 interface AddShiftModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   navigators: Navigator[]
   supervisorId: string
-  onAddShift: (shift: NavigatorShift, publish: boolean) => void
+  existingShifts: NavigatorShift[]
+  onAddShift: (shift: ShiftDraft) => void
   existingShift?: NavigatorShift // For editing
 }
 
@@ -48,6 +54,7 @@ export function AddShiftModal({
   onOpenChange,
   navigators,
   supervisorId,
+  existingShifts,
   onAddShift,
   existingShift,
 }: AddShiftModalProps) {
@@ -92,20 +99,18 @@ export function AddShiftModal({
     return navigators.find((n) => n.id === id)?.name || "Unknown"
   }
 
-  // Handle form submission
-  const handleSubmit = (publish: boolean) => {
+  // Build the shift drafts for the current form state (one per navigator)
+  const buildShiftDrafts = (publish: boolean): ShiftDraft[] => {
     const navigatorsToSchedule = includeAllNavigators
       ? navigators.map((n) => n.id)
       : [selectedNavigatorId]
 
-    const now = new Date().toISOString()
-
     // If no days selected, use all days of the week (shift applies to every day in range)
     const daysToUse = selectedDays.length > 0 ? selectedDays : DAYS_OF_WEEK
 
-    navigatorsToSchedule.forEach((navId) => {
-      const shift: NavigatorShift = {
-        id: existingShift?.id || generateId(),
+    return navigatorsToSchedule
+      .filter(Boolean)
+      .map((navId) => ({
         navigatorId: navId,
         navigatorName: getNavigatorName(navId),
         supervisorId,
@@ -117,11 +122,63 @@ export function AddShiftModal({
         region: includeAllRegions ? undefined : selectedRegion,
         notes: notes || undefined,
         isPublished: publish,
-        createdAt: existingShift?.createdAt || now,
-        updatedAt: now,
-      }
+      }))
+  }
 
-      onAddShift(shift, publish)
+  // Live validation against existing shifts (ERROR blocks submit, WARNING allows)
+  const validationConflicts = useMemo<ScheduleConflict[]>(() => {
+    if (!includeAllNavigators && !selectedNavigatorId) return []
+
+    const navigatorsToCheck = includeAllNavigators
+      ? navigators.map((n) => n.id)
+      : [selectedNavigatorId]
+    const daysToUse = selectedDays.length > 0 ? selectedDays : DAYS_OF_WEEK
+
+    return navigatorsToCheck.filter(Boolean).flatMap((navId) => {
+      const candidate: NavigatorShift = {
+        id: existingShift?.id ?? "__draft__",
+        navigatorId: navId,
+        navigatorName: getNavigatorName(navId),
+        supervisorId,
+        startDate,
+        endDate: noEndDate ? undefined : endDate,
+        days: daysToUse,
+        startTime: `${startTimeHour}:${startTimeMinute}`,
+        endTime: `${endTimeHour}:${endTimeMinute}`,
+        isPublished: true,
+        createdAt: "",
+        updatedAt: "",
+      }
+      return validateShift(candidate, existingShifts).conflicts
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    includeAllNavigators,
+    selectedNavigatorId,
+    navigators,
+    selectedDays,
+    startDate,
+    endDate,
+    noEndDate,
+    startTimeHour,
+    startTimeMinute,
+    endTimeHour,
+    endTimeMinute,
+    existingShifts,
+    existingShift?.id,
+    supervisorId,
+  ])
+
+  const errorConflicts = validationConflicts.filter((c) => c.severity === "ERROR")
+  const warningConflicts = validationConflicts.filter((c) => c.severity === "WARNING")
+  const hasBlockingConflicts = errorConflicts.length > 0
+
+  // Handle form submission
+  const handleSubmit = (publish: boolean) => {
+    if (hasBlockingConflicts) return
+
+    buildShiftDrafts(publish).forEach((shift) => {
+      onAddShift(shift)
     })
 
     // Reset form
@@ -380,21 +437,47 @@ export function AddShiftModal({
 
           <Separator />
 
+          {/* Validation Conflicts */}
+          {errorConflicts.length > 0 && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                <div className="space-y-1">
+                  {errorConflicts.map((conflict, index) => (
+                    <p key={index} className="text-sm">{conflict.message}</p>
+                  ))}
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+          {warningConflicts.length > 0 && (
+            <Alert className="border-amber-300 bg-amber-50 text-amber-800 [&>svg]:text-amber-600">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                <div className="space-y-1">
+                  {warningConflicts.map((conflict, index) => (
+                    <p key={index} className="text-sm">{conflict.message}</p>
+                  ))}
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Action Buttons */}
           <div className="flex justify-end gap-3">
             <Button
               variant="outline"
               onClick={() => handleSubmit(false)}
-              disabled={!isValid}
+              disabled={!isValid || hasBlockingConflicts}
             >
-              Add and Publish Shift
+              Save as Draft
             </Button>
             <Button
               onClick={() => handleSubmit(true)}
-              disabled={!isValid}
+              disabled={!isValid || hasBlockingConflicts}
               className="bg-blue-900 hover:bg-blue-800"
             >
-              Add
+              Add and Publish Shift
             </Button>
           </div>
         </div>

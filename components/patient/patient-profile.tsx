@@ -5,41 +5,25 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { Separator } from "@/components/ui/separator"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
+import type { GoalTracking } from "@/lib/types"
 
-// Hardcoded health goals for demo
-const healthGoals = [
-  {
-    id: "goal1",
-    title: "Medication Adherence",
-    description: "Take all prescribed medications as directed",
-    progress: 85,
-    status: "in_progress" as const,
-  },
-  {
-    id: "goal2",
-    title: "Blood Pressure Control",
-    description: "Maintain blood pressure below 130/80",
-    progress: 70,
-    status: "in_progress" as const,
-  },
-  {
-    id: "goal3",
-    title: "Regular PCP Visits",
-    description: "Complete quarterly check-ups with primary care provider",
-    progress: 100,
-    status: "completed" as const,
-  },
-  {
-    id: "goal4",
-    title: "Daily Activity",
-    description: "30 minutes of light activity, 5 days per week",
-    progress: 60,
-    status: "in_progress" as const,
-  },
-]
+// Direction-aware progress toward a goal target, based on the latest logged value
+function getGoalProgress(goal: GoalTracking): number {
+  if (goal.history.length === 0) return 0
+  const latest = goal.history[goal.history.length - 1].value
+  const clamp = (value: number) => Math.min(100, Math.max(0, Math.round(value)))
+
+  if (goal.direction === "below") {
+    // At or under target = 100%
+    if (latest <= 0) return 100
+    return clamp((goal.targetValue / latest) * 100)
+  }
+  // "above" (and "between" approximated the same way)
+  if (goal.targetValue <= 0) return 100
+  return clamp((latest / goal.targetValue) * 100)
+}
 
 function getInitials(name: string): string {
   return name
@@ -83,16 +67,37 @@ function CareTeamCard({
 function HealthGoalCard({
   goal,
 }: {
-  goal: typeof healthGoals[0]
+  goal: GoalTracking
 }) {
+  const progress = getGoalProgress(goal)
+
   const getStatusBadge = () => {
-    if (goal.status === "completed") {
-      return <Badge variant="default">Completed</Badge>
+    switch (goal.status) {
+      case "on_track":
+        return (
+          <Badge variant="outline" className="bg-emerald-100 text-emerald-600 border-emerald-200">
+            On Track
+          </Badge>
+        )
+      case "warning":
+        return (
+          <Badge variant="outline" className="bg-amber-100 text-amber-600 border-amber-200">
+            Needs Attention
+          </Badge>
+        )
+      case "critical":
+        return (
+          <Badge variant="outline" className="bg-red-100 text-red-600 border-red-200">
+            Critical
+          </Badge>
+        )
+      case "not_started":
+        return (
+          <Badge variant="outline" className="bg-muted text-muted-foreground">
+            Not Started
+          </Badge>
+        )
     }
-    if (goal.progress >= 75) {
-      return <Badge variant="secondary">Almost There</Badge>
-    }
-    return <Badge variant="outline">In Progress</Badge>
   }
 
   return (
@@ -100,17 +105,19 @@ function HealthGoalCard({
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           <Target className="h-4 w-4 text-primary" />
-          <span className="font-medium">{goal.title}</span>
+          <span className="font-medium">{goal.description}</span>
         </div>
         {getStatusBadge()}
       </div>
-      <p className="text-sm text-muted-foreground">{goal.description}</p>
+      <p className="text-sm text-muted-foreground">
+        Target: {goal.direction === "below" ? "<" : ">"} {goal.targetValue} {goal.metricUnit}
+      </p>
       <div className="space-y-1">
         <div className="flex justify-between text-sm">
           <span className="text-muted-foreground">Progress</span>
-          <span className="font-medium">{goal.progress}%</span>
+          <span className="font-medium">{progress}%</span>
         </div>
-        <Progress value={goal.progress} className="h-2" />
+        <Progress value={progress} className="h-2" />
       </div>
     </div>
   )
@@ -118,7 +125,7 @@ function HealthGoalCard({
 
 export function PatientProfile() {
   const { currentUser } = useRole()
-  const { getPatient, getNavigator, navigators } = useDemoData()
+  const { getPatient, getNavigator, getPatientCarePlan } = useDemoData()
 
   if (!currentUser) return null
 
@@ -126,6 +133,8 @@ export function PatientProfile() {
   if (!patient) return null
 
   const navigator = getNavigator(patient.assignedNavigator)
+  const carePlan = getPatientCarePlan(patient.id)
+  const activeGoals = carePlan?.activeGoals ?? []
 
   // Get supervisor from navigator's supervisorId
   // Since we don't have a getSupervisor helper, we'll look it up from initial data pattern
@@ -229,11 +238,18 @@ export function PatientProfile() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
-            {healthGoals.map((goal) => (
-              <HealthGoalCard key={goal.id} goal={goal} />
-            ))}
-          </div>
+          {activeGoals.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Target className="h-12 w-12 mx-auto mb-3 opacity-50" />
+              <p>No active care plan goals yet — your navigator will set these with you.</p>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {activeGoals.map((goal) => (
+                <HealthGoalCard key={goal.id} goal={goal} />
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

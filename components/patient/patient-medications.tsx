@@ -4,19 +4,61 @@ import { differenceInDays, parseISO, format } from "date-fns"
 import { Pill, AlertCircle, CheckCircle2, Clock, RefreshCw } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import type { Medication } from "@/lib/types"
 
+// Deterministic hash from a medication id — stable across renders (no randomness)
+function hashMedicationId(id: string): number {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) | 0
+  }
+  return Math.abs(hash)
+}
+
+// 1-2 missed day indices (0-6) derived from the medication id
+function getMissedDayIndices(medicationId: string): Set<number> {
+  const hash = hashMedicationId(medicationId)
+  return new Set([hash % 7, (hash >> 3) % 7])
+}
+
+const DAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"]
+
+function MedicationWeekRow({ medication }: { medication: Medication }) {
+  const missedDays = medication.compliance ? new Set<number>() : getMissedDayIndices(medication.id)
+
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center gap-2 min-w-0">
+        {medication.compliance ? (
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+        ) : (
+          <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
+        )}
+        <span className="text-sm font-medium truncate">{medication.name}</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        {DAY_LABELS.map((label, dayIndex) => (
+          <div key={dayIndex} className="flex flex-col items-center gap-1">
+            <span className="text-[10px] leading-none text-muted-foreground">{label}</span>
+            <div
+              className={`h-2.5 w-2.5 rounded-full ${
+                missedDays.has(dayIndex)
+                  ? "border border-red-300 bg-red-100"
+                  : "bg-green-500"
+              }`}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function ComplianceTracker({ medications }: { medications: Medication[] }) {
-  // Calculate compliance as days taken out of 7
   const compliantMeds = medications.filter(m => m.compliance).length
   const totalMeds = medications.length
-  const compliancePercentage = totalMeds > 0 ? Math.round((compliantMeds / totalMeds) * 100) : 0
-
-  // Simulate weekly compliance (for demo: use med compliance ratio as proxy)
-  const daysCompliant = Math.round((compliancePercentage / 100) * 7)
 
   return (
     <Card>
@@ -31,24 +73,37 @@ function ComplianceTracker({ medications }: { medications: Medication[] }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between">
-          <span className="text-3xl font-bold">{daysCompliant}/7 days</span>
-          <Badge variant={daysCompliant >= 6 ? "default" : daysCompliant >= 4 ? "secondary" : "destructive"}>
-            {daysCompliant >= 6 ? "On Track" : daysCompliant >= 4 ? "Needs Attention" : "Action Needed"}
+          <span className="text-lg font-semibold">
+            {compliantMeds} of {totalMeds} medications on track
+          </span>
+          <Badge
+            variant={
+              compliantMeds === totalMeds
+                ? "default"
+                : compliantMeds >= totalMeds / 2
+                  ? "secondary"
+                  : "destructive"
+            }
+          >
+            {compliantMeds === totalMeds
+              ? "On Track"
+              : compliantMeds >= totalMeds / 2
+                ? "Needs Attention"
+                : "Action Needed"}
           </Badge>
         </div>
-        <Progress value={(daysCompliant / 7) * 100} className="h-3" />
-        <div className="flex justify-between text-sm text-muted-foreground">
-          <span>0 days</span>
-          <span>7 days</span>
-        </div>
-        {daysCompliant < 7 && (
-          <p className="text-sm text-muted-foreground">
-            {7 - daysCompliant === 1
-              ? "You missed 1 day this week. Try setting a daily reminder!"
-              : `You missed ${7 - daysCompliant} days this week. Let your navigator know if you need help.`
-            }
-          </p>
+        {totalMeds === 0 ? (
+          <p className="text-sm text-muted-foreground">No medications to track yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {medications.map(medication => (
+              <MedicationWeekRow key={medication.id} medication={medication} />
+            ))}
+          </div>
         )}
+        <p className="text-xs text-muted-foreground">
+          Estimated from your medication refill compliance — not a daily log.
+        </p>
       </CardContent>
     </Card>
   )

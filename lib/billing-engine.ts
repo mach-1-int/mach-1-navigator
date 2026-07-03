@@ -1,20 +1,49 @@
-import type { TimeLog, ServiceType, CPTDefinition, Patient } from "./types"
+/**
+ * Billing Engine - Payer-aware monthly billing progress calculator
+ *
+ * Computes a patient's progress toward billable units for a month using the
+ * active PayerConfig. Supports two modes:
+ *
+ * - RULE_OF_EIGHTS (Medicaid H-codes): 15-minute units, 8+ minutes = 1 unit.
+ *   Next unit threshold sits at (unitsEarned * 15) + 8 minutes.
+ * - BASE_PLUS_ADDON (Medicare G-codes): 60-minute base + 30-minute add-ons.
+ *
+ * Codes come from PayerConfig.codes (plus the dominant-activity H-code for
+ * Medicaid), and revenue comes from the payer's rate card via
+ * calculateClaimValue — no hardcoded CPT tables or rates.
+ */
+
+import type { TimeLog, PayerConfig } from "./types"
+import {
+  calculateClaimValue,
+  calculateRuleOfEightsUnits,
+  getDominantHCode,
+} from "./payer-config"
 
 /**
- * Result of billing calculation for a patient in a given month
+ * Billing calculation mode derived from the payer configuration
+ */
+export type BillingMode = "RULE_OF_EIGHTS" | "BASE_PLUS_ADDON"
+
+/**
+ * Result of billing progress calculation for a patient in a given month
  */
 export interface BillingCalculationResult {
   patientId: string
   billingPeriod: string // YYYY-MM format
-  serviceType: ServiceType
+  mode: BillingMode
+  payerConfigId: string
+  payerName: string
   totalMinutes: number
   isBillable: boolean
-  baseCode: string | null // G0023 (PIN) or G0019 (CHI)
-  baseUnits: number
-  addOnCode: string | null // G0024 (PIN) or G0022 (CHI)
-  addOnUnits: number
+  baseCode: string | null // H-code (Medicaid) or base G-code (Medicare)
+  baseUnits: number // Units earned on the base code
+  addOnCode: string | null // Add-on G-code (Medicare only)
+  addOnUnits: number // Add-on units (Medicare only, 0 for Medicaid)
+  unitsEarned: number // Total billable units (base + add-on)
   minutesToNextUnit: number // Minutes needed to reach next billing threshold
-  progressToNextUnit: number // 0-100 percentage
+  progressToNextUnit: number // 0-100 percentage within the current unit window
+  estimatedRevenue: number // From the payer's rate card
   statusText: string // Human-readable status
   statusLevel: "unbillable" | "qualified" | "exceeded"
   breakdown: BillingBreakdown[]
@@ -31,60 +60,19 @@ export interface BillingBreakdown {
 }
 
 /**
- * CPT code mappings by service type
- */
-const CPT_CODES: Record<ServiceType, { base: CPTDefinition; addOn: CPTDefinition }> = {
-  PIN: {
-    base: {
-      code: "G0023",
-      description: "Principal Illness Navigation - Base (first 60 min/month)",
-      baseDuration: 60,
-      isBaseCode: true,
-      serviceType: "PIN",
-    },
-    addOn: {
-      code: "G0024",
-      description: "Principal Illness Navigation - Add-on (each additional 30 min)",
-      baseDuration: 30,
-      isBaseCode: false,
-      serviceType: "PIN",
-    },
-  },
-  CHI: {
-    base: {
-      code: "G0019",
-      description: "Community Health Integration - Base (first 60 min/month)",
-      baseDuration: 60,
-      isBaseCode: true,
-      serviceType: "CHI",
-    },
-    addOn: {
-      code: "G0022",
-      description: "Community Health Integration - Add-on (each additional 30 min)",
-      baseDuration: 30,
-      isBaseCode: false,
-      serviceType: "CHI",
-    },
-  },
-}
-
-/**
- * Calculate billable units for a patient in a given month
- *
- * Logic Tree:
- * - Base code (G0023/G0019): First 60 minutes = 1 unit
- * - Add-on code (G0024/G0022): Each additional 30 minutes = 1 unit
+ * Calculate billing progress for a patient in a given month using the
+ * payer's billing rules (Rule of Eights vs base + add-on)
  *
  * @param timeLogs - All time logs (will be filtered by patient and period)
  * @param patientId - The patient ID
- * @param serviceType - PIN or CHI (from patient.billingTrack)
+ * @param payerConfig - Active payer configuration
  * @param month - 1-12
  * @param year - Full year (e.g., 2026)
  */
-export function calculateMonthlyBilling(
+export function calculateMonthlyBillingProgress(
   timeLogs: TimeLog[],
   patientId: string,
-  serviceType: ServiceType,
+  payerConfig: PayerConfig,
   month: number,
   year: number
 ): BillingCalculationResult {
@@ -98,10 +86,109 @@ export function calculateMonthlyBilling(
   // Sum total minutes
   const totalMinutes = patientLogs.reduce((sum, log) => sum + log.durationMinutes, 0)
 
-  // Get CPT codes for this service type
-  const codes = CPT_CODES[serviceType]
-  const baseThreshold = 60
-  const addOnIncrement = 30
+  if (payerConfig.useRuleOfEights) {
+    return calculateRuleOfEightsProgress(patientLogs, patientId, billingPeriod, totalMinutes, payerConfig)
+  }
+  return calculateBasePlusAddOnProgress(patientId, billingPeriod, totalMinutes, payerConfig)
+}
+
+/**
+ * Rule of Eights progress (Medicaid H-codes, 15-min units)
+ * Next unit threshold: (unitsEarned * 15) + 8 minutes
+ */
+function calculateRuleOfEightsProgress(
+  patientLogs: TimeLog[],
+  patientId: string,
+  billingPeriod: string,
+  totalMinutes: number,
+  payerConfig: PayerConfig
+): BillingCalculationResult {
+  const unitIncrement = payerConfig.unitIncrement // 15
+  const baseMinimum = payerConfig.baseMinimum // 8
+
+  const unitsEarned = calculateRuleOfEightsUnits(totalMinutes)
+  const isBillable = unitsEarned > 0
+
+  // Dominant-activity H-code for the month's logs; fall back to the config default
+  const baseCode = patientLogs.length > 0 ? getDominantHCode(patientLogs) : payerConfig.codes.base
+
+  // Next threshold sits at units*15 + 8 (8 -> 1st unit, 23 -> 2nd, 38 -> 3rd, ...)
+  const nextThreshold = unitsEarned * unitIncrement + baseMinimum
+  const previousThreshold = unitsEarned === 0 ? 0 : (unitsEarned - 1) * unitIncrement + baseMinimum
+  const minutesToNextUnit = nextThreshold - totalMinutes
+  const progressToNextUnit = Math.min(
+    100,
+    ((totalMinutes - previousThreshold) / (nextThreshold - previousThreshold)) * 100
+  )
+
+  // Status: "unbillable" only below the 8-minute floor
+  let statusText: string
+  let statusLevel: BillingCalculationResult["statusLevel"]
+
+  if (!isBillable) {
+    statusText = `${minutesToNextUnit} mins to Billable Event`
+    statusLevel = "unbillable"
+  } else {
+    statusText = `Qualified: ${baseCode} x${unitsEarned} (${minutesToNextUnit} mins to next unit)`
+    statusLevel = unitsEarned > 1 ? "exceeded" : "qualified"
+  }
+
+  // Per-unit breakdown
+  const breakdown: BillingBreakdown[] = []
+  for (let i = 0; i < unitsEarned; i++) {
+    breakdown.push({
+      code: baseCode,
+      description: `${unitIncrement}-min unit ${i + 1} of ${unitsEarned}`,
+      minutes: Math.max(0, Math.min(unitIncrement, totalMinutes - i * unitIncrement)),
+      qualified: true,
+    })
+  }
+  // Partial progress toward the next unit
+  const partialMinutes = totalMinutes - unitsEarned * unitIncrement
+  if (partialMinutes > 0) {
+    breakdown.push({
+      code: baseCode,
+      description: `${unitIncrement}-min unit ${unitsEarned + 1} (In Progress)`,
+      minutes: partialMinutes,
+      qualified: false,
+    })
+  }
+
+  return {
+    patientId,
+    billingPeriod,
+    mode: "RULE_OF_EIGHTS",
+    payerConfigId: payerConfig.id,
+    payerName: payerConfig.name,
+    totalMinutes,
+    isBillable,
+    baseCode,
+    baseUnits: unitsEarned,
+    addOnCode: null,
+    addOnUnits: 0,
+    unitsEarned,
+    minutesToNextUnit,
+    progressToNextUnit,
+    estimatedRevenue: calculateClaimValue(unitsEarned, 0, payerConfig),
+    statusText,
+    statusLevel,
+    breakdown,
+  }
+}
+
+/**
+ * Base + add-on progress (Medicare G-codes: 60-min base, 30-min add-ons)
+ */
+function calculateBasePlusAddOnProgress(
+  patientId: string,
+  billingPeriod: string,
+  totalMinutes: number,
+  payerConfig: PayerConfig
+): BillingCalculationResult {
+  const baseThreshold = payerConfig.baseMinimum // 60
+  const addOnIncrement = payerConfig.unitIncrement // 30
+  const baseCode = payerConfig.codes.base
+  const addOnCode = payerConfig.codes.addOn || null
 
   // Calculate billing units
   const isBillable = totalMinutes >= baseThreshold
@@ -139,11 +226,11 @@ export function calculateMonthlyBilling(
     statusLevel = "unbillable"
   } else if (addOnUnits === 0) {
     const extraMins = remainingMinutes
-    statusText = `Qualified: ${codes.base.code} x1${extraMins > 0 ? ` (+${extraMins} mins toward next unit)` : ""}`
+    statusText = `Qualified: ${baseCode} x1${extraMins > 0 ? ` (+${extraMins} mins toward next unit)` : ""}`
     statusLevel = "qualified"
   } else {
     const extraMins = remainingMinutes % addOnIncrement
-    statusText = `Qualified: ${codes.base.code} x1 + ${codes.addOn.code} x${addOnUnits}${extraMins > 0 ? ` (+${extraMins} mins toward next)` : ""}`
+    statusText = `Qualified: ${baseCode} x1 + ${addOnCode} x${addOnUnits}${extraMins > 0 ? ` (+${extraMins} mins toward next)` : ""}`
     statusLevel = "exceeded"
   }
 
@@ -152,18 +239,18 @@ export function calculateMonthlyBilling(
 
   // Base code
   breakdown.push({
-    code: codes.base.code,
-    description: codes.base.description,
+    code: baseCode,
+    description: `Base (first ${baseThreshold} min/month)`,
     minutes: Math.min(totalMinutes, baseThreshold),
     qualified: totalMinutes >= baseThreshold,
   })
 
   // Add-on codes
-  if (totalMinutes > baseThreshold) {
+  if (totalMinutes > baseThreshold && addOnCode) {
     for (let i = 0; i < addOnUnits; i++) {
       breakdown.push({
-        code: codes.addOn.code,
-        description: `${codes.addOn.description} (Unit ${i + 1})`,
+        code: addOnCode,
+        description: `Add-on: each additional ${addOnIncrement} min (Unit ${i + 1})`,
         minutes: addOnIncrement,
         qualified: true,
       })
@@ -173,8 +260,8 @@ export function calculateMonthlyBilling(
     const partialMinutes = remainingMinutes % addOnIncrement
     if (partialMinutes > 0) {
       breakdown.push({
-        code: codes.addOn.code,
-        description: `${codes.addOn.description} (In Progress)`,
+        code: addOnCode,
+        description: `Add-on: each additional ${addOnIncrement} min (In Progress)`,
         minutes: partialMinutes,
         qualified: false,
       })
@@ -184,15 +271,19 @@ export function calculateMonthlyBilling(
   return {
     patientId,
     billingPeriod,
-    serviceType,
+    mode: "BASE_PLUS_ADDON",
+    payerConfigId: payerConfig.id,
+    payerName: payerConfig.name,
     totalMinutes,
     isBillable,
-    baseCode: codes.base.code,
+    baseCode,
     baseUnits,
-    addOnCode: addOnUnits > 0 ? codes.addOn.code : null,
+    addOnCode: addOnUnits > 0 ? addOnCode : null,
     addOnUnits,
+    unitsEarned: baseUnits + addOnUnits,
     minutesToNextUnit,
     progressToNextUnit,
+    estimatedRevenue: calculateClaimValue(baseUnits, addOnUnits, payerConfig),
     statusText,
     statusLevel,
     breakdown,
@@ -200,40 +291,20 @@ export function calculateMonthlyBilling(
 }
 
 /**
- * Get billing calculation for current month
+ * Get billing progress for the current month
  */
-export function calculateCurrentMonthBilling(
+export function calculateCurrentMonthBillingProgress(
   timeLogs: TimeLog[],
   patientId: string,
-  serviceType: ServiceType
+  payerConfig: PayerConfig
 ): BillingCalculationResult {
   const now = new Date()
-  return calculateMonthlyBilling(
+  return calculateMonthlyBillingProgress(
     timeLogs,
     patientId,
-    serviceType,
+    payerConfig,
     now.getMonth() + 1, // getMonth() is 0-indexed
     now.getFullYear()
-  )
-}
-
-/**
- * Get billing summary for multiple patients
- */
-export function calculateBillingBatch(
-  timeLogs: TimeLog[],
-  patients: Patient[],
-  month: number,
-  year: number
-): BillingCalculationResult[] {
-  return patients.map((patient) =>
-    calculateMonthlyBilling(
-      timeLogs,
-      patient.id,
-      patient.billingTrack || "CHI",
-      month,
-      year
-    )
   )
 }
 
@@ -256,34 +327,6 @@ export function formatBillingCodes(result: BillingCalculationResult): string {
   }
 
   return parts.join(" + ")
-}
-
-/**
- * Calculate estimated revenue from billing result
- * Using approximate CMS rates
- */
-export function estimateRevenue(result: BillingCalculationResult): number {
-  if (!result.isBillable) return 0
-
-  // Approximate CMS reimbursement rates (2024)
-  const rates: Record<string, number> = {
-    G0023: 78.0, // PIN base
-    G0024: 39.0, // PIN add-on
-    G0019: 72.0, // CHI base
-    G0022: 36.0, // CHI add-on
-  }
-
-  let total = 0
-
-  if (result.baseCode && result.baseUnits > 0) {
-    total += (rates[result.baseCode] || 0) * result.baseUnits
-  }
-
-  if (result.addOnCode && result.addOnUnits > 0) {
-    total += (rates[result.addOnCode] || 0) * result.addOnUnits
-  }
-
-  return total
 }
 
 /**

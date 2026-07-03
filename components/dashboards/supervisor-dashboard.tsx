@@ -9,12 +9,14 @@ import { Progress } from "@/components/ui/progress"
 import { Users, AlertTriangle, Activity, CheckCircle2, XCircle, Clock } from "lucide-react"
 import { kpiMetrics } from "@/lib/mock-data"
 import { useDemoData } from "@/lib/demo-data-context"
+import { useRole } from "@/lib/role-context"
 import { ReferralQueue } from "@/components/dashboards/referral-queue"
 import { cn } from "@/lib/utils"
 
 export function SupervisorDashboard() {
   const { patients, navigators, adverseEvents } = useDemoData()
-  const teamNavigators = navigators.filter((nav) => nav.supervisorId === "sup1")
+  const { currentUser } = useRole()
+  const teamNavigators = navigators.filter((nav) => nav.supervisorId === currentUser?.id)
   const teamPatients = patients.filter((p) => teamNavigators.some((n) => n.id === p.assignedNavigator))
   const avgMedicationCompliance = Math.round(
     teamNavigators.reduce((sum, n) => sum + n.medicationCompliance, 0) / teamNavigators.length

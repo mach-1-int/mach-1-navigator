@@ -22,10 +22,10 @@ import { cn } from "@/lib/utils"
 
 export function ComplianceView() {
   const { patients, navigators } = useDemoData()
-  const { navigateTo } = useRole()
-  
-  // Filter to team patients (supervisor 1's team)
-  const teamNavigators = navigators.filter(nav => nav.supervisorId === "sup1")
+  const { navigateTo, currentUser } = useRole()
+
+  // Filter to the logged-in supervisor's team
+  const teamNavigators = navigators.filter(nav => nav.supervisorId === currentUser?.id)
   const teamPatients = patients.filter(p => 
     teamNavigators.some(n => n.id === p.assignedNavigator)
   )

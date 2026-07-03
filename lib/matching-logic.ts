@@ -4,45 +4,7 @@
  */
 
 import type { Referral, NavigatorAttributes } from './types'
-
-// ============================================================================
-// DISTANCE UTILITY
-// ============================================================================
-
-/**
- * Mock distance lookup for demo purposes
- * Hardcoded distances between specific Arizona zip codes
- */
-const MOCK_DISTANCES: Record<string, Record<string, number>> = {
-  '85301': { '85303': 3 },   // Glendale to West Valley Patient
-  '85001': { '85303': 15 },  // Central Phoenix to West Valley Patient
-  '85201': { '85303': 35 },  // Mesa to West Valley Patient
-  '85303': { '85301': 3, '85001': 15, '85201': 35 },  // Reverse lookups consolidated
-}
-
-const DEFAULT_DISTANCE = 20 // Default fallback distance in miles
-
-/**
- * Get mock distance between two zip codes
- * In production, this would call a geocoding API
- */
-export function getMockDistance(zip1: string, zip2: string): number {
-  // Same zip = 0 distance
-  if (zip1 === zip2) return 0
-
-  // Check direct lookup
-  if (MOCK_DISTANCES[zip1]?.[zip2] !== undefined) {
-    return MOCK_DISTANCES[zip1][zip2]
-  }
-
-  // Check reverse lookup
-  if (MOCK_DISTANCES[zip2]?.[zip1] !== undefined) {
-    return MOCK_DISTANCES[zip2][zip1]
-  }
-
-  // Default fallback
-  return DEFAULT_DISTANCE
-}
+import { geo } from './geo'
 
 // ============================================================================
 // SCORING FUNCTION
@@ -81,7 +43,8 @@ export function calculateMatchScore(
   // -------------------------------------------------------------------------
   // DISTANCE SCORING
   // -------------------------------------------------------------------------
-  const distance = getMockDistance(attrs.homeZipCode, referral.zipCode)
+  // Haversine-derived road distance via the geo adapter (whole miles for display)
+  const distance = Math.round(geo.zipDistanceMiles(attrs.homeZipCode, referral.zipCode))
 
   if (distance <= attrs.serviceAreaRadius) {
     score += 40

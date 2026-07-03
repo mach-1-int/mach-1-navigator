@@ -5,83 +5,49 @@
  * metrics from the store without modifying any data.
  */
 
-import type { TimeLog, Referral, User, Patient, PatientNote } from "./types"
+import type {
+  IntakeRecord,
+  Navigator,
+  Patient,
+  PayerConfig,
+  Referral,
+  TimeLog,
+  User,
+} from "./types"
+import { generateMonthlyClaims, calculateTotalRevenue, filterClaimsByMonth } from "./claims-engine"
 
 // ============================================================================
 // REVENUE CALCULATIONS
 // ============================================================================
 
 /**
- * Rule of Thumb revenue calculation:
- * Every 60 minutes of logged time = approximately $100 reimbursement
- */
-const REVENUE_PER_HOUR = 100
-
-/**
- * Calculate projected revenue from time logs using the "Rule of Thumb"
- * 60 minutes = $100 (approx reimbursement)
+ * Calculate estimated revenue for the CURRENT billing month by generating
+ * claims from time logs and pricing them with the active payer's rate card.
  *
+ * @param navigators - Array of navigators (for claim generation)
+ * @param patients - Array of patients
  * @param timeLogs - Array of time log entries
- * @returns Total projected revenue in dollars
+ * @param intakeRecords - Intake records (consent, initiating visit, Z-codes)
+ * @param payerConfig - Active payer configuration
+ * @returns Total estimated claim value for the current billing month
  */
-export function calculateProjectedRevenue(timeLogs: TimeLog[]): number {
+export function calculateEstimatedMonthlyRevenue(
+  navigators: Navigator[],
+  patients: Patient[],
+  timeLogs: TimeLog[],
+  intakeRecords: IntakeRecord[],
+  payerConfig: PayerConfig
+): number {
   if (!timeLogs || timeLogs.length === 0) {
     return 0
   }
 
-  const totalMinutes = timeLogs.reduce((sum, log) => {
-    // Only count verified time logs for revenue projection
-    return sum + (log.durationMinutes || 0)
-  }, 0)
+  const claims = generateMonthlyClaims(navigators, patients, timeLogs, payerConfig, intakeRecords)
+  const currentMonth = new Date().toISOString().slice(0, 7)
+  const currentMonthClaims = filterClaimsByMonth(claims, currentMonth)
+  const { totalValue } = calculateTotalRevenue(currentMonthClaims, payerConfig)
 
-  // Apply Rule of Thumb: 60 mins = $100
-  const totalHours = totalMinutes / 60
-  return Math.round(totalHours * REVENUE_PER_HOUR)
-}
-
-/**
- * Calculate revenue breakdown by service type (PIN vs CHI)
- *
- * @param timeLogs - Array of time log entries
- * @returns Object with PIN and CHI revenue breakdowns
- */
-export function calculateRevenueByServiceType(timeLogs: TimeLog[]): {
-  pin: { minutes: number; revenue: number }
-  chi: { minutes: number; revenue: number }
-  total: { minutes: number; revenue: number }
-} {
-  if (!timeLogs || timeLogs.length === 0) {
-    return {
-      pin: { minutes: 0, revenue: 0 },
-      chi: { minutes: 0, revenue: 0 },
-      total: { minutes: 0, revenue: 0 },
-    }
-  }
-
-  const pinMinutes = timeLogs
-    .filter((log) => log.serviceType === "PIN")
-    .reduce((sum, log) => sum + (log.durationMinutes || 0), 0)
-
-  const chiMinutes = timeLogs
-    .filter((log) => log.serviceType === "CHI")
-    .reduce((sum, log) => sum + (log.durationMinutes || 0), 0)
-
-  const totalMinutes = pinMinutes + chiMinutes
-
-  return {
-    pin: {
-      minutes: pinMinutes,
-      revenue: Math.round((pinMinutes / 60) * REVENUE_PER_HOUR)
-    },
-    chi: {
-      minutes: chiMinutes,
-      revenue: Math.round((chiMinutes / 60) * REVENUE_PER_HOUR)
-    },
-    total: {
-      minutes: totalMinutes,
-      revenue: Math.round((totalMinutes / 60) * REVENUE_PER_HOUR)
-    },
-  }
+  return Math.round(totalValue)
 }
 
 // ============================================================================
@@ -101,8 +67,8 @@ export interface OperationalMetrics {
   navigatorsAtRisk: number
   /** Total number of navigators */
   totalNavigators: number
-  /** Average days from referral to first note (mocked for now) */
-  avgTurnaroundDays: number
+  /** Average days from referral received to accepted; null when no accepted referrals */
+  avgTurnaroundDays: number | null
   /** List of navigators flagged as over capacity */
   overCapacityNavigators: Array<{
     id: string
@@ -125,13 +91,11 @@ export interface OperationalMetrics {
  *
  * @param referrals - Array of referrals
  * @param navigators - Array of users with navigator role (must have attributes)
- * @param notes - Array of patient notes (optional, for turnaround calculation)
  * @returns Operational metrics object
  */
 export function getOperationalMetrics(
   referrals: Referral[],
-  navigators: User[],
-  notes?: PatientNote[]
+  navigators: User[]
 ): OperationalMetrics {
   // Filter to only navigators with attributes
   const navigatorsWithAttributes = navigators.filter(
@@ -197,11 +161,20 @@ export function getOperationalMetrics(
   // Sort by hours pending (most urgent first)
   stalePendingReferrals.sort((a, b) => b.hoursPending - a.hoursPending)
 
-  // ========== TURNAROUND TIME (Mocked for now) ==========
-  // In a real implementation, this would calculate:
-  // Average time from referral.receivedAt to first note with matching patientId
-  // For now, returning a reasonable mock value
-  const avgTurnaroundDays = 2.4 // Mock: ~2.4 days average
+  // ========== TURNAROUND TIME ==========
+  // Mean days from referral.receivedAt to referral.acceptedAt over accepted
+  // referrals; null when there is nothing to compute.
+  const turnaroundDurations: number[] = []
+  for (const ref of referrals) {
+    if (!ref.acceptedAt) continue
+    const receivedMs = new Date(ref.receivedAt).getTime()
+    const acceptedMs = new Date(ref.acceptedAt).getTime()
+    if (Number.isNaN(receivedMs) || Number.isNaN(acceptedMs) || acceptedMs < receivedMs) continue
+    turnaroundDurations.push((acceptedMs - receivedMs) / (1000 * 60 * 60 * 24))
+  }
+  const avgTurnaroundDays = turnaroundDurations.length > 0
+    ? Math.round((turnaroundDurations.reduce((sum, d) => sum + d, 0) / turnaroundDurations.length) * 10) / 10
+    : null
 
   return {
     unassignedRate,
@@ -342,7 +315,8 @@ export function getCaseloadDistribution(navigators: User[]): CaseloadBucket[] {
 export interface DashboardSummary {
   totalActivePatients: number
   estimatedMonthlyRevenue: number
-  complianceRate: number // Mocked at 98%
+  /** Percentage of time logs verified by a supervisor (0-100; 100 when no logs) */
+  complianceRate: number
   totalNavigators: number
   avgCaseloadUtilization: number
 }
@@ -350,25 +324,40 @@ export interface DashboardSummary {
 /**
  * Calculate summary statistics for dashboard cards
  *
+ * @param navigators - Array of navigators (for claim generation)
  * @param patients - Array of patients
  * @param timeLogs - Array of time logs
- * @param navigators - Array of users with navigator role
+ * @param intakeRecords - Intake records (consent, initiating visit, Z-codes)
+ * @param payerConfig - Active payer configuration
+ * @param navigatorUsers - Array of users with navigator role (for caseload stats)
  * @returns Summary statistics object
  */
 export function getDashboardSummary(
+  navigators: Navigator[],
   patients: Patient[],
   timeLogs: TimeLog[],
-  navigators: User[]
+  intakeRecords: IntakeRecord[],
+  payerConfig: PayerConfig,
+  navigatorUsers: User[]
 ): DashboardSummary {
   const activePatients = patients.filter((p) => p.survivalStatus === "active")
   const totalActivePatients = activePatients.length
 
-  const estimatedMonthlyRevenue = calculateProjectedRevenue(timeLogs)
+  const estimatedMonthlyRevenue = calculateEstimatedMonthlyRevenue(
+    navigators,
+    patients,
+    timeLogs,
+    intakeRecords,
+    payerConfig
+  )
 
-  // Compliance rate is mocked at 98% as specified
-  const complianceRate = 98
+  // Time-log verification rate: % of logs verified by a supervisor
+  const verifiedLogs = timeLogs.filter((log) => log.verified === true).length
+  const complianceRate = timeLogs.length > 0
+    ? Math.round((verifiedLogs / timeLogs.length) * 100)
+    : 100
 
-  const navigatorsWithAttributes = navigators.filter(
+  const navigatorsWithAttributes = navigatorUsers.filter(
     (user) => user.role === "navigator" && user.attributes
   )
 

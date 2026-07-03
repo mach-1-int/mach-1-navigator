@@ -142,15 +142,10 @@ export function DashboardSidebar() {
               <p className="truncate text-xs capitalize text-muted-foreground">{currentUser.role}</p>
             </div>
           </div>
-          <div className="flex gap-2">
-            <Button variant="ghost" size="sm" className="flex-1 justify-start text-muted-foreground hover:text-sidebar-foreground">
-              <Settings className="mr-2 h-4 w-4" />
-              Settings
-            </Button>
-            <Button variant="ghost" size="sm" onClick={logout} className="text-muted-foreground hover:text-destructive">
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
+          <Button variant="ghost" size="sm" onClick={logout} className="w-full justify-start text-muted-foreground hover:text-destructive">
+            <LogOut className="mr-2 h-4 w-4" />
+            Log Out
+          </Button>
         </div>
       </div>
     </aside>

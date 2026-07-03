@@ -3,45 +3,19 @@
  * Handles conflict detection, travel time validation, and safety checks
  */
 
-import type { ScheduleEvent, EventType } from "./types"
+import type { ScheduleEvent, NavigatorShift, DayOfWeek } from "./types"
+import { geo } from "./geo"
 
 // ============================================================================
 // TRAVEL TIME UTILITIES
 // ============================================================================
 
 /**
- * Mock travel times between Arizona zip codes (in minutes)
- * In production, this would call Google Maps or similar API
- */
-const MOCK_TRAVEL_TIMES: Record<string, Record<string, number>> = {
-  // Phoenix Metro area travel times
-  "85001": { "85301": 20, "85201": 25, "85251": 30, "85303": 25, "85034": 15 }, // Central Phoenix
-  "85301": { "85001": 20, "85201": 35, "85251": 40, "85303": 10, "85034": 25 }, // Glendale
-  "85201": { "85001": 25, "85301": 35, "85251": 20, "85303": 40, "85034": 20 }, // Mesa
-  "85251": { "85001": 30, "85301": 40, "85201": 20, "85303": 45, "85034": 25 }, // Scottsdale
-  "85303": { "85001": 25, "85301": 10, "85201": 40, "85251": 45, "85034": 30 }, // West Valley
-  "85034": { "85001": 15, "85301": 25, "85201": 20, "85251": 25, "85303": 30 }, // South Phoenix
-}
-
-const DEFAULT_TRAVEL_TIME = 30 // Default travel time in minutes
-
-/**
- * Get estimated travel time between two zip codes
+ * Get estimated travel time between two zip codes.
+ * Delegates to the pluggable geo adapter (haversine simulator tier by default).
  */
 export function getEstimatedTravelTime(fromZip: string, toZip: string): number {
-  if (fromZip === toZip) return 5 // Same zip = 5 min buffer
-
-  // Check direct lookup
-  if (MOCK_TRAVEL_TIMES[fromZip]?.[toZip] !== undefined) {
-    return MOCK_TRAVEL_TIMES[fromZip][toZip]
-  }
-
-  // Check reverse lookup
-  if (MOCK_TRAVEL_TIMES[toZip]?.[fromZip] !== undefined) {
-    return MOCK_TRAVEL_TIMES[toZip][fromZip]
-  }
-
-  return DEFAULT_TRAVEL_TIME
+  return geo.zipDriveTimeMinutes(fromZip, toZip)
 }
 
 // ============================================================================
@@ -49,7 +23,7 @@ export function getEstimatedTravelTime(fromZip: string, toZip: string): number {
 // ============================================================================
 
 export interface ScheduleConflict {
-  type: "OVERLAP" | "INSUFFICIENT_TRAVEL" | "DOUBLE_BOOKING" | "SAFETY_RISK"
+  type: "OVERLAP" | "INSUFFICIENT_TRAVEL" | "DOUBLE_BOOKING" | "SAFETY_RISK" | "INVALID_TIME" | "LONG_SHIFT"
   severity: "ERROR" | "WARNING"
   message: string
   conflictingEventId?: string
@@ -215,6 +189,96 @@ export function validateScheduleEvent(
         severity: "WARNING",
         message: `Navigator already has ${highRiskSameDay} high-risk appointments this day`,
         suggestedResolution: "Consider redistributing high-risk patients across navigators",
+      })
+    }
+  }
+
+  return {
+    isValid: !conflicts.some((c) => c.severity === "ERROR"),
+    conflicts,
+  }
+}
+
+// ============================================================================
+// SHIFT VALIDATION
+// ============================================================================
+
+/**
+ * Convert an "HH:MM" time string to minutes since midnight
+ */
+function timeToMinutes(time: string): number {
+  const [hours, minutes] = time.split(":").map(Number)
+  return hours * 60 + minutes
+}
+
+/**
+ * Check if two shift date ranges overlap (open-ended endDate = ongoing)
+ */
+function doDateRangesOverlap(a: NavigatorShift, b: NavigatorShift): boolean {
+  const aEnd = a.endDate ?? "9999-12-31"
+  const bEnd = b.endDate ?? "9999-12-31"
+  return a.startDate <= bEnd && b.startDate <= aEnd
+}
+
+/**
+ * Validate a new shift against a navigator's existing shifts.
+ *
+ * ERROR:
+ * - endTime <= startTime (invalid time window)
+ * - Same navigator has an overlapping shift (overlapping date range AND
+ *   overlapping day-of-week set AND overlapping time window)
+ * WARNING:
+ * - Shift longer than 12 hours
+ */
+export function validateShift(
+  newShift: NavigatorShift,
+  existingShifts: NavigatorShift[]
+): ValidationResult {
+  const conflicts: ScheduleConflict[] = []
+
+  const newStart = timeToMinutes(newShift.startTime)
+  const newEnd = timeToMinutes(newShift.endTime)
+
+  // Check 1: Invalid time window
+  if (newEnd <= newStart) {
+    conflicts.push({
+      type: "INVALID_TIME",
+      severity: "ERROR",
+      message: `End time (${newShift.endTime}) must be after start time (${newShift.startTime})`,
+      suggestedResolution: "Adjust the shift end time to be later than the start time",
+    })
+  }
+
+  // Check 2: Excessive shift length
+  if (newEnd - newStart > 12 * 60) {
+    conflicts.push({
+      type: "LONG_SHIFT",
+      severity: "WARNING",
+      message: `Shift is longer than 12 hours (${newShift.startTime} - ${newShift.endTime})`,
+      suggestedResolution: "Consider splitting into shorter shifts to avoid navigator fatigue",
+    })
+  }
+
+  // Check 3: Overlap with the navigator's existing shifts
+  const navigatorShifts = existingShifts.filter(
+    (shift) => shift.navigatorId === newShift.navigatorId && shift.id !== newShift.id
+  )
+
+  for (const shift of navigatorShifts) {
+    if (!doDateRangesOverlap(newShift, shift)) continue
+
+    const sharedDays = newShift.days.filter((day: DayOfWeek) => shift.days.includes(day))
+    if (sharedDays.length === 0) continue
+
+    const existingStart = timeToMinutes(shift.startTime)
+    const existingEnd = timeToMinutes(shift.endTime)
+    if (newStart < existingEnd && existingStart < newEnd) {
+      conflicts.push({
+        type: "OVERLAP",
+        severity: "ERROR",
+        message: `Overlaps existing shift for ${shift.navigatorName} (${shift.startTime} - ${shift.endTime} on ${sharedDays.join(", ")})`,
+        conflictingEventId: shift.id,
+        suggestedResolution: "Adjust the days, times, or date range to avoid the existing shift",
       })
     }
   }

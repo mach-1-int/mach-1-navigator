@@ -71,6 +71,7 @@ export function ClaimsManager() {
     patients,
     timeLogs,
     navigators,
+    intakeRecords,
     activePayerConfigId,
     activePayerConfig,
     availablePayerConfigs,
@@ -89,10 +90,10 @@ export function ClaimsManager() {
   const allClaims = useMemo(() => {
     console.log(`📊 ClaimsManager: Processing ${timeLogs.length} time logs for ${patients.length} patients`)
     console.log(`📊 ClaimsManager: Using payer config: ${activePayerConfig.name}`)
-    const claims = generateMonthlyClaims(navigators, patients, timeLogs, activePayerConfig)
+    const claims = generateMonthlyClaims(navigators, patients, timeLogs, activePayerConfig, intakeRecords)
     console.log(`📊 ClaimsManager: Generated ${claims.length} claims`)
     return claims
-  }, [navigators, patients, timeLogs, activePayerConfig])
+  }, [navigators, patients, timeLogs, activePayerConfig, intakeRecords])
 
   // Get available months
   const availableMonths = useMemo(() => {
