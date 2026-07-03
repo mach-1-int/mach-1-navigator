@@ -11,7 +11,7 @@ import { useRole } from "@/lib/role-context"
 import { cn } from "@/lib/utils"
 
 export function NavigatorDirectory() {
-  const { navigators, patients, getNavigatorMessages } = useDemoData()
+  const { navigators, patients, getNudgesForNavigator } = useDemoData()
   const { navigateTo } = useRole()
   
   // Filter navigators under supervisor 1
@@ -23,7 +23,7 @@ export function NavigatorDirectory() {
     const avgCompliance = navPatients.length > 0 
       ? Math.round(navPatients.reduce((sum, p) => sum + p.medicationCompliance, 0) / navPatients.length)
       : 0
-    const pendingMessages = getNavigatorMessages(nav.id).filter(m => !m.read).length
+    const pendingMessages = getNudgesForNavigator(nav.id).filter(m => !m.readStatus).length
     
     // Mock average visit time (would come from real data)
     const avgVisitTime = 35 + Math.floor(Math.random() * 20) // 35-55 minutes

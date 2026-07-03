@@ -108,11 +108,15 @@ export function ClaimsManager() {
   }, [allClaims, activeMonth])
 
   const readyClaims = useMemo(() => {
-    return filterClaimsByStatus(monthClaims, "READY")
+    // VALIDATED (past months) and DRAFT (current, still-accruing month) are both exportable
+    return [
+      ...filterClaimsByStatus(monthClaims, "VALIDATED"),
+      ...filterClaimsByStatus(monthClaims, "DRAFT"),
+    ]
   }, [monthClaims])
 
   const attentionClaims = useMemo(() => {
-    return filterClaimsByStatus(monthClaims, "MISSING_DATA")
+    return filterClaimsByStatus(monthClaims, "NEEDS_ATTENTION")
   }, [monthClaims])
 
   // Calculate revenue metrics using active payer rates

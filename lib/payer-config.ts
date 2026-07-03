@@ -6,7 +6,7 @@
  * - Medicare PIN/CHI (G-codes, 60-min base + 30-min add-on)
  */
 
-import type { ActivityType, BillingModel, HCodeDefinition, PayerConfig } from "./types"
+import type { ActivityType, BillingModel, HCodeDefinition, Patient, Payer, PayerConfig } from "./types"
 
 // ============================================================================
 // H-CODE DEFINITIONS (Medicaid Behavioral Health)
@@ -285,4 +285,43 @@ export function meetsBillingThreshold(
   payerConfig: PayerConfig
 ): boolean {
   return totalMinutes >= payerConfig.baseMinimum
+}
+
+// ============================================================================
+// PAYER IDENTITY RESOLUTION
+// ============================================================================
+
+/**
+ * Resolve a payer by name string. This is the ONLY fuzzy name matcher and is
+ * used solely at data boundaries (referral acceptance, legacy patients without
+ * a payerId). Everywhere else, use Patient.payerId as an explicit FK.
+ *
+ * Match order: exact canonical name -> exact alias -> normalized containment.
+ */
+export function resolvePayerByName(payers: Payer[], name: string): Payer | undefined {
+  if (!name) return undefined
+  const normalized = name.trim().toLowerCase()
+
+  return (
+    payers.find((p) => p.name.toLowerCase() === normalized) ??
+    payers.find((p) => p.aliases.some((a) => a.toLowerCase() === normalized)) ??
+    payers.find(
+      (p) =>
+        p.name.toLowerCase().includes(normalized) ||
+        normalized.includes(p.name.toLowerCase()) ||
+        p.aliases.some((a) => normalized.includes(a.toLowerCase()))
+    )
+  )
+}
+
+/**
+ * Get the payer for a patient: explicit FK first, name resolution as
+ * legacy fallback for patients created before payer unification.
+ */
+export function getPayerForPatient(payers: Payer[], patient: Patient): Payer | undefined {
+  if (patient.payerId) {
+    const byId = payers.find((p) => p.id === patient.payerId)
+    if (byId) return byId
+  }
+  return resolvePayerByName(payers, patient.healthPlan)
 }

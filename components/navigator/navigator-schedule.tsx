@@ -75,7 +75,7 @@ const DAY_MAP: Record<number, DayOfWeek> = {
 }
 
 export function NavigatorSchedule() {
-  const { patients, navigators, scheduleAppointment, updateAppointment, checkInAppointment, checkOutAppointment } = useDemoData()
+  const { patients, navigators, scheduleAppointment, updateAppointment, checkInAppointment, checkOutAppointment, getSupervisor } = useDemoData()
   const { currentUser } = useRole()
   const { toast } = useToast()
   const currentNavigator = navigators.find((n) => n.id === currentUser?.id) ?? navigators[0]
@@ -555,7 +555,7 @@ export function NavigatorSchedule() {
                       </div>
                       <div>
                         <p className="font-medium">{nav.name}</p>
-                        <p className="text-xs text-muted-foreground">{nav.region || "All Regions"}</p>
+                        <p className="text-xs text-muted-foreground">{getSupervisor(nav.supervisorId)?.region || "All Regions"}</p>
                       </div>
                       {nav.id === currentNavigator.id && (
                         <Badge variant="outline" className="ml-auto bg-indigo-100 text-indigo-700 border-indigo-300">

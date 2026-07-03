@@ -43,7 +43,7 @@ import {
   RotateCcw,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { AuditAction, PayerRate } from "@/lib/types"
+import type { AuditAction, Payer } from "@/lib/types"
 
 // Action type configuration for audit log display
 const actionConfig: Record<AuditAction, { label: string; icon: typeof Edit2; color: string }> = {
@@ -52,23 +52,33 @@ const actionConfig: Record<AuditAction, { label: string; icon: typeof Edit2; col
   note_created: { label: "Note Created", icon: FileText, color: "bg-purple-100 text-purple-700 border-purple-200" },
   note_updated: { label: "Note Updated", icon: Edit2, color: "bg-purple-100 text-purple-700 border-purple-200" },
   payer_rate_updated: { label: "Rate Updated", icon: DollarSign, color: "bg-amber-100 text-amber-700 border-amber-200" },
+  payer_updated: { label: "Payer Updated", icon: DollarSign, color: "bg-amber-100 text-amber-700 border-amber-200" },
   care_plan_applied: { label: "Care Plan", icon: ClipboardList, color: "bg-cyan-100 text-cyan-700 border-cyan-200" },
   referral_accepted: { label: "Referral Accepted", icon: Check, color: "bg-green-100 text-green-700 border-green-200" },
   referral_rejected: { label: "Referral Rejected", icon: X, color: "bg-red-100 text-red-700 border-red-200" },
+  referral_ingested: { label: "Referral Received", icon: FileText, color: "bg-blue-100 text-blue-700 border-blue-200" },
   assessment_completed: { label: "Assessment", icon: ClipboardList, color: "bg-indigo-100 text-indigo-700 border-indigo-200" },
   appointment_scheduled: { label: "Scheduled", icon: Calendar, color: "bg-blue-100 text-blue-700 border-blue-200" },
   appointment_cancelled: { label: "Cancelled", icon: AlertCircle, color: "bg-red-100 text-red-700 border-red-200" },
   patient_created: { label: "Patient Created", icon: UserPlus, color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
   login: { label: "Login", icon: LogIn, color: "bg-slate-100 text-slate-700 border-slate-200" },
   logout: { label: "Logout", icon: LogOut, color: "bg-slate-100 text-slate-700 border-slate-200" },
+  claim_exported: { label: "Claim Exported", icon: FileText, color: "bg-blue-100 text-blue-700 border-blue-200" },
+  claim_status_changed: { label: "Claim Status", icon: History, color: "bg-indigo-100 text-indigo-700 border-indigo-200" },
+  remittance_imported: { label: "Remittance", icon: DollarSign, color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  remark_code_updated: { label: "Remark Code", icon: Edit2, color: "bg-amber-100 text-amber-700 border-amber-200" },
+  org_settings_updated: { label: "Org Settings", icon: Settings, color: "bg-slate-100 text-slate-700 border-slate-200" },
+  sos_triggered: { label: "SOS Triggered", icon: AlertCircle, color: "bg-red-100 text-red-700 border-red-200" },
+  sos_acknowledged: { label: "SOS Acknowledged", icon: Check, color: "bg-orange-100 text-orange-700 border-orange-200" },
+  sos_resolved: { label: "SOS Resolved", icon: Check, color: "bg-green-100 text-green-700 border-green-200" },
 }
 
 export function AdminDashboard() {
-  const { payerRates, auditLogs, updatePayerRate, calculateDynamicRevenue, resetDemo } = useDemoData()
+  const { payers, auditLogs, updatePayer, calculateDynamicRevenue, resetDemo } = useDemoData()
   const { currentUser, navigation, logout } = useRole()
   const { toast } = useToast()
 
-  const [editingRate, setEditingRate] = useState<PayerRate | null>(null)
+  const [editingRate, setEditingRate] = useState<Payer | null>(null)
   const [editValue, setEditValue] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [resetDialogOpen, setResetDialogOpen] = useState(false)
@@ -76,7 +86,7 @@ export function AdminDashboard() {
   // Determine which tab to show based on navigation
   const activeTab = navigation.view === "admin-audit-log" ? "audit" : "rates"
 
-  const handleEditClick = (rate: PayerRate) => {
+  const handleEditClick = (rate: Payer) => {
     setEditingRate(rate)
     setEditValue(rate.ratePerUnit.toFixed(2))
     setDialogOpen(true)
@@ -95,11 +105,11 @@ export function AdminDashboard() {
       return
     }
 
-    updatePayerRate(editingRate.id, newRate, currentUser.id, currentUser.name)
+    updatePayer(editingRate.id, { ratePerUnit: newRate }, currentUser.id, currentUser.name)
 
     toast({
       title: "Rate Updated",
-      description: `${editingRate.payerName} rate updated to $${newRate.toFixed(2)}`,
+      description: `${editingRate.name} rate updated to $${newRate.toFixed(2)}`,
     })
 
     setDialogOpen(false)
@@ -155,7 +165,7 @@ export function AdminDashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-card-foreground">{payerRates.length}</p>
+            <p className="text-2xl font-bold text-card-foreground">{payers.length}</p>
             <p className="text-xs text-muted-foreground">Configured payers</p>
           </CardContent>
         </Card>
@@ -218,10 +228,10 @@ export function AdminDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {payerRates.map((rate) => (
+                  {payers.map((rate) => (
                     <TableRow key={rate.id} className="border-border">
                       <TableCell className="font-medium text-card-foreground">
-                        {rate.payerName}
+                        {rate.name}
                       </TableCell>
                       <TableCell className="text-right">
                         <span className="font-mono text-lg font-semibold text-emerald-600">
@@ -347,13 +357,13 @@ export function AdminDashboard() {
           <DialogHeader>
             <DialogTitle>Edit Payer Rate</DialogTitle>
             <DialogDescription>
-              Update the rate per completed visit for {editingRate?.payerName}
+              Update the rate per completed visit for {editingRate?.name}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Payer</label>
-              <p className="text-lg font-semibold">{editingRate?.payerName}</p>
+              <p className="text-lg font-semibold">{editingRate?.name}</p>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Rate Per Unit ($)</label>

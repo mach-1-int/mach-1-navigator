@@ -12,18 +12,21 @@ import type {
   Referral,
   Appointment,
   User,
+  Message,
   HealthPlanRevenue,
   ReferralSource,
   BillingData,
   CareTemplate,
   CarePlan,
-  PayerRate,
+  Payer,
+  RemarkCode,
+  OrganizationSettings,
   AuditLog,
   NoteTemplate,
-  SupervisorMessage,
   // CMS Billing Types (Phase 2.1)
   CPTDefinition,
   ZCode,
+  IntakeRecord,
   // Navigator Safety Map
   NavigatorLocation,
 } from "./types"
@@ -33,21 +36,76 @@ import type {
 // ============================================================================
 
 export const initialUsers: User[] = [
-  { id: "exec1", name: "Dr. Sarah Chen", role: "executive", email: "sarah.chen@gellert.health" },
-  { id: "sup1", name: "Marcus Williams", role: "supervisor", email: "marcus.williams@gellert.health" },
-  { id: "nav1", name: "Emily Rodriguez", role: "navigator", email: "emily.rodriguez@gellert.health" },
-  { id: "pt1", name: "James Thompson", role: "patient", email: "james.t@email.com" },
-  { id: "pt-elena", name: "Elena Rodriguez", role: "patient", email: "elena.rodriguez@email.com" }, // Patient Portal demo
-  { id: "admin1", name: "Alex Rivera", role: "admin", email: "alex.rivera@gellert.health" },
-  { id: "biller1", name: "Revenue Cycle Manager", role: "biller", email: "billing@gellert.health" },
+  { id: "exec1", name: "Dr. Sarah Chen", role: "executive", email: "sarah.chen@gellert.health", phone: "(602) 555-0101" },
+  { id: "sup1", name: "Marcus Williams", role: "supervisor", email: "marcus.williams@gellert.health", phone: "(602) 555-0102" },
+  { id: "pt1", name: "James Thompson", role: "patient", email: "james.t@email.com", phone: "(602) 555-0177" },
+  { id: "pt-elena", name: "Elena Rodriguez", role: "patient", email: "elena.rodriguez@email.com", phone: "(623) 555-0189" }, // Patient Portal demo
+  { id: "admin1", name: "Alex Rivera", role: "admin", email: "alex.rivera@gellert.health", phone: "(602) 555-0103" },
+  { id: "biller1", name: "Revenue Cycle Manager", role: "biller", email: "billing@gellert.health", phone: "(602) 555-0104" },
+  // Navigators - every navigator has a User row with matching-engine attributes.
+  // IDs join 1:1 with initialNavigators; currentCaseload mirrors Navigator.patientCount.
+  {
+    id: "nav1",
+    name: "Emily Rodriguez",
+    role: "navigator",
+    email: "emily.rodriguez@gellert.health",
+    phone: "(602) 555-0111",
+    attributes: {
+      homeZipCode: "85008", // East Phoenix
+      homeLat: 33.4655,
+      homeLng: -111.9963,
+      serviceAreaRadius: 20,
+      languages: ["en", "es"],
+      currentCaseload: 45,
+      maxCaseload: 50,
+      acuityCapabilities: ["L1", "L2", "L3"], // Senior navigator (24 months)
+    },
+  },
+  {
+    id: "nav2",
+    name: "David Chen",
+    role: "navigator",
+    email: "david.chen@gellert.health",
+    phone: "(480) 555-0112",
+    attributes: {
+      homeZipCode: "85281", // Tempe
+      homeLat: 33.4255,
+      homeLng: -111.94,
+      serviceAreaRadius: 20,
+      languages: ["en", "zh"],
+      currentCaseload: 52,
+      maxCaseload: 55,
+      acuityCapabilities: ["L1", "L2", "L3"],
+    },
+  },
+  {
+    id: "nav3",
+    name: "Maria Santos",
+    role: "navigator",
+    email: "maria.santos@gellert.health",
+    phone: "(602) 555-0113",
+    attributes: {
+      homeZipCode: "85021", // North Phoenix
+      homeLat: 33.5595,
+      homeLng: -112.0937,
+      serviceAreaRadius: 15,
+      languages: ["en", "es"],
+      currentCaseload: 38,
+      maxCaseload: 50,
+      acuityCapabilities: ["L1", "L2"],
+    },
+  },
   // Matching Engine Test Navigators
   {
     id: "nav-maria",
     name: "Maria Gonzalez",
     role: "navigator",
     email: "maria.gonzalez@gellert.health",
+    phone: "(623) 555-0114",
     attributes: {
       homeZipCode: "85301", // Glendale - West Valley
+      homeLat: 33.5387,
+      homeLng: -112.1859,
       serviceAreaRadius: 15,
       languages: ["en", "es"],
       currentCaseload: 35,
@@ -60,8 +118,11 @@ export const initialUsers: User[] = [
     name: "John Mitchell",
     role: "navigator",
     email: "john.mitchell@gellert.health",
+    phone: "(480) 555-0115",
     attributes: {
       homeZipCode: "85201", // Mesa - East Valley
+      homeLat: 33.4152,
+      homeLng: -111.8315,
       serviceAreaRadius: 20,
       languages: ["en"],
       currentCaseload: 48, // Almost full
@@ -74,8 +135,11 @@ export const initialUsers: User[] = [
     name: "Sarah Thompson",
     role: "navigator",
     email: "sarah.thompson@gellert.health",
+    phone: "(602) 555-0116",
     attributes: {
       homeZipCode: "85001", // Central Phoenix
+      homeLat: 33.4484,
+      homeLng: -112.074,
       serviceAreaRadius: 25,
       languages: ["en"],
       currentCaseload: 10, // Low caseload, lots of availability
@@ -83,16 +147,101 @@ export const initialUsers: User[] = [
       acuityCapabilities: ["L1", "L2", "L3"], // Can handle high risk (L3)
     },
   },
+  {
+    id: "nav4",
+    name: "John Park",
+    role: "navigator",
+    email: "john.park@gellert.health",
+    phone: "(520) 555-0117",
+    attributes: {
+      homeZipCode: "85701", // Downtown Tucson
+      homeLat: 32.2217,
+      homeLng: -110.9265,
+      serviceAreaRadius: 25,
+      languages: ["en", "ko"],
+      currentCaseload: 42,
+      maxCaseload: 50,
+      acuityCapabilities: ["L1", "L2"],
+    },
+  },
+  {
+    id: "nav5",
+    name: "Lisa Brown",
+    role: "navigator",
+    email: "lisa.brown@gellert.health",
+    phone: "(520) 555-0118",
+    attributes: {
+      homeZipCode: "85710", // East Tucson
+      homeLat: 32.214,
+      homeLng: -110.8253,
+      serviceAreaRadius: 25,
+      languages: ["en"],
+      currentCaseload: 40,
+      maxCaseload: 50,
+      acuityCapabilities: ["L1", "L2"],
+    },
+  },
+  {
+    id: "nav6",
+    name: "Michael Lee",
+    role: "navigator",
+    email: "michael.lee@gellert.health",
+    phone: "(480) 555-0119",
+    attributes: {
+      homeZipCode: "85204", // Mesa
+      homeLat: 33.3942,
+      homeLng: -111.7893,
+      serviceAreaRadius: 20,
+      languages: ["en"],
+      currentCaseload: 48,
+      maxCaseload: 55,
+      acuityCapabilities: ["L1", "L2", "L3"],
+    },
+  },
+  {
+    id: "nav7",
+    name: "Sarah Johnson",
+    role: "navigator",
+    email: "sarah.johnson@gellert.health",
+    phone: "(480) 555-0120",
+    attributes: {
+      homeZipCode: "85296", // Gilbert
+      homeLat: 33.3103,
+      homeLng: -111.7431,
+      serviceAreaRadius: 15,
+      languages: ["en"],
+      currentCaseload: 35,
+      maxCaseload: 50,
+      acuityCapabilities: ["L1"],
+    },
+  },
+  {
+    id: "nav8",
+    name: "Kevin Martinez",
+    role: "navigator",
+    email: "kevin.martinez@gellert.health",
+    phone: "(480) 555-0121",
+    attributes: {
+      homeZipCode: "85044", // Ahwatukee
+      homeLat: 33.3062,
+      homeLng: -112.0119,
+      serviceAreaRadius: 20,
+      languages: ["en", "es"],
+      currentCaseload: 41,
+      maxCaseload: 50,
+      acuityCapabilities: ["L1", "L2"],
+    },
+  },
 ]
 
 // ============================================================================
-// SUPERVISORS
+// SUPERVISORS (team membership derived from Navigator.supervisorId)
 // ============================================================================
 
 export const initialSupervisors: Supervisor[] = [
-  { id: "sup1", name: "Marcus Williams", navigatorIds: ["nav1", "nav2", "nav3"], region: "Phoenix Metro" },
-  { id: "sup2", name: "Jennifer Adams", navigatorIds: ["nav4", "nav5"], region: "Tucson" },
-  { id: "sup3", name: "Robert Kim", navigatorIds: ["nav6", "nav7", "nav8"], region: "Mesa/Tempe" },
+  { id: "sup1", name: "Marcus Williams", region: "Phoenix Metro" },
+  { id: "sup2", name: "Jennifer Adams", region: "Tucson" },
+  { id: "sup3", name: "Robert Kim", region: "Mesa/Tempe" },
 ]
 
 // ============================================================================
@@ -123,7 +272,7 @@ export const initialPatients: Patient[] = [
     id: "pt1", name: "James Thompson", dob: "1952-03-15", chartNumber: "GH-2024-001", riskLevel: 3, survivalStatus: "active",
     assignedNavigator: "nav1", assignedSupervisor: "sup1", healthPlan: "United Healthcare", enrollmentDate: "2024-06-01",
     lastContactDate: "2026-01-24", medicationCompliance: 85, pcpCompliance: true,
-    upcomingAppointments: [{ id: "apt1", patientId: "pt1", navigatorId: "nav1", date: "2026-01-28", time: "10:00", type: "home_visit", status: "scheduled" }],
+    upcomingAppointments: [{ id: "apt1", patientId: "pt1", navigatorId: "nav1", date: "2026-01-30", time: "10:00", type: "home_visit", status: "scheduled" }],
     medications: [
       { id: "med1", name: "Metformin", dosage: "500mg", frequency: "Twice daily", nextRefillDate: "2026-02-01", compliance: true },
       { id: "med2", name: "Lisinopril", dosage: "10mg", frequency: "Once daily", nextRefillDate: "2026-01-30", compliance: false },
@@ -135,6 +284,8 @@ export const initialPatients: Patient[] = [
     billingTrack: "PIN", // Principal Illness Navigation - complex medical management
     primaryDiagnosis: "Type 2 Diabetes with complications (E11.65)",
     icdCodes: ["E11.65", "I10", "E78.5"], // Diabetes, Hypertension, Hyperlipidemia
+    payerId: "payer-uhc",
+    memberId: "UHC10023845",
   },
   {
     id: "pt2", name: "Dorothy Martinez", dob: "1948-07-22", chartNumber: "GH-2024-002", riskLevel: 2, survivalStatus: "active",
@@ -150,6 +301,8 @@ export const initialPatients: Patient[] = [
     billingTrack: "CHI", // Community Health Integration - SDOH focus
     primaryDiagnosis: "Congestive Heart Failure (I50.9)",
     icdCodes: ["I50.9", "I25.10", "Z96.1"], // CHF, CAD, Pacemaker
+    payerId: "payer-mercy",
+    memberId: "MC556677889",
   },
   {
     id: "pt3", name: "Robert Wilson", dob: "1945-11-08", chartNumber: "GH-2024-003", riskLevel: 3, survivalStatus: "active",
@@ -165,6 +318,8 @@ export const initialPatients: Patient[] = [
     billingTrack: "PIN", // Principal Illness Navigation - complex medical management
     primaryDiagnosis: "Atrial Fibrillation (I48.91)",
     icdCodes: ["I48.91", "I25.10", "Z79.01"], // AFib, CAD, Anticoagulant therapy
+    payerId: "payer-uhc",
+    memberId: "UHC10077234",
   },
   {
     id: "pt4", name: "Helen Garcia", dob: "1950-04-30", chartNumber: "GH-2024-004", riskLevel: 1, survivalStatus: "active",
@@ -179,6 +334,8 @@ export const initialPatients: Patient[] = [
     billingTrack: "CHI", // Community Health Integration - lower acuity
     primaryDiagnosis: "Essential Hypertension (I10)",
     icdCodes: ["I10", "E78.0"], // Hypertension, Pure hypercholesterolemia
+    payerId: "payer-molina",
+    memberId: "MOL44821067",
   },
   {
     id: "pt5", name: "Frank Anderson", dob: "1943-09-12", chartNumber: "GH-2024-005", riskLevel: 3, survivalStatus: "active",
@@ -195,6 +352,8 @@ export const initialPatients: Patient[] = [
     securityRisk: "High", // Command Center: safety badge on calendar without clicking
     primaryDiagnosis: "Type 2 Diabetes with neuropathy (E11.42)",
     icdCodes: ["E11.42", "G62.9", "I10"], // Diabetes with neuropathy, Polyneuropathy, Hypertension
+    payerId: "payer-uhc",
+    memberId: "UHC10091456",
   },
   // Billing Bridge test patient: single 45-min note → Needs Attention (Test A); add 30+30 mins in app for Test B/C
   {
@@ -217,6 +376,8 @@ export const initialPatients: Patient[] = [
     primaryDiagnosis: "Type 2 diabetes (E11.9)",
     icdCodes: ["E11.9", "Z79.4"],
     billingTrack: "PIN",
+    payerId: "payer-mercy",
+    memberId: "MC998812345",
   },
   // Validation test patient: MISSING ICD codes → should appear in "Needs Attention"
   {
@@ -238,6 +399,8 @@ export const initialPatients: Patient[] = [
     adverseEvents: [],
     // NOTE: Intentionally NO primaryDiagnosis and NO icdCodes to test validation
     billingTrack: "CHI",
+    payerId: "payer-uhc",
+    memberId: "UHC10055991",
   },
   // ============================================================================
   // PATIENT PORTAL DEMO: Elena Rodriguez
@@ -287,6 +450,8 @@ export const initialPatients: Patient[] = [
     billingTrack: "PIN",
     primaryDiagnosis: "Type 2 Diabetes with peripheral neuropathy (E11.42)",
     icdCodes: ["E11.42", "G63.2"], // Diabetes with neuropathy
+    payerId: "payer-mercy",
+    memberId: "MC789456123", // Matches referral IN1 member ID
   },
 ]
 
@@ -295,7 +460,7 @@ export const initialPatients: Patient[] = [
 // ============================================================================
 
 export const initialAppointments: Appointment[] = [
-  { id: "apt1", patientId: "pt1", navigatorId: "nav1", date: "2026-01-28", time: "10:00", type: "home_visit", status: "scheduled" },
+  { id: "apt1", patientId: "pt1", navigatorId: "nav1", date: "2026-01-30", time: "10:00", type: "home_visit", status: "scheduled" },
   { id: "apt2", patientId: "pt2", navigatorId: "nav1", date: "2026-01-29", time: "14:00", type: "phone_call", status: "scheduled" },
   { id: "apt3", patientId: "pt4", navigatorId: "nav2", date: "2026-02-01", time: "09:00", type: "video_call", status: "scheduled" },
   // Elena's pharmacy pickup for Patient Portal demo
@@ -966,43 +1131,106 @@ export const initialCarePlans: CarePlan[] = [
 // PAYER RATES (Phase 5 - Governance & Admin)
 // ============================================================================
 
-export const initialPayerRates: PayerRate[] = [
+// Unified payer entities: identity + rate card + billing-rules link.
+// Aliases cover every healthPlan string used by patients/referrals so
+// name resolution only happens at data boundaries (referral acceptance).
+export const initialPayers: Payer[] = [
   {
     id: "payer-uhc",
-    payerName: "United Healthcare",
-    ratePerUnit: 150.00,
+    name: "United Healthcare",
+    aliases: ["UHC", "United"],
+    payerType: "COMMERCIAL",
+    payerConfigId: "medicare-pin", // UHC Medicare Advantage contract: G-code rules
+    ratePerUnit: 150.0,
+    ediPayerId: "87726",
     lastUpdated: "2026-01-15T10:00:00Z",
     updatedBy: "admin1",
   },
   {
     id: "payer-molina",
-    payerName: "Molina Healthcare",
-    ratePerUnit: 125.00,
+    name: "Molina Healthcare",
+    aliases: ["Molina"],
+    payerType: "MEDICAID",
+    payerConfigId: "medicaid-bh",
+    ratePerUnit: 125.0,
+    ediPayerId: "20553",
     lastUpdated: "2026-01-15T10:00:00Z",
     updatedBy: "admin1",
   },
   {
     id: "payer-bcbs",
-    payerName: "Blue Cross Blue Shield",
-    ratePerUnit: 175.00,
+    name: "Blue Cross Blue Shield",
+    aliases: ["BCBS", "Blue Cross"],
+    payerType: "COMMERCIAL",
+    payerConfigId: "medicare-chi",
+    ratePerUnit: 175.0,
+    ediPayerId: "53589",
     lastUpdated: "2026-01-15T10:00:00Z",
     updatedBy: "admin1",
   },
   {
     id: "payer-mercy",
-    payerName: "Mercy Care",
-    ratePerUnit: 140.00,
+    name: "Mercy Care",
+    aliases: ["Mercy"],
+    payerType: "MEDICAID",
+    payerConfigId: "medicaid-bh",
+    ratePerUnit: 140.0,
+    ediPayerId: "86050",
     lastUpdated: "2026-01-15T10:00:00Z",
     updatedBy: "admin1",
   },
   {
     id: "payer-ahcccs",
-    payerName: "AHCCCS",
-    ratePerUnit: 110.00,
+    name: "AHCCCS",
+    aliases: ["Arizona Medicaid"],
+    payerType: "MEDICAID",
+    payerConfigId: "medicaid-bh",
+    ratePerUnit: 110.0,
+    ediPayerId: "AZMCD",
     lastUpdated: "2026-01-15T10:00:00Z",
     updatedBy: "admin1",
   },
 ]
+
+// ============================================================================
+// REMARK CODE DICTIONARY (CARC/RARC) - remittance adjudication reference
+// ============================================================================
+
+export const initialRemarkCodes: RemarkCode[] = [
+  { id: "carc-1", type: "CARC", code: "1", description: "Deductible amount", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-16", type: "CARC", code: "16", description: "Claim/service lacks information or has submission/billing error(s)", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-18", type: "CARC", code: "18", description: "Exact duplicate claim/service", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-29", type: "CARC", code: "29", description: "The time limit for filing has expired", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-45", type: "CARC", code: "45", description: "Charge exceeds fee schedule/maximum allowable or contracted fee arrangement", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-50", type: "CARC", code: "50", description: "Non-covered services: not deemed a medical necessity by the payer", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-96", type: "CARC", code: "96", description: "Non-covered charge(s)", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-97", type: "CARC", code: "97", description: "Benefit included in payment/allowance for another adjudicated service", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-109", type: "CARC", code: "109", description: "Claim/service not covered by this payer/contractor", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-197", type: "CARC", code: "197", description: "Precertification/authorization/notification absent", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "rarc-n30", type: "RARC", code: "N30", description: "Patient ineligible for this service", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "rarc-n56", type: "RARC", code: "N56", description: "Procedure code billed is not correct/valid for the services billed or date of service", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "rarc-m15", type: "RARC", code: "M15", description: "Separately billed services have been bundled as components of the same procedure", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "rarc-m25", type: "RARC", code: "M25", description: "Information furnished does not substantiate the need for this level of service", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "rarc-ma04", type: "RARC", code: "MA04", description: "Secondary payment cannot be considered without primary payer information", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "rarc-n130", type: "RARC", code: "N130", description: "Consult plan benefit documents for restrictions for this service", lastUpdated: "2026-01-15T10:00:00Z" },
+]
+
+// ============================================================================
+// ORGANIZATION SETTINGS (billing provider identity for claim exports)
+// ============================================================================
+
+export const initialOrganizationSettings: OrganizationSettings = {
+  organizationName: "Gellert Health",
+  npi: "1932547861",
+  taxId: "86-1234567",
+  taxonomyCode: "251B00000X", // Case Management agency
+  submitterId: "GELLERT01",
+  address: { street: "4041 N Central Ave, Suite 900", city: "Phoenix", state: "AZ", zip: "85012" },
+  contactPhone: "(602) 555-0100",
+  supervisingProvider: { name: "Dr. Anders Whitfield, MD", npi: "1487654329" },
+  lastUpdated: "2026-01-15T10:00:00Z",
+  updatedBy: "admin1",
+}
 
 // ============================================================================
 // AUDIT LOGS (Phase 5 - Governance & Admin)
@@ -1587,6 +1815,110 @@ import type { ScheduleEvent, NavigatorShift } from "./types"
  * Seed schedule events for Maria Gonzalez (nav-maria)
  * Includes events to demonstrate travel conflict detection
  */
+// ============================================================================
+// INTAKE RECORDS (CMS billing prerequisites: consent, initiating visit, acuity)
+// Every patient with seed time logs has an intake EXCEPT pt-validation-test,
+// which is intentionally omitted so the consent guardrail is demoable.
+// ============================================================================
+
+export const initialIntakeRecords: IntakeRecord[] = [
+  {
+    id: "intake-pt1",
+    patientId: "pt1",
+    date: "2025-12-01",
+    initiatingVisitDate: "2025-12-01",
+    consentObtained: true,
+    consentDate: "2025-12-01",
+    serviceType: "PIN",
+    acuity: { clinical: 3, psychosocial: 2, barriers: 2, literacy: 2, totalScore: 9, level: "High" },
+    identifiedBarriers: [
+      { code: "Z59.82", description: "Transportation insecurity", category: "Transport" },
+    ],
+    primaryNavigatorId: "nav-maria",
+  },
+  {
+    id: "intake-pt2",
+    patientId: "pt2",
+    date: "2025-12-05",
+    initiatingVisitDate: "2025-12-05",
+    consentObtained: true,
+    consentDate: "2025-12-05",
+    serviceType: "CHI",
+    acuity: { clinical: 2, psychosocial: 2, barriers: 2, literacy: 1, totalScore: 7, level: "Moderate" },
+    identifiedBarriers: [
+      { code: "Z60.2", description: "Problems related to living alone", category: "Social" },
+      { code: "Z59.41", description: "Food insecurity", category: "Food" },
+    ],
+    primaryNavigatorId: "nav-maria",
+  },
+  {
+    id: "intake-pt3",
+    patientId: "pt3",
+    date: "2025-12-28",
+    initiatingVisitDate: "2025-12-28",
+    consentObtained: true,
+    consentDate: "2025-12-28",
+    serviceType: "PIN",
+    acuity: { clinical: 3, psychosocial: 2, barriers: 2, literacy: 2, totalScore: 9, level: "High" },
+    identifiedBarriers: [],
+    primaryNavigatorId: "nav2",
+  },
+  {
+    id: "intake-pt4",
+    patientId: "pt4",
+    date: "2025-12-20",
+    initiatingVisitDate: "2025-12-20",
+    consentObtained: true,
+    consentDate: "2025-12-20",
+    serviceType: "CHI",
+    acuity: { clinical: 1, psychosocial: 1, barriers: 1, literacy: 0, totalScore: 3, level: "Low" },
+    identifiedBarriers: [
+      { code: "Z59.82", description: "Transportation insecurity", category: "Transport" },
+    ],
+    primaryNavigatorId: "nav2",
+  },
+  {
+    id: "intake-pt5",
+    patientId: "pt5",
+    date: "2025-12-30",
+    initiatingVisitDate: "2025-12-30",
+    consentObtained: true,
+    consentDate: "2025-12-30",
+    serviceType: "PIN",
+    acuity: { clinical: 3, psychosocial: 3, barriers: 2, literacy: 1, totalScore: 9, level: "High" },
+    identifiedBarriers: [
+      { code: "Z59.6", description: "Low income", category: "Financial" },
+    ],
+    primaryNavigatorId: "nav3",
+  },
+  {
+    id: "intake-pt-billing",
+    patientId: "pt-billing",
+    date: "2026-01-10",
+    initiatingVisitDate: "2026-01-10",
+    consentObtained: true,
+    consentDate: "2026-01-10",
+    serviceType: "PIN",
+    acuity: { clinical: 2, psychosocial: 1, barriers: 2, literacy: 1, totalScore: 6, level: "Moderate" },
+    identifiedBarriers: [],
+    primaryNavigatorId: "nav-john",
+  },
+  {
+    id: "intake-pt-elena",
+    patientId: "pt-elena",
+    date: "2026-01-28",
+    initiatingVisitDate: "2026-01-28",
+    consentObtained: true,
+    consentDate: "2026-01-28",
+    serviceType: "PIN",
+    acuity: { clinical: 2, psychosocial: 2, barriers: 1, literacy: 2, totalScore: 7, level: "Moderate" },
+    identifiedBarriers: [
+      { code: "Z59.82", description: "Transportation insecurity", category: "Transport" },
+    ],
+    primaryNavigatorId: "nav-maria",
+  },
+]
+
 export const initialScheduleEvents: ScheduleEvent[] = [
   // Medical Visit - 10:00 AM to 11:00 AM, Central Phoenix (85001)
   {
@@ -1605,8 +1937,8 @@ export const initialScheduleEvents: ScheduleEvent[] = [
       lat: 33.4484,
       lng: -111.8320,
     },
-    startTime: "2026-01-29T10:00:00-07:00",
-    endTime: "2026-01-29T11:00:00-07:00",
+    startTime: "2026-01-30T10:00:00-07:00",
+    endTime: "2026-01-30T11:00:00-07:00",
     isHighSafetyRisk: false,
     status: "SCHEDULED",
     estimatedTravelMinutes: 25,
@@ -1631,8 +1963,8 @@ export const initialScheduleEvents: ScheduleEvent[] = [
       lat: 33.5387,
       lng: -112.1860,
     },
-    startTime: "2026-01-29T09:30:00-07:00",
-    endTime: "2026-01-29T10:00:00-07:00",
+    startTime: "2026-01-30T09:30:00-07:00",
+    endTime: "2026-01-30T10:00:00-07:00",
     isHighSafetyRisk: false,
     status: "SCHEDULED",
     estimatedTravelMinutes: 15,
@@ -1661,8 +1993,8 @@ export const initialScheduleEvents: ScheduleEvent[] = [
       lat: 33.5092,
       lng: -112.1066,
     },
-    startTime: "2026-01-29T14:00:00-07:00",
-    endTime: "2026-01-29T15:00:00-07:00",
+    startTime: "2026-01-30T14:00:00-07:00",
+    endTime: "2026-01-30T15:00:00-07:00",
     isHighSafetyRisk: true, // High safety risk patient (pt5 has securityRisk: 'High')
     status: "SCHEDULED",
     estimatedTravelMinutes: 20,
@@ -1687,8 +2019,8 @@ export const initialScheduleEvents: ScheduleEvent[] = [
       lat: 33.4484,
       lng: -111.8320,
     },
-    startTime: "2026-01-29T09:00:00-07:00",
-    endTime: "2026-01-29T10:00:00-07:00",
+    startTime: "2026-01-30T09:00:00-07:00",
+    endTime: "2026-01-30T10:00:00-07:00",
     isHighSafetyRisk: false,
     status: "SCHEDULED",
     estimatedTravelMinutes: 25,
@@ -1710,8 +2042,8 @@ export const initialScheduleEvents: ScheduleEvent[] = [
       lat: 33.5387,
       lng: -112.1860,
     },
-    startTime: "2026-01-29T10:15:00-07:00",
-    endTime: "2026-01-29T10:45:00-07:00",
+    startTime: "2026-01-30T10:15:00-07:00",
+    endTime: "2026-01-30T10:45:00-07:00",
     isHighSafetyRisk: false,
     status: "SCHEDULED",
     estimatedTravelMinutes: 20,
@@ -1733,8 +2065,8 @@ export const initialScheduleEvents: ScheduleEvent[] = [
       lat: 33.5387,
       lng: -112.1860,
     },
-    startTime: "2026-01-29T14:00:00-07:00",
-    endTime: "2026-01-29T14:45:00-07:00",
+    startTime: "2026-01-30T14:00:00-07:00",
+    endTime: "2026-01-30T14:45:00-07:00",
     isHighSafetyRisk: false,
     status: "SCHEDULED",
     estimatedTravelMinutes: 15,
@@ -1756,8 +2088,8 @@ export const initialScheduleEvents: ScheduleEvent[] = [
       lat: 33.5092,
       lng: -112.1066,
     },
-    startTime: "2026-01-29T15:30:00-07:00",
-    endTime: "2026-01-29T16:30:00-07:00",
+    startTime: "2026-01-30T15:30:00-07:00",
+    endTime: "2026-01-30T16:30:00-07:00",
     isHighSafetyRisk: true,
     status: "SCHEDULED",
     estimatedTravelMinutes: 20,
@@ -2003,7 +2335,7 @@ export const initialTimeLogs: TimeLog[] = [
     durationMinutes: 90,
     modality: "In-Person",
     serviceType: "CHI",
-    navigatorId: "nav-david",
+    navigatorId: "nav2", // David Chen (was "nav-david" - no such Navigator entity)
     verified: true,
     verifiedBy: "sup-sarah",
     verifiedAt: "2026-01-02T17:00:00-07:00",
@@ -2019,7 +2351,7 @@ export const initialTimeLogs: TimeLog[] = [
     durationMinutes: 60,
     modality: "Video",
     serviceType: "CHI",
-    navigatorId: "nav-david",
+    navigatorId: "nav2", // David Chen (was "nav-david" - no such Navigator entity)
     verified: true,
     verifiedBy: "sup-sarah",
     verifiedAt: "2026-01-09T17:00:00-07:00",
@@ -2035,7 +2367,7 @@ export const initialTimeLogs: TimeLog[] = [
     durationMinutes: 45,
     modality: "Phone",
     serviceType: "CHI",
-    navigatorId: "nav-david",
+    navigatorId: "nav2", // David Chen (was "nav-david" - no such Navigator entity)
     verified: true,
     verifiedBy: "sup-sarah",
     verifiedAt: "2026-01-16T17:00:00-07:00",
@@ -2206,7 +2538,7 @@ export const initialNavigatorLocations: NavigatorLocation[] = [
     navigatorName: "Sarah Thompson",
     lat: 33.4484,
     lng: -112.0740, // Downtown Phoenix - Central
-    lastCheckIn: new Date(Date.now() - 5 * 60 * 1000).toISOString(), // 5 mins ago
+    lastCheckIn: new Date(Date.now() - 20 * 60 * 1000).toISOString(), // 20 mins ago (>= IDLE_AFTER_MIN threshold)
     status: "IDLE",
     currentTask: "Documentation",
     speed: 0,
@@ -2215,44 +2547,53 @@ export const initialNavigatorLocations: NavigatorLocation[] = [
 ]
 
 // ============================================================================
-// SUPERVISOR MESSAGES (NUDGES)
+// DIRECT MESSAGES (unified messaging - nudges are Messages with type "nudge")
 // ============================================================================
 
-export const initialSupervisorMessages: SupervisorMessage[] = [
+export const initialDirectMessages: Message[] = [
   {
     id: "nudge-1",
-    fromSupervisorId: "sup1",
-    fromSupervisorName: "Marcus Williams",
-    toNavigatorId: "nav-maria",
+    senderId: "sup1",
+    senderName: "Marcus Williams",
+    senderRole: "supervisor",
+    receiverId: "nav-maria",
+    receiverName: "Maria Gonzalez",
+    receiverRole: "navigator",
+    content: "Claim flagged: Missing 15 minutes of documented time for this month's billing cycle. Please add time logs to reach 60-minute minimum.",
+    timestamp: "2026-01-30T09:15:00-07:00",
+    readStatus: false,
+    type: "nudge",
     patientId: "pt-billing",
     patientName: "Sam Underwood",
-    content: "Claim flagged: Missing 15 minutes of documented time for this month's billing cycle. Please add time logs to reach 60-minute minimum.",
-    type: "nudge",
-    createdAt: "2026-01-29T09:15:00-07:00",
-    read: false,
   },
   {
     id: "nudge-2",
-    fromSupervisorId: "sup1",
-    fromSupervisorName: "Marcus Williams",
-    toNavigatorId: "nav-john",
+    senderId: "sup1",
+    senderName: "Marcus Williams",
+    senderRole: "supervisor",
+    receiverId: "nav-john",
+    receiverName: "John Mitchell",
+    receiverRole: "navigator",
+    content: "Billing review: Patient Sam Underwood has only 45 minutes logged this month. Need additional 15 minutes documented for G0506 claim.",
+    timestamp: "2026-01-30T10:30:00-07:00",
+    readStatus: false,
+    type: "nudge",
     patientId: "pt-billing",
     patientName: "Sam Underwood",
-    content: "Billing review: Patient Sam Underwood has only 45 minutes logged this month. Need additional 15 minutes documented for G0506 claim.",
-    type: "nudge",
-    createdAt: "2026-01-29T10:30:00-07:00",
-    read: false,
   },
   {
     id: "nudge-3",
-    fromSupervisorId: "sup1",
-    fromSupervisorName: "Marcus Williams",
-    toNavigatorId: "nav-maria",
+    senderId: "sup1",
+    senderName: "Marcus Williams",
+    senderRole: "supervisor",
+    receiverId: "nav-maria",
+    receiverName: "Maria Gonzalez",
+    receiverRole: "navigator",
+    content: "PCP follow-up needed: Patient missed annual wellness visit. Please schedule appointment and document outreach.",
+    timestamp: "2026-01-28T14:00:00-07:00",
+    readStatus: false,
+    type: "nudge",
     patientId: "pt1",
     patientName: "James Thompson",
-    content: "PCP follow-up needed: Patient missed annual wellness visit. Please schedule appointment and document outreach.",
-    type: "nudge",
-    createdAt: "2026-01-28T14:00:00-07:00",
-    read: false,
   },
 ]

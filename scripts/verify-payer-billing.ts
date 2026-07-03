@@ -103,8 +103,8 @@ run("Step 5: Needs Attention threshold messages", () => {
     medicare
   )
   const month = "2026-01"
-  const attentionM = filterClaimsByStatus(filterClaimsByMonth(claimsMedicaid, month), "MISSING_DATA")
-  const attentionG = filterClaimsByStatus(filterClaimsByMonth(claimsMedicare, month), "MISSING_DATA")
+  const attentionM = filterClaimsByStatus(filterClaimsByMonth(claimsMedicaid, month), "NEEDS_ATTENTION")
+  const attentionG = filterClaimsByStatus(filterClaimsByMonth(claimsMedicare, month), "NEEDS_ATTENTION")
   const insufficientM = attentionM.filter((c) =>
     c.validationErrors?.some((e) => e.includes("Insufficient Time"))
   )
@@ -125,7 +125,7 @@ run("Step 5: Needs Attention threshold messages", () => {
 run("Step 6: CSV Billing_Model column (MEDICAID BH, MEDICARE PIN)", () => {
   const medicaid = getPayerConfig("medicaid-bh")
   const claimsM = generateMonthlyClaims(initialNavigators, initialPatients, initialTimeLogs, medicaid)
-  const readyM = filterClaimsByStatus(filterClaimsByMonth(claimsM, "2026-01"), "READY")
+  const readyM = filterClaimsByStatus(filterClaimsByMonth(claimsM, "2026-01"), "VALIDATED")
   if (readyM.length > 0) {
     const csv = generateBillingCSV(readyM.slice(0, 1), initialPatients)
     assert(csv.includes("Billing_Model"), "CSV has Billing_Model header")
@@ -133,7 +133,7 @@ run("Step 6: CSV Billing_Model column (MEDICAID BH, MEDICARE PIN)", () => {
   }
   const pin = getPayerConfig("medicare-pin")
   const claimsG = generateMonthlyClaims(initialNavigators, initialPatients, initialTimeLogs, pin)
-  const readyG = filterClaimsByStatus(filterClaimsByMonth(claimsG, "2026-01"), "READY")
+  const readyG = filterClaimsByStatus(filterClaimsByMonth(claimsG, "2026-01"), "VALIDATED")
   if (readyG.length > 0) {
     const csv = generateBillingCSV(readyG.slice(0, 1), initialPatients)
     assert(csv.includes("MEDICARE PIN") || csv.includes("Billing_Model"), "CSV contains MEDICARE PIN or has Billing_Model")
@@ -171,8 +171,8 @@ run("Claims regeneration by payer", () => {
   const claimsM = generateMonthlyClaims(initialNavigators, initialPatients, initialTimeLogs, medicaid)
   const claimsG = generateMonthlyClaims(initialNavigators, initialPatients, initialTimeLogs, pin)
   const month = "2026-01"
-  const readyM = filterClaimsByStatus(filterClaimsByMonth(claimsM, month), "READY")
-  const readyG = filterClaimsByStatus(filterClaimsByMonth(claimsG, month), "READY")
+  const readyM = filterClaimsByStatus(filterClaimsByMonth(claimsM, month), "VALIDATED")
+  const readyG = filterClaimsByStatus(filterClaimsByMonth(claimsG, month), "VALIDATED")
   const hasH = claimsM.some((c) => c.primaryCode.startsWith("H"))
   const hasG = claimsG.some((c) => c.primaryCode.startsWith("G"))
   assert(hasH, "Medicaid claims use H-codes")
@@ -204,12 +204,12 @@ run("QA Scenario 1: Guardrail (45 min → Needs Attention, not Ready)", () => {
   const pin = getPayerConfig("medicare-pin")
   const claims = generateMonthlyClaims(initialNavigators, initialPatients, initialTimeLogs, pin)
   const month = "2026-01"
-  const attention = filterClaimsByStatus(filterClaimsByMonth(claims, month), "MISSING_DATA")
-  const ready = filterClaimsByStatus(filterClaimsByMonth(claims, month), "READY")
+  const attention = filterClaimsByStatus(filterClaimsByMonth(claims, month), "NEEDS_ATTENTION")
+  const ready = filterClaimsByStatus(filterClaimsByMonth(claims, month), "VALIDATED")
   const samClaim = attention.find((c) => c.patientId === "pt-billing" && c.totalMinutes === 45)
   assert(!!samClaim, "Sam Underwood (45 min) appears in Needs Attention under Medicare PIN")
   const hasInsufficient = samClaim!.validationErrors?.some((e) => e.includes("Insufficient Time (45/60 mins)"))
-  assert(hasInsufficient, "Issues column says 'Insufficient Time (45/60 mins)'")
+  assert(!!hasInsufficient, "Issues column says 'Insufficient Time (45/60 mins)'")
   const samInReady = ready.some((c) => c.patientId === "pt-billing")
   assert(!samInReady, "Sam does not appear in Ready to Bill")
 })
@@ -231,18 +231,18 @@ run("QA Scenario 3: Validation (Missing Member ID)", () => {
   )
   const claims = generateMonthlyClaims(initialNavigators, patientsNoMember, initialTimeLogs, pin)
   const month = "2026-01"
-  const attention = filterClaimsByStatus(filterClaimsByMonth(claims, month), "MISSING_DATA")
+  const attention = filterClaimsByStatus(filterClaimsByMonth(claims, month), "NEEDS_ATTENTION")
   const pt1Claim = attention.find((c) => c.patientId === "pt1")
   assert(!!pt1Claim, "Patient with no Health Plan appears in Needs Attention")
   const hasMissingMember = pt1Claim!.validationErrors?.some((e) => e.includes("Missing Member ID"))
-  assert(hasMissingMember, "Error says 'Missing Member ID'")
+  assert(!!hasMissingMember, "Error says 'Missing Member ID'")
 })
 
 // Scenario 4: Bridge – CSV has required columns and last-day-of-month date
 run("QA Scenario 4: Bridge (CSV columns and Date_Of_Service)", () => {
   const pin = getPayerConfig("medicare-pin")
   const claims = generateMonthlyClaims(initialNavigators, initialPatients, initialTimeLogs, pin)
-  const ready = filterClaimsByStatus(filterClaimsByMonth(claims, "2026-01"), "READY")
+  const ready = filterClaimsByStatus(filterClaimsByMonth(claims, "2026-01"), "VALIDATED")
   if (ready.length === 0) {
     console.log("  (skip: no Ready claims for 2026-01)")
     return

@@ -29,7 +29,7 @@ interface NavigatorDetailViewProps {
 }
 
 export function NavigatorDetailView({ navigatorId }: NavigatorDetailViewProps) {
-  const { navigators, patients, adverseEvents, getNavigatorMessages } = useDemoData()
+  const { navigators, patients, adverseEvents, getNudgesForNavigator } = useDemoData()
   const { goBack, navigateTo } = useRole()
   
   const navigator = navigators.find(n => n.id === navigatorId)
@@ -37,7 +37,7 @@ export function NavigatorDetailView({ navigatorId }: NavigatorDetailViewProps) {
   const navAdverseEvents = adverseEvents.filter(ae => 
     navPatients.some(p => p.id === ae.patientId)
   )
-  const messages = getNavigatorMessages(navigatorId)
+  const messages = getNudgesForNavigator(navigatorId)
   
   if (!navigator) {
     return (
@@ -346,7 +346,7 @@ export function NavigatorDetailView({ navigatorId }: NavigatorDetailViewProps) {
                       key={message.id}
                       className={cn(
                         "p-4 rounded-lg border",
-                        message.read ? "bg-card border-border" : "bg-primary/5 border-primary/20"
+                        message.readStatus ? "bg-card border-border" : "bg-primary/5 border-primary/20"
                       )}
                     >
                       <div className="flex items-center justify-between mb-2">
@@ -359,11 +359,11 @@ export function NavigatorDetailView({ navigatorId }: NavigatorDetailViewProps) {
                           </span>
                         </div>
                         <span className="text-xs text-muted-foreground">
-                          {new Date(message.createdAt).toLocaleString()}
+                          {new Date(message.timestamp).toLocaleString()}
                         </span>
                       </div>
                       <p className="text-sm text-card-foreground">{message.content}</p>
-                      <p className="text-xs text-muted-foreground mt-2">From: {message.fromSupervisorName}</p>
+                      <p className="text-xs text-muted-foreground mt-2">From: {message.senderName}</p>
                     </div>
                   ))}
                 </div>

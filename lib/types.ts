@@ -5,6 +5,8 @@ export type UserRole = "executive" | "supervisor" | "navigator" | "patient" | "a
  */
 export interface NavigatorAttributes {
   homeZipCode: string
+  homeLat?: number // Home base coordinates for distance/routing calculations
+  homeLng?: number
   serviceAreaRadius: number // in miles
   languages: string[] // e.g., ['en', 'es']
   currentCaseload: number
@@ -17,9 +19,18 @@ export interface User {
   name: string
   role: UserRole
   email: string
+  phone?: string // Canonical contact number (safety map, directories resolve from here)
   avatar?: string
   // Navigator-specific attributes (only present when role === 'navigator')
   attributes?: NavigatorAttributes
+}
+
+/**
+ * A geographic coordinate pair
+ */
+export interface GeoPoint {
+  lat: number
+  lng: number
 }
 
 export interface Patient {
@@ -60,6 +71,10 @@ export interface Patient {
   billingTrack?: ServiceType // PIN (Principal Illness Navigation) or CHI (Community Health Integration)
   // Field safety for scheduling (Command Center) - visible on calendar without clicking
   securityRisk?: "Low" | "Medium" | "High"
+  // Payer identity (unified billing) - FK to Payer.id; healthPlan string kept for display/legacy
+  payerId?: string
+  // Real insurance member ID (replaces synthesized <PLAN>-<PATIENTID> fallback)
+  memberId?: string
 }
 
 export interface Navigator {
@@ -81,8 +96,8 @@ export interface Navigator {
 export interface Supervisor {
   id: string
   name: string
-  navigatorIds: string[]
   region: string
+  // Team membership is derived from Navigator.supervisorId (single source of truth)
 }
 
 export interface AdverseEvent {
@@ -194,6 +209,16 @@ export interface NoteDraft {
   startTime: string // ISO timestamp
   endTime?: string // ISO timestamp
   duration?: number // Calculated duration in minutes
+  // Transcript resilience (AI Scribe): raw dictation cached so a dropped
+  // connection or navigation never loses the navigator's spoken notes
+  rawTranscript?: string
+  updatedAt?: string // ISO timestamp of last autosave
+  aiMeta?: {
+    isMock: boolean
+    filledFieldIds: string[]
+    lowConfidenceFieldIds: string[]
+    generatedAt: string
+  }
 }
 
 // Raw HL7-like data structure from AMD integration
@@ -235,8 +260,10 @@ export interface ReferralRawData {
 export interface Referral {
   id: string
   receivedAt: string
+  acceptedAt?: string // ISO timestamp when accepted/assigned (drives turnaround metrics)
   source: string // e.g., "Dignity Health", "Banner Health"
   rawData: ReferralRawData
+  rawHL7?: string // Original HL7v2 message text when ingested via the HL7 adapter
   status: "pending" | "accepted" | "rejected"
   // Denormalized fields for quick access (derived from rawData)
   patientName: string
@@ -274,19 +301,6 @@ export interface RiskAssessmentData {
   calculatedTier: 1 | 2 | 3
   completedAt: string
   completedBy: string // Navigator ID
-}
-
-export interface SupervisorMessage {
-  id: string
-  fromSupervisorId: string
-  fromSupervisorName: string
-  toNavigatorId: string
-  patientId: string
-  patientName: string
-  content: string
-  type: "nudge" | "instruction" | "alert"
-  createdAt: string
-  read: boolean
 }
 
 export interface Message {
@@ -421,7 +435,8 @@ export interface CarePlan {
 // ============================================================================
 
 /**
- * Payer rate configuration for revenue calculation
+ * @deprecated Replaced by the unified {@link Payer} entity. Kept for type
+ * compatibility during migration; the store no longer carries a payerRates slice.
  */
 export interface PayerRate {
   id: string
@@ -429,6 +444,54 @@ export interface PayerRate {
   ratePerUnit: number // Revenue per completed visit
   lastUpdated: string // ISO timestamp
   updatedBy?: string // User ID who made the last update
+}
+
+/**
+ * Unified payer entity - single source of truth for payer identity.
+ * Absorbs the admin rate card (PayerRate) and links to billing rules (PayerConfig).
+ * Patients reference payers by id (Patient.payerId); name-string matching happens
+ * ONLY at data boundaries (referral acceptance) via alias resolution.
+ */
+export interface Payer {
+  id: string // e.g., "payer-uhc"
+  name: string // Canonical name, e.g., "United Healthcare"
+  aliases: string[] // Legacy/inbound name variants, e.g., ["UHC", "United"]
+  payerType: "MEDICARE" | "MEDICAID" | "COMMERCIAL"
+  payerConfigId: string // FK -> PAYER_CONFIGS billing-rules id
+  ratePerUnit: number // Revenue per completed visit (admin rate card)
+  ediPayerId: string // Payer ID for 837P NM1*PR / 835 correlation
+  lastUpdated: string // ISO timestamp
+  updatedBy?: string
+}
+
+/**
+ * CARC/RARC remark code dictionary entry (remittance adjudication).
+ * Admin-editable so billing managers can add payer-specific codes without code changes.
+ */
+export interface RemarkCode {
+  id: string // e.g., "carc-45", "rarc-n30"
+  type: "CARC" | "RARC"
+  code: string // e.g., "45", "N30"
+  description: string
+  lastUpdated: string
+  updatedBy?: string
+}
+
+/**
+ * Organization/billing-provider settings used by claim exports (837P, CSV).
+ * Replaces hardcoded provider strings.
+ */
+export interface OrganizationSettings {
+  organizationName: string
+  npi: string // Billing provider NPI (10-digit)
+  taxId: string // EIN
+  taxonomyCode: string // e.g., "251B00000X" (case management)
+  submitterId: string // ISA06 / 1000A submitter identifier
+  address: { street: string; city: string; state: string; zip: string }
+  contactPhone: string
+  supervisingProvider: { name: string; npi: string }
+  lastUpdated: string
+  updatedBy?: string
 }
 
 /**
@@ -455,15 +518,25 @@ export type AuditAction =
   | "note_created"
   | "note_updated"
   | "payer_rate_updated"
+  | "payer_updated"
   | "care_plan_applied"
   | "referral_accepted"
   | "referral_rejected"
+  | "referral_ingested"
   | "assessment_completed"
   | "appointment_scheduled"
   | "appointment_cancelled"
   | "patient_created"
   | "login"
   | "logout"
+  | "claim_exported"
+  | "claim_status_changed"
+  | "remittance_imported"
+  | "remark_code_updated"
+  | "org_settings_updated"
+  | "sos_triggered"
+  | "sos_acknowledged"
+  | "sos_resolved"
 
 // ============================================================================
 // CMS BILLING & CODING STANDARDS (Phase 2.1 - Documentation Engine)
@@ -661,6 +734,28 @@ export interface BillingEncounter {
  * 2. Medicaid H-codes (15-min increments, Rule of Eights):
  *    - H0038 (peer support), H2015 (community support), H0023 (outreach)
  */
+/**
+ * Full claim lifecycle status.
+ * Derived (recomputed-from-time-logs) claims only ever hold DRAFT | NEEDS_ATTENTION | VALIDATED.
+ * Persisted ClaimRecords (created at export) progress EXPORTED -> SUBMITTED -> ACCEPTED/REJECTED -> PAID/DENIED.
+ */
+export type ClaimStatus =
+  | "DRAFT" // Derived claim for the current, still-accruing billing month
+  | "NEEDS_ATTENTION" // Derived claim with validation errors
+  | "VALIDATED" // Derived claim, passed validation, ready to export
+  | "EXPORTED" // Persisted ClaimRecord; file generated (CSV or 837P)
+  | "SUBMITTED" // Sent via ClearinghouseAdapter
+  | "ACCEPTED" // Clearinghouse acknowledgment
+  | "REJECTED" // Clearinghouse rejection -> fix & rebill
+  | "PAID" // 835 posted payment
+  | "DENIED" // 835 denial with CARC codes -> rebill/appeal
+
+/** Statuses a derived (pre-export) claim can hold */
+export type DerivedClaimStatus = Extract<ClaimStatus, "DRAFT" | "NEEDS_ATTENTION" | "VALIDATED">
+
+/** Statuses a persisted ClaimRecord can hold */
+export type ClaimRecordStatus = Exclude<ClaimStatus, DerivedClaimStatus>
+
 export interface BillableClaim {
   id: string
   patientId: string
@@ -673,8 +768,8 @@ export interface BillableClaim {
   addOnCode?: string // Add-on code (Medicare only: "G0024" for PIN, "G0022" for CHI)
   addOnUnits: number // Add-on units (Medicare only, 0 for Medicaid)
   diagnosisCodes: string[] // ICD-10 codes (e.g., ["Z59.0", "C50.9"])
-  status: "READY" | "MISSING_DATA" | "EXPORTED"
-  validationErrors?: string[] // Reasons for MISSING_DATA status
+  status: DerivedClaimStatus
+  validationErrors?: string[] // Reasons for NEEDS_ATTENTION status
   // Traceability
   timeLogIds: string[] // Source time log IDs that comprise this claim
   serviceType: ServiceType // PIN or CHI
@@ -684,6 +779,55 @@ export interface BillableClaim {
   // Payer-agnostic billing (Phase 2.2)
   billingModel?: BillingModel // Which billing model generated this claim
   payerConfigId?: string // Reference to PayerConfig used
+  payerId?: string // FK -> Payer.id (denormalized from patient at generation)
+}
+
+/**
+ * One status transition in a claim record's history (audit trail)
+ */
+export interface ClaimStatusEvent {
+  status: ClaimStatus
+  at: string // ISO timestamp
+  by: string // user id, or "system:835" / "system:clearinghouse"
+  note?: string
+}
+
+/**
+ * Remittance details applied to a claim from an 835 ERA
+ */
+export interface RemittanceInfo {
+  paidAmount: number
+  chargedAmount: number
+  patientResponsibility: number
+  carcCodes: string[] // Claim Adjustment Reason Codes (from CAS segments)
+  rarcCodes: string[] // Remittance Advice Remark Codes (from LQ*HE segments)
+  payerClaimControlNumber?: string
+  checkOrEftNumber?: string // TRN02
+  remitDate?: string // ISO date (from BPR16)
+  eraFileName?: string
+}
+
+/**
+ * Persisted, immutable snapshot of an exported claim.
+ * Created by exportClaims(); the pre-export claim stays derived from time logs.
+ * Rebills create a new record with a -vN versioned id; the old one is voided.
+ */
+export interface ClaimRecord {
+  id: string // `${sourceClaimId}-${payerConfigId}-v${n}`
+  sourceClaimId: string // Derived BillableClaim.id
+  snapshot: BillableClaim // Frozen at export time
+  payerId: string
+  payerConfigId: string
+  billedAmount: number // calculateClaimValue at export time
+  status: ClaimRecordStatus
+  statusHistory: ClaimStatusEvent[]
+  exportedAt: string
+  exportFormat: "CSV" | "837P"
+  exportBatchId: string
+  submittedAt?: string
+  clearinghouseBatchId?: string
+  remittance?: RemittanceInfo
+  voided?: boolean // Superseded by a rebill; stays in ledger, greyed out
 }
 
 // ============================================================================
@@ -816,4 +960,26 @@ export interface NavigatorLocation {
   speed?: number // mph - to detect if moving
   heading?: number // degrees - direction of travel
   batteryLevel?: number // 0-100 phone battery
+}
+
+/**
+ * SOS event lifecycle for navigator panic alerts
+ */
+export type SOSStatus = "ACTIVE" | "ACKNOWLEDGED" | "RESOLVED"
+
+/**
+ * Navigator-triggered emergency alert, surfaced on the supervisor safety map
+ */
+export interface SOSEvent {
+  id: string
+  navigatorId: string
+  navigatorName: string
+  triggeredAt: string // ISO timestamp
+  lat: number
+  lng: number
+  status: SOSStatus
+  acknowledgedBy?: string // Supervisor name
+  acknowledgedAt?: string
+  resolvedAt?: string
+  note?: string
 }

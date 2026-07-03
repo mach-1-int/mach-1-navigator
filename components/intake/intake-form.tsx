@@ -116,15 +116,15 @@ export function IntakeForm({
     const suggestedCodes: ZCode[] = []
 
     if (sdoh.housingInsecurity) {
-      const code = zCodes.find(z => z.code === "Z59.0" || z.category === "housing")
+      const code = zCodes.find(z => z.code === "Z59.0" || z.category === "Housing")
       if (code) suggestedCodes.push(code)
     }
     if (sdoh.foodInsecurity) {
-      const code = zCodes.find(z => z.code === "Z59.4" || z.category === "food")
+      const code = zCodes.find(z => z.code === "Z59.4" || z.category === "Food")
       if (code) suggestedCodes.push(code)
     }
     if (sdoh.transportationIssues) {
-      const code = zCodes.find(z => z.code === "Z59.8" || z.category === "transportation")
+      const code = zCodes.find(z => z.code === "Z59.8" || z.category === "Transport")
       if (code) suggestedCodes.push(code)
     }
 

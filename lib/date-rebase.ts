@@ -2,7 +2,7 @@
  * Date Rebasing for the Demo
  * ---------------------------
  * The seed data in `initial-data.ts` was authored around a fixed "today" of
- * 2026-01-29. So the demo always looks current (recent contacts, upcoming
+ * 2026-01-30 (ANCHOR_DATE below). So the demo always looks current (recent contacts, upcoming
  * appointments, an in-progress billing month) regardless of the real date,
  * every operational date is shifted forward by the gap between that anchor and
  * the actual current date.
@@ -40,12 +40,10 @@ const MONTH_RE = /^(\d{4})-(\d{2})$/
 /** Whole-day offset between the anchor and the current date. Computed once. */
 function getShiftDays(): number {
   const anchor = new Date(`${ANCHOR_DATE}T00:00:00Z`).getTime()
-  const now = Date.now()
-  const todayUtc = Date.UTC(
-    new Date(now).getUTCFullYear(),
-    new Date(now).getUTCMonth(),
-    new Date(now).getUTCDate(),
-  )
+  // Use the LOCAL calendar date (not UTC) so an evening user west of UTC
+  // doesn't get an extra day of shift ("today's" events landing tomorrow).
+  const now = new Date()
+  const todayUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
   return Math.round((todayUtc - anchor) / MS_PER_DAY)
 }
 

@@ -1,8 +1,14 @@
 "use client"
 
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
-import type { Patient, PatientNote, Appointment, Navigator, AdverseEvent, Referral, SupervisorMessage, Message, UserRole, RiskAssessmentData, CareTemplate, CarePlan, PayerRate, AuditLog, AuditAction, NoteTemplate, NoteDraft, TemplateField, IntakeRecord, ZCode, TimeLog, ServiceType, AcuityScore, PayerConfig, NavigatorLocation, SafetyStatus } from "./types"
-import { getPayerConfig, getAllPayerConfigs } from "./payer-config"
+import type { Patient, PatientNote, Appointment, Navigator, User, Supervisor, NavigatorAttributes, AdverseEvent, Referral, Message, UserRole, RiskAssessmentData, CareTemplate, CarePlan, Payer, RemarkCode, OrganizationSettings, AuditLog, AuditAction, NoteTemplate, NoteDraft, TemplateField, IntakeRecord, ZCode, TimeLog, ServiceType, AcuityScore, PayerConfig, NavigatorLocation, SafetyStatus, BillableClaim, ClaimRecord, ClaimRecordStatus, SOSEvent, GeoPoint, ScheduleEvent, NavigatorShift, TimeOffRequest } from "./types"
+import { getPayerConfig, getAllPayerConfigs, resolvePayerByName, getPayerForPatient } from "./payer-config"
+import {
+  createClaimRecords,
+  transitionClaimRecord,
+  getActiveClaimRecordKeys,
+} from "./claim-lifecycle"
+import type { ClearinghouseAdapter, SubmissionResult } from "./clearinghouse/adapter"
 import {
   type StoreState,
   createInitialState,
@@ -17,7 +23,20 @@ import {
   addGoalDataPoint,
   getCarePlanByPatient,
 } from "./store"
-import { initialNavigators } from "./initial-data"
+
+// ============================================================================
+// REMITTANCE APPLICATION SHAPE
+// (structurally compatible with lib/edi/remittance-matcher's RemittanceMatchResult)
+// ============================================================================
+
+export interface RemittanceApplication {
+  matches: Array<{
+    claimRecordId: string
+    resolvedStatus: "PAID" | "DENIED"
+    remittance: NonNullable<ClaimRecord["remittance"]>
+  }>
+  unmatchedCount: number
+}
 
 // ============================================================================
 // CONTEXT TYPE
@@ -28,21 +47,37 @@ interface DemoDataContextType {
   patients: Patient[]
   notes: PatientNote[]
   navigators: Navigator[]
+  users: User[]
+  supervisors: Supervisor[]
   adverseEvents: AdverseEvent[]
   referrals: Referral[]
-  messages: SupervisorMessage[]
   directMessages: Message[]
   appointments: Appointment[]
   careTemplates: CareTemplate[]
   carePlans: CarePlan[]
-  payerRates: PayerRate[]
+  payers: Payer[]
+  remarkCodes: RemarkCode[]
+  organizationSettings: OrganizationSettings
+  claimRecords: ClaimRecord[]
   auditLogs: AuditLog[]
   noteTemplates: NoteTemplate[]
   noteDrafts: NoteDraft[]
+  // Scheduling (Phase 4)
+  scheduleEvents: ScheduleEvent[]
+  navigatorShifts: NavigatorShift[]
+  timeOffRequests: TimeOffRequest[]
   // Navigator Safety Map
   navigatorLocations: NavigatorLocation[]
+  sosEvents: SOSEvent[]
   lastAssignedPatientId: string | null
   isHydrated: boolean
+
+  // Identity selectors
+  getUser: (userId: string) => User | undefined
+  getSupervisor: (supervisorId: string) => Supervisor | undefined
+  getTeamNavigators: (supervisorId: string) => Navigator[]
+  getNavigatorsWithAttributes: () => Array<User & { attributes: NavigatorAttributes }>
+  getNavigatorDisplayName: (navigatorId: string) => string
 
   // Patient Notes
   addNote: (patientId: string, content: string, type: PatientNote["type"], authorId: string, authorName: string, authorRole: PatientNote["authorRole"]) => void
@@ -58,10 +93,12 @@ interface DemoDataContextType {
   rejectReferral: (referralId: string) => void
   submitAssessment: (patientId: string, assessmentData: Omit<RiskAssessmentData, 'riskScore' | 'calculatedTier' | 'completedAt'>, navigatorId: string) => void
 
-  // Messages/Nudges (Legacy)
+  // Nudges (unified Messages with type "nudge")
   sendNudge: (toNavigatorId: string, patientId: string, patientName: string, content: string, senderId: string, senderName: string, senderRole?: UserRole) => void
-  getNavigatorMessages: (navigatorId: string) => SupervisorMessage[]
-  markMessageRead: (messageId: string) => void
+  getNudgesForNavigator: (navigatorId: string) => Message[]
+
+  // Referral ingestion (HL7 adapter)
+  ingestReferral: (referral: Referral) => void
 
   // Direct Messaging
   sendMessage: (senderId: string, senderName: string, senderRole: UserRole, receiverId: string, receiverName: string, receiverRole: UserRole, content: string, type?: Message["type"], patientId?: string, patientName?: string) => void
@@ -97,9 +134,35 @@ interface DemoDataContextType {
   logGoalMetric: (patientId: string, goalId: string, value: number, navigatorId: string) => void
 
   // Governance & Admin (Phase 5)
-  updatePayerRate: (payerId: string, newRate: number, userId: string, userName: string) => void
+  updatePayer: (payerId: string, updates: Partial<Payer>, userId: string, userName: string) => void
+  addRemarkCode: (code: Omit<RemarkCode, "id" | "lastUpdated">, userId: string, userName: string) => void
+  updateRemarkCode: (id: string, updates: Partial<RemarkCode>, userId: string, userName: string) => void
+  updateOrganizationSettings: (updates: Partial<OrganizationSettings>, userId: string, userName: string) => void
   logActivity: (userId: string, userName: string, userRole: UserRole, action: AuditAction, details?: string, entityType?: string, entityId?: string) => void
   calculateDynamicRevenue: () => number
+
+  // Claim lifecycle (Revenue Cycle)
+  exportClaims: (claims: BillableClaim[], format: "CSV" | "837P", by: string) => ClaimRecord[]
+  updateClaimStatus: (claimRecordId: string, next: ClaimRecordStatus, by: string, note?: string) => boolean
+  reopenClaimRecord: (claimRecordId: string, by: string) => void
+  applyRemittance: (application: RemittanceApplication, by: string) => { applied: number; unmatched: number }
+  submitClaimBatch: (claimRecordIds: string[], adapter: ClearinghouseAdapter, fileContent: string, fileName: string, by: string) => Promise<SubmissionResult>
+
+  // Note drafts (AI Scribe transcript resilience)
+  saveNoteDraft: (draft: Omit<NoteDraft, "id"> & { id?: string }) => NoteDraft
+  getNoteDraft: (patientId: string, templateId: string) => NoteDraft | undefined
+  deleteNoteDraft: (draftId: string) => void
+
+  // Scheduling (shifts & dual-track events)
+  addShift: (shift: Omit<NavigatorShift, "id" | "createdAt" | "updatedAt">) => NavigatorShift
+  updateShift: (shiftId: string, updates: Partial<NavigatorShift>) => void
+  addScheduleEvent: (event: Omit<ScheduleEvent, "id">) => ScheduleEvent
+  updateScheduleEvent: (eventId: string, updates: Partial<ScheduleEvent>) => void
+
+  // SOS (navigator safety)
+  triggerSOS: (navigatorId: string, location?: GeoPoint) => void
+  acknowledgeSOS: (sosId: string, byName: string) => void
+  resolveSOS: (sosId: string) => void
 
   // Dynamic Narrative Engine (Phase 6)
   getNoteTemplate: (templateId: string) => NoteTemplate | undefined
@@ -136,7 +199,19 @@ interface DemoDataContextType {
   setActivePayerConfig: (configId: string) => void
 
   // Navigator Safety Map
-  updateNavigatorLocation: (navigatorId: string, lat: number, lng: number, status?: SafetyStatus, currentTask?: string) => void
+  updateNavigatorLocation: (
+    navigatorId: string,
+    lat: number,
+    lng: number,
+    opts?: {
+      status?: SafetyStatus
+      currentTask?: string
+      currentPatientId?: string
+      touchCheckIn?: boolean // false = pure movement (simulator); does NOT stamp lastCheckIn
+      speed?: number
+      batteryLevel?: number
+    }
+  ) => void
   getNavigatorLocations: () => NavigatorLocation[]
 
   // Utility
@@ -175,7 +250,47 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
   }, [state, isHydrated])
 
   // Destructure state for easier access
-  const { patients, notes, navigators, adverseEvents, referrals, messages, directMessages, appointments, careTemplates, carePlans, payerRates, auditLogs, noteTemplates, noteDrafts, zCodes, intakeRecords, timeLogs, navigatorLocations, lastAssignedPatientId } = state
+  const { patients, notes, navigators, users, supervisors, adverseEvents, referrals, directMessages, appointments, careTemplates, carePlans, payers, remarkCodes, organizationSettings, claimRecords, auditLogs, noteTemplates, noteDrafts, zCodes, intakeRecords, timeLogs, scheduleEvents, navigatorShifts, timeOffRequests, navigatorLocations, sosEvents, lastAssignedPatientId } = state
+
+  // ============================================================================
+  // IDENTITY SELECTORS
+  // ============================================================================
+
+  const getUser = useCallback((userId: string) => {
+    return users.find(u => u.id === userId)
+  }, [users])
+
+  const getSupervisor = useCallback((supervisorId: string) => {
+    return supervisors.find(s => s.id === supervisorId)
+  }, [supervisors])
+
+  const getTeamNavigators = useCallback((supervisorId: string) => {
+    return navigators.filter(n => n.supervisorId === supervisorId)
+  }, [navigators])
+
+  /**
+   * Navigator identities with matching-engine attributes, joined with LIVE
+   * caseload (Navigator.patientCount) so the matching engine reflects
+   * assignments made during the session.
+   */
+  const getNavigatorsWithAttributes = useCallback(() => {
+    return users
+      .filter((u): u is User & { attributes: NavigatorAttributes } => u.role === "navigator" && !!u.attributes)
+      .map(u => {
+        const live = navigators.find(n => n.id === u.id)
+        return live
+          ? { ...u, attributes: { ...u.attributes, currentCaseload: live.patientCount } }
+          : u
+      })
+  }, [users, navigators])
+
+  const getNavigatorDisplayName = useCallback((navigatorId: string) => {
+    return (
+      navigators.find(n => n.id === navigatorId)?.name ??
+      users.find(u => u.id === navigatorId)?.name ??
+      navigatorId
+    )
+  }, [navigators, users])
 
   // ============================================================================
   // NOTE OPERATIONS
@@ -227,6 +342,9 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
     const newPatientId = `pt-${generateId()}`
     const initialAppointmentId = generateId()
 
+    // Resolve payer identity at the data boundary (the ONE fuzzy-match point)
+    const payer = resolvePayerByName(payers, referral.rawData?.IN1?.payerName || referral.healthPlan)
+
     // Create initial appointment
     const initialAppointment: Appointment = {
       id: initialAppointmentId,
@@ -250,6 +368,8 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
       assignedNavigator: navigatorId,
       assignedSupervisor: "sup1",
       healthPlan: referral.healthPlan,
+      payerId: payer?.id,
+      memberId: referral.rawData?.IN1?.memberId,
       enrollmentDate: new Date().toISOString().split('T')[0],
       lastContactDate: new Date().toISOString().split('T')[0],
       medicationCompliance: 0,
@@ -286,7 +406,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
       lastAssignedPatientId: newPatientId,
       referrals: prev.referrals.map(r =>
         r.id === referralId
-          ? { ...r, status: "accepted" as const, assignedNavigator: navigatorId }
+          ? { ...r, status: "accepted" as const, assignedNavigator: navigatorId, acceptedAt: new Date().toISOString() }
           : r
       ),
       navigators: prev.navigators.map(nav =>
@@ -295,7 +415,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
           : nav
       )
     }))
-  }, [referrals, navigators])
+  }, [referrals, navigators, payers])
 
   // ============================================================================
   // INTAKE & ASSESSMENT OPERATIONS (Phase 2)
@@ -316,6 +436,10 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
     const newPatientId = `pt-${generateId()}`
     const navigator = navigators.find(n => n.id === navigatorId)
 
+    // Resolve payer identity at the data boundary (the ONE fuzzy-match point)
+    const resolvedHealthPlan = patientData.healthPlan || referral.healthPlan
+    const payer = resolvePayerByName(payers, referral.rawData?.IN1?.payerName || resolvedHealthPlan)
+
     // Create patient with validated/edited data from the intake form
     const newPatient: Patient = {
       id: newPatientId,
@@ -326,7 +450,9 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
       survivalStatus: "active",
       assignedNavigator: navigatorId,
       assignedSupervisor: patientData.assignedSupervisor || "sup1",
-      healthPlan: patientData.healthPlan || referral.healthPlan,
+      healthPlan: resolvedHealthPlan,
+      payerId: patientData.payerId || payer?.id,
+      memberId: patientData.memberId || referral.rawData?.IN1?.memberId,
       enrollmentDate: new Date().toISOString().split('T')[0],
       lastContactDate: new Date().toISOString().split('T')[0],
       medicationCompliance: 0,
@@ -375,7 +501,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
       lastAssignedPatientId: newPatientId,
       referrals: prev.referrals.map(r =>
         r.id === referralId
-          ? { ...r, status: "accepted" as const, assignedNavigator: navigatorId }
+          ? { ...r, status: "accepted" as const, assignedNavigator: navigatorId, acceptedAt: new Date().toISOString() }
           : r
       ),
       navigators: prev.navigators.map(nav =>
@@ -386,7 +512,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
     }))
 
     return { ...newPatient, upcomingAppointments: [initialAppointment] }
-  }, [referrals, navigators])
+  }, [referrals, navigators, payers])
 
   /**
    * Reject a referral
@@ -466,21 +592,6 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
     senderName: string,
     senderRole: UserRole = "supervisor"
   ) => {
-    // Legacy SupervisorMessage for backwards compatibility
-    const newSupervisorMessage: SupervisorMessage = {
-      id: generateId(),
-      fromSupervisorId: senderId,
-      fromSupervisorName: senderName,
-      toNavigatorId,
-      patientId,
-      patientName,
-      content,
-      type: "nudge",
-      createdAt: new Date().toISOString(),
-      read: false
-    }
-
-    // Also create a unified Message record
     const navigator = navigators.find(n => n.id === toNavigatorId)
     const newDirectMessage: Message = {
       id: generateId(),
@@ -500,22 +611,35 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
 
     setState(prev => ({
       ...prev,
-      messages: [newSupervisorMessage, ...prev.messages],
       directMessages: [...prev.directMessages, newDirectMessage]
     }))
   }, [navigators])
 
-  const getNavigatorMessages = useCallback((navigatorId: string) => {
-    return messages.filter(m => m.toNavigatorId === navigatorId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-  }, [messages])
+  const getNudgesForNavigator = useCallback((navigatorId: string) => {
+    return directMessages
+      .filter(m => m.receiverId === navigatorId && m.type === "nudge")
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+  }, [directMessages])
 
-  const markMessageRead = useCallback((messageId: string) => {
+  /**
+   * Ingest a referral from an external source (HL7 adapter / simulated feed)
+   */
+  const ingestReferral = useCallback((referral: Referral) => {
+    const auditEntry: AuditLog = {
+      id: generateId(),
+      userId: "system:hl7",
+      userName: "Referral Ingestion",
+      userRole: "supervisor",
+      action: "referral_ingested",
+      timestamp: new Date().toISOString(),
+      details: `Referral for ${referral.patientName} received from ${referral.source}`,
+      entityType: "referral",
+      entityId: referral.id,
+    }
     setState(prev => ({
       ...prev,
-      messages: prev.messages.map(m =>
-        m.id === messageId ? { ...m, read: true } : m
-      )
+      referrals: [referral, ...prev.referrals],
+      auditLogs: [auditEntry, ...prev.auditLogs],
     }))
   }, [])
 
@@ -969,37 +1093,41 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
   }, [])
 
   /**
-   * Update a payer rate and log the change
+   * Update a payer (rate card / identity) and log the change
    */
-  const updatePayerRate = useCallback((
+  const updatePayer = useCallback((
     payerId: string,
-    newRate: number,
+    updates: Partial<Payer>,
     userId: string,
     userName: string
   ) => {
     setState(prev => {
-      const existingRate = prev.payerRates.find(r => r.id === payerId)
-      const oldRate = existingRate?.ratePerUnit || 0
+      const existing = prev.payers.find(p => p.id === payerId)
+      if (!existing) return prev
 
-      // Create audit log entry
+      const details =
+        updates.ratePerUnit !== undefined && updates.ratePerUnit !== existing.ratePerUnit
+          ? `Updated ${existing.name} rate from $${existing.ratePerUnit.toFixed(2)} to $${updates.ratePerUnit.toFixed(2)}`
+          : `Updated ${existing.name} payer settings`
+
       const auditEntry: AuditLog = {
         id: generateId(),
         userId,
         userName,
         userRole: "admin",
-        action: "payer_rate_updated",
+        action: "payer_updated",
         timestamp: new Date().toISOString(),
-        details: `Updated ${existingRate?.payerName} rate from $${oldRate.toFixed(2)} to $${newRate.toFixed(2)}`,
-        entityType: "payer_rate",
+        details,
+        entityType: "payer",
         entityId: payerId,
       }
 
       return {
         ...prev,
-        payerRates: prev.payerRates.map(rate =>
-          rate.id === payerId
-            ? { ...rate, ratePerUnit: newRate, lastUpdated: new Date().toISOString(), updatedBy: userId }
-            : rate
+        payers: prev.payers.map(p =>
+          p.id === payerId
+            ? { ...p, ...updates, lastUpdated: new Date().toISOString(), updatedBy: userId }
+            : p
         ),
         auditLogs: [auditEntry, ...prev.auditLogs],
       }
@@ -1007,33 +1135,484 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
   }, [])
 
   /**
-   * Calculate dynamic revenue based on completed appointments and payer rates
-   * Revenue = Sum(CompletedVisits * PayerRate for matching health plan)
+   * Add a remark code (CARC/RARC) to the dictionary
+   */
+  const addRemarkCode = useCallback((
+    code: Omit<RemarkCode, "id" | "lastUpdated">,
+    userId: string,
+    userName: string
+  ) => {
+    const newCode: RemarkCode = {
+      ...code,
+      id: `${code.type.toLowerCase()}-${code.code.toLowerCase()}-${generateId()}`,
+      lastUpdated: new Date().toISOString(),
+      updatedBy: userId,
+    }
+    const auditEntry: AuditLog = {
+      id: generateId(),
+      userId,
+      userName,
+      userRole: "admin",
+      action: "remark_code_updated",
+      timestamp: new Date().toISOString(),
+      details: `Added ${code.type} code ${code.code}`,
+      entityType: "remark_code",
+      entityId: newCode.id,
+    }
+    setState(prev => ({
+      ...prev,
+      remarkCodes: [...prev.remarkCodes, newCode],
+      auditLogs: [auditEntry, ...prev.auditLogs],
+    }))
+  }, [])
+
+  /**
+   * Update a remark code description
+   */
+  const updateRemarkCode = useCallback((
+    id: string,
+    updates: Partial<RemarkCode>,
+    userId: string,
+    userName: string
+  ) => {
+    setState(prev => {
+      const existing = prev.remarkCodes.find(c => c.id === id)
+      if (!existing) return prev
+      const auditEntry: AuditLog = {
+        id: generateId(),
+        userId,
+        userName,
+        userRole: "admin",
+        action: "remark_code_updated",
+        timestamp: new Date().toISOString(),
+        details: `Updated ${existing.type} code ${existing.code}`,
+        entityType: "remark_code",
+        entityId: id,
+      }
+      return {
+        ...prev,
+        remarkCodes: prev.remarkCodes.map(c =>
+          c.id === id ? { ...c, ...updates, lastUpdated: new Date().toISOString(), updatedBy: userId } : c
+        ),
+        auditLogs: [auditEntry, ...prev.auditLogs],
+      }
+    })
+  }, [])
+
+  /**
+   * Update organization / billing-provider settings
+   */
+  const updateOrganizationSettings = useCallback((
+    updates: Partial<OrganizationSettings>,
+    userId: string,
+    userName: string
+  ) => {
+    const auditEntry: AuditLog = {
+      id: generateId(),
+      userId,
+      userName,
+      userRole: "admin",
+      action: "org_settings_updated",
+      timestamp: new Date().toISOString(),
+      details: "Updated organization / billing provider settings",
+      entityType: "organization_settings",
+    }
+    setState(prev => ({
+      ...prev,
+      organizationSettings: {
+        ...prev.organizationSettings,
+        ...updates,
+        lastUpdated: new Date().toISOString(),
+        updatedBy: userId,
+      },
+      auditLogs: [auditEntry, ...prev.auditLogs],
+    }))
+  }, [])
+
+  /**
+   * Calculate dynamic revenue based on completed appointments and payer rates.
+   * Resolves the patient's payer by explicit FK first; name matching only as a
+   * legacy fallback. Unresolvable payers contribute $0 (honest, surfaced in UI)
+   * instead of a silent default.
    */
   const calculateDynamicRevenue = useCallback(() => {
-    // Get completed appointments
     const completedAppointments = appointments.filter(apt => apt.status === "completed")
 
     let totalRevenue = 0
 
     completedAppointments.forEach(apt => {
-      // Find the patient's health plan
       const patient = patients.find(p => p.id === apt.patientId)
       if (!patient) return
 
-      // Find matching payer rate
-      const payerRate = payerRates.find(rate =>
-        patient.healthPlan.toLowerCase().includes(rate.payerName.toLowerCase()) ||
-        rate.payerName.toLowerCase().includes(patient.healthPlan.toLowerCase())
-      )
-
-      // Use the payer rate or default to $150
-      const ratePerUnit = payerRate?.ratePerUnit || 150
-      totalRevenue += ratePerUnit
+      const payer = getPayerForPatient(payers, patient)
+      totalRevenue += payer?.ratePerUnit ?? 0
     })
 
     return totalRevenue
-  }, [appointments, patients, payerRates])
+  }, [appointments, patients, payers])
+
+  // ============================================================================
+  // CLAIM LIFECYCLE (Revenue Cycle)
+  // ============================================================================
+
+  /**
+   * Persist immutable ClaimRecord snapshots for exported claims.
+   * File download happens in the component; this records the export.
+   */
+  const exportClaims = useCallback((
+    claims: BillableClaim[],
+    format: "CSV" | "837P",
+    by: string
+  ): ClaimRecord[] => {
+    const payerConfig = getPayerConfig(state.activePayerConfigId)
+    const newRecords = createClaimRecords(claims, payers, payerConfig, format, by, claimRecords)
+
+    const auditEntry: AuditLog = {
+      id: generateId(),
+      userId: by,
+      userName: getNavigatorDisplayName(by),
+      userRole: "biller",
+      action: "claim_exported",
+      timestamp: new Date().toISOString(),
+      details: `Exported ${newRecords.length} claim(s) as ${format}`,
+      entityType: "claim_record",
+    }
+
+    setState(prev => ({
+      ...prev,
+      claimRecords: [...prev.claimRecords, ...newRecords],
+      auditLogs: [auditEntry, ...prev.auditLogs],
+    }))
+
+    return newRecords
+  }, [state.activePayerConfigId, payers, claimRecords, getNavigatorDisplayName])
+
+  /**
+   * Transition a persisted claim record. Returns false (no-op) on an
+   * illegal transition.
+   */
+  const updateClaimStatus = useCallback((
+    claimRecordId: string,
+    next: ClaimRecordStatus,
+    by: string,
+    note?: string
+  ): boolean => {
+    const record = claimRecords.find(r => r.id === claimRecordId)
+    if (!record) return false
+
+    const transitioned = transitionClaimRecord(record, next, by, note)
+    if (!transitioned) return false
+
+    const auditEntry: AuditLog = {
+      id: generateId(),
+      userId: by,
+      userName: by.startsWith("system:") ? by : getNavigatorDisplayName(by),
+      userRole: "biller",
+      action: "claim_status_changed",
+      timestamp: new Date().toISOString(),
+      details: `Claim ${record.snapshot.patientName} ${record.snapshot.month}: ${record.status} -> ${next}${note ? ` (${note})` : ""}`,
+      entityType: "claim_record",
+      entityId: claimRecordId,
+    }
+
+    setState(prev => ({
+      ...prev,
+      claimRecords: prev.claimRecords.map(r => (r.id === claimRecordId ? transitioned : r)),
+      auditLogs: [auditEntry, ...prev.auditLogs],
+    }))
+    return true
+  }, [claimRecords, getNavigatorDisplayName])
+
+  /**
+   * Void a REJECTED/DENIED record so its patient-month returns to the derived
+   * working tabs for correction and rebill.
+   */
+  const reopenClaimRecord = useCallback((claimRecordId: string, by: string) => {
+    setState(prev => {
+      const record = prev.claimRecords.find(r => r.id === claimRecordId)
+      if (!record || !["REJECTED", "DENIED"].includes(record.status)) return prev
+
+      const auditEntry: AuditLog = {
+        id: generateId(),
+        userId: by,
+        userName: by,
+        userRole: "biller",
+        action: "claim_status_changed",
+        timestamp: new Date().toISOString(),
+        details: `Claim ${record.snapshot.patientName} ${record.snapshot.month} reopened for rebill (record voided)`,
+        entityType: "claim_record",
+        entityId: claimRecordId,
+      }
+
+      return {
+        ...prev,
+        claimRecords: prev.claimRecords.map(r =>
+          r.id === claimRecordId ? { ...r, voided: true } : r
+        ),
+        auditLogs: [auditEntry, ...prev.auditLogs],
+      }
+    })
+  }, [])
+
+  /**
+   * Apply matched 835 remittance results: set PAID/DENIED with remittance
+   * details. Records still in EXPORTED are auto-bumped through SUBMITTED with
+   * a system note so history stays truthful.
+   */
+  const applyRemittance = useCallback((
+    application: RemittanceApplication,
+    by: string
+  ): { applied: number; unmatched: number } => {
+    let applied = 0
+
+    setState(prev => {
+      const now = new Date().toISOString()
+      const updatedRecords = prev.claimRecords.map(record => {
+        const match = application.matches.find(m => m.claimRecordId === record.id)
+        if (!match) return record
+
+        let working = record
+        // Walk the record forward through any legal intermediate states
+        if (working.status === "EXPORTED") {
+          working = transitionClaimRecord(working, "SUBMITTED", "system:835", "Inferred from remittance") ?? working
+        }
+        if (working.status === "SUBMITTED") {
+          working = transitionClaimRecord(working, "ACCEPTED", "system:835", "Inferred from remittance") ?? working
+        }
+        const final = transitionClaimRecord(working, match.resolvedStatus, "system:835")
+        if (!final) return record
+
+        applied++
+        return { ...final, remittance: match.remittance }
+      })
+
+      const auditEntry: AuditLog = {
+        id: generateId(),
+        userId: by,
+        userName: by,
+        userRole: "biller",
+        action: "remittance_imported",
+        timestamp: now,
+        details: `835 remittance applied: ${application.matches.length} matched, ${application.unmatchedCount} unmatched`,
+        entityType: "claim_record",
+      }
+
+      return {
+        ...prev,
+        claimRecords: updatedRecords,
+        auditLogs: [auditEntry, ...prev.auditLogs],
+      }
+    })
+
+    return { applied: application.matches.length, unmatched: application.unmatchedCount }
+  }, [])
+
+  /**
+   * Submit a batch of exported claims via a clearinghouse adapter.
+   * EXPORTED -> SUBMITTED immediately; ACCEPTED/REJECTED per adapter result.
+   */
+  const submitClaimBatch = useCallback(async (
+    claimRecordIds: string[],
+    adapter: ClearinghouseAdapter,
+    fileContent: string,
+    fileName: string,
+    by: string
+  ): Promise<SubmissionResult> => {
+    // Phase 1: mark submitted
+    setState(prev => ({
+      ...prev,
+      claimRecords: prev.claimRecords.map(r =>
+        claimRecordIds.includes(r.id) && r.status === "EXPORTED"
+          ? (transitionClaimRecord(r, "SUBMITTED", by, `Via ${adapter.name}`) ?? r)
+          : r
+      ),
+    }))
+
+    const batchRecords = claimRecords.filter(r => claimRecordIds.includes(r.id))
+    const result = await adapter.submit({ fileName, content: fileContent, claimRecords: batchRecords })
+
+    // Phase 2: apply adapter verdicts
+    setState(prev => ({
+      ...prev,
+      claimRecords: prev.claimRecords.map(r => {
+        if (result.accepted.includes(r.id) && r.status === "SUBMITTED") {
+          return { ...(transitionClaimRecord(r, "ACCEPTED", "system:clearinghouse") ?? r), clearinghouseBatchId: result.clearinghouseBatchId }
+        }
+        const rejection = result.rejected.find(rej => rej.claimRecordId === r.id)
+        if (rejection && r.status === "SUBMITTED") {
+          return { ...(transitionClaimRecord(r, "REJECTED", "system:clearinghouse", rejection.reason) ?? r), clearinghouseBatchId: result.clearinghouseBatchId }
+        }
+        return r
+      }),
+    }))
+
+    return result
+  }, [claimRecords])
+
+  // ============================================================================
+  // NOTE DRAFTS (AI Scribe transcript resilience)
+  // ============================================================================
+
+  /**
+   * Upsert a note draft, keyed by (patientId, templateId)
+   */
+  const saveNoteDraft = useCallback((draft: Omit<NoteDraft, "id"> & { id?: string }): NoteDraft => {
+    const existing = noteDrafts.find(
+      d => d.patientId === draft.patientId && d.templateId === draft.templateId
+    )
+    const saved: NoteDraft = {
+      ...draft,
+      id: draft.id ?? existing?.id ?? generateId(),
+      updatedAt: new Date().toISOString(),
+    }
+    setState(prev => ({
+      ...prev,
+      noteDrafts: existing
+        ? prev.noteDrafts.map(d => (d.id === saved.id ? saved : d))
+        : [...prev.noteDrafts, saved],
+    }))
+    return saved
+  }, [noteDrafts])
+
+  const getNoteDraft = useCallback((patientId: string, templateId: string) => {
+    return noteDrafts.find(d => d.patientId === patientId && d.templateId === templateId)
+  }, [noteDrafts])
+
+  const deleteNoteDraft = useCallback((draftId: string) => {
+    setState(prev => ({
+      ...prev,
+      noteDrafts: prev.noteDrafts.filter(d => d.id !== draftId),
+    }))
+  }, [])
+
+  // ============================================================================
+  // SCHEDULING (shifts & dual-track events - all mutations through context)
+  // ============================================================================
+
+  const addShift = useCallback((shift: Omit<NavigatorShift, "id" | "createdAt" | "updatedAt">): NavigatorShift => {
+    const now = new Date().toISOString()
+    const newShift: NavigatorShift = { ...shift, id: generateId(), createdAt: now, updatedAt: now }
+    setState(prev => ({ ...prev, navigatorShifts: [...prev.navigatorShifts, newShift] }))
+    return newShift
+  }, [])
+
+  const updateShift = useCallback((shiftId: string, updates: Partial<NavigatorShift>) => {
+    setState(prev => ({
+      ...prev,
+      navigatorShifts: prev.navigatorShifts.map(s =>
+        s.id === shiftId ? { ...s, ...updates, updatedAt: new Date().toISOString() } : s
+      ),
+    }))
+  }, [])
+
+  const addScheduleEvent = useCallback((event: Omit<ScheduleEvent, "id">): ScheduleEvent => {
+    const patient = patients.find(p => p.id === event.patientId)
+    const newEvent: ScheduleEvent = {
+      ...event,
+      // Default the safety flag from patient risk when the caller didn't decide
+      isHighSafetyRisk: event.isHighSafetyRisk ?? patient?.riskLevel === 3,
+      id: generateId(),
+    }
+    setState(prev => ({ ...prev, scheduleEvents: [...prev.scheduleEvents, newEvent] }))
+    return newEvent
+  }, [patients])
+
+  const updateScheduleEvent = useCallback((eventId: string, updates: Partial<ScheduleEvent>) => {
+    setState(prev => ({
+      ...prev,
+      scheduleEvents: prev.scheduleEvents.map(e =>
+        e.id === eventId ? { ...e, ...updates } : e
+      ),
+    }))
+  }, [])
+
+  // ============================================================================
+  // SOS (navigator safety)
+  // ============================================================================
+
+  const triggerSOS = useCallback((navigatorId: string, location?: GeoPoint) => {
+    const loc = navigatorLocations.find(l => l.navigatorId === navigatorId)
+    const name = getNavigatorDisplayName(navigatorId)
+    const point = location ?? (loc ? { lat: loc.lat, lng: loc.lng } : { lat: 33.4484, lng: -112.074 })
+
+    const sos: SOSEvent = {
+      id: generateId(),
+      navigatorId,
+      navigatorName: name,
+      triggeredAt: new Date().toISOString(),
+      lat: point.lat,
+      lng: point.lng,
+      status: "ACTIVE",
+    }
+    const auditEntry: AuditLog = {
+      id: generateId(),
+      userId: navigatorId,
+      userName: name,
+      userRole: "navigator",
+      action: "sos_triggered",
+      timestamp: sos.triggeredAt,
+      details: `SOS triggered at ${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`,
+      entityType: "sos_event",
+      entityId: sos.id,
+    }
+    setState(prev => ({
+      ...prev,
+      sosEvents: [sos, ...prev.sosEvents],
+      auditLogs: [auditEntry, ...prev.auditLogs],
+    }))
+  }, [navigatorLocations, getNavigatorDisplayName])
+
+  const acknowledgeSOS = useCallback((sosId: string, byName: string) => {
+    setState(prev => {
+      const sos = prev.sosEvents.find(s => s.id === sosId)
+      if (!sos || sos.status !== "ACTIVE") return prev
+      const auditEntry: AuditLog = {
+        id: generateId(),
+        userId: byName,
+        userName: byName,
+        userRole: "supervisor",
+        action: "sos_acknowledged",
+        timestamp: new Date().toISOString(),
+        details: `SOS from ${sos.navigatorName} acknowledged`,
+        entityType: "sos_event",
+        entityId: sosId,
+      }
+      return {
+        ...prev,
+        sosEvents: prev.sosEvents.map(s =>
+          s.id === sosId
+            ? { ...s, status: "ACKNOWLEDGED" as const, acknowledgedBy: byName, acknowledgedAt: new Date().toISOString() }
+            : s
+        ),
+        auditLogs: [auditEntry, ...prev.auditLogs],
+      }
+    })
+  }, [])
+
+  const resolveSOS = useCallback((sosId: string) => {
+    setState(prev => {
+      const sos = prev.sosEvents.find(s => s.id === sosId)
+      if (!sos || sos.status === "RESOLVED") return prev
+      const auditEntry: AuditLog = {
+        id: generateId(),
+        userId: sos.acknowledgedBy ?? "supervisor",
+        userName: sos.acknowledgedBy ?? "Supervisor",
+        userRole: "supervisor",
+        action: "sos_resolved",
+        timestamp: new Date().toISOString(),
+        details: `SOS from ${sos.navigatorName} resolved`,
+        entityType: "sos_event",
+        entityId: sosId,
+      }
+      return {
+        ...prev,
+        sosEvents: prev.sosEvents.map(s =>
+          s.id === sosId ? { ...s, status: "RESOLVED" as const, resolvedAt: new Date().toISOString() } : s
+        ),
+        auditLogs: [auditEntry, ...prev.auditLogs],
+      }
+    })
+  }, [])
 
   // ============================================================================
   // DYNAMIC NARRATIVE ENGINE (Phase 6)
@@ -1300,9 +1879,20 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
     navigatorId: string,
     lat: number,
     lng: number,
-    status?: SafetyStatus,
-    currentTask?: string
+    opts?: {
+      status?: SafetyStatus
+      currentTask?: string
+      currentPatientId?: string
+      touchCheckIn?: boolean
+      speed?: number
+      batteryLevel?: number
+    }
   ) => {
+    // touchCheckIn defaults true (a real check-in). The movement simulator
+    // passes false so pure position updates don't reset check-in age —
+    // otherwise stale-check-in alerts would self-heal while pins move.
+    const touchCheckIn = opts?.touchCheckIn ?? true
+
     setState(prev => ({
       ...prev,
       navigatorLocations: prev.navigatorLocations.map(loc =>
@@ -1311,9 +1901,12 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
               ...loc,
               lat,
               lng,
-              lastCheckIn: new Date().toISOString(),
-              status: status || loc.status,
-              currentTask: currentTask !== undefined ? currentTask : loc.currentTask,
+              lastCheckIn: touchCheckIn ? new Date().toISOString() : loc.lastCheckIn,
+              status: opts?.status ?? loc.status,
+              currentTask: opts?.currentTask !== undefined ? opts.currentTask : loc.currentTask,
+              currentPatientId: opts?.currentPatientId !== undefined ? opts.currentPatientId : loc.currentPatientId,
+              speed: opts?.speed !== undefined ? opts.speed : loc.speed,
+              batteryLevel: opts?.batteryLevel !== undefined ? opts.batteryLevel : loc.batteryLevel,
             }
           : loc
       )
@@ -1343,19 +1936,34 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
       patients,
       notes,
       navigators,
+      users,
+      supervisors,
       adverseEvents,
       referrals,
-      messages,
       directMessages,
       appointments,
       careTemplates,
       carePlans,
-      payerRates,
+      payers,
+      remarkCodes,
+      organizationSettings,
+      claimRecords,
       auditLogs,
       noteTemplates,
       noteDrafts,
+      scheduleEvents,
+      navigatorShifts,
+      timeOffRequests,
+      sosEvents,
       lastAssignedPatientId,
       isHydrated,
+
+      // Identity selectors
+      getUser,
+      getSupervisor,
+      getTeamNavigators,
+      getNavigatorsWithAttributes,
+      getNavigatorDisplayName,
 
       // Note operations
       addNote,
@@ -1365,16 +1973,16 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
       getPendingReferrals,
       assignReferral,
       getLastAssignedPatient,
+      ingestReferral,
 
       // Intake & Assessment (Phase 2)
       acceptReferral,
       rejectReferral,
       submitAssessment,
 
-      // Message operations (legacy nudges)
+      // Nudges (unified messaging)
       sendNudge,
-      getNavigatorMessages,
-      markMessageRead,
+      getNudgesForNavigator,
 
       // Direct messaging operations
       sendMessage,
@@ -1410,9 +2018,35 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
       logGoalMetric,
 
       // Governance & Admin (Phase 5)
-      updatePayerRate,
+      updatePayer,
+      addRemarkCode,
+      updateRemarkCode,
+      updateOrganizationSettings,
       logActivity,
       calculateDynamicRevenue,
+
+      // Claim lifecycle (Revenue Cycle)
+      exportClaims,
+      updateClaimStatus,
+      reopenClaimRecord,
+      applyRemittance,
+      submitClaimBatch,
+
+      // Note drafts (AI Scribe)
+      saveNoteDraft,
+      getNoteDraft,
+      deleteNoteDraft,
+
+      // Scheduling
+      addShift,
+      updateShift,
+      addScheduleEvent,
+      updateScheduleEvent,
+
+      // SOS
+      triggerSOS,
+      acknowledgeSOS,
+      resolveSOS,
 
       // Dynamic Narrative Engine (Phase 6)
       getNoteTemplate,

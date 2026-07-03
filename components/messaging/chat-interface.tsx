@@ -22,7 +22,6 @@ import {
 import { cn } from "@/lib/utils"
 import { useRole } from "@/lib/role-context"
 import { useDemoData } from "@/lib/demo-data-context"
-import { initialSupervisors } from "@/lib/initial-data"
 import type { Message, UserRole } from "@/lib/types"
 
 interface ThreadPreview {
@@ -43,6 +42,8 @@ export function ChatInterface() {
     getThreadMessages,
     getUnreadCount,
     markThreadAsRead,
+    getSupervisor,
+    getTeamNavigators,
   } = useDemoData()
 
   const [selectedThread, setSelectedThread] = useState<string | null>(null)
@@ -58,26 +59,21 @@ export function ChatInterface() {
     const contacts: { id: string; name: string; role: UserRole; subtitle?: string }[] = []
 
     if (currentUser.role === "supervisor") {
-      // Supervisors can message their assigned navigators
-      const supervisor = initialSupervisors.find((s) => s.name === currentUser.name)
-      if (supervisor) {
-        navigators
-          .filter((nav) => supervisor.navigatorIds.includes(nav.id))
-          .forEach((nav) => {
-            contacts.push({
-              id: nav.id,
-              name: nav.name,
-              role: "navigator",
-              subtitle: `${nav.patientCount} patients`,
-            })
-          })
-      }
+      // Supervisors can message their team (derived from Navigator.supervisorId)
+      getTeamNavigators(currentUser.id).forEach((nav) => {
+        contacts.push({
+          id: nav.id,
+          name: nav.name,
+          role: "navigator",
+          subtitle: `${nav.patientCount} patients`,
+        })
+      })
     } else if (currentUser.role === "navigator") {
       // Navigators can message their supervisor, biller, and assigned patients
       const navigator = navigators.find((n) => n.name === currentUser.name || n.id === currentUser.id)
       if (navigator) {
         // Add supervisor
-        const supervisor = initialSupervisors.find((s) => s.id === navigator.supervisorId)
+        const supervisor = getSupervisor(navigator.supervisorId)
         if (supervisor) {
           contacts.push({
             id: supervisor.id,
@@ -122,7 +118,7 @@ export function ChatInterface() {
     }
 
     return contacts
-  }, [currentUser, navigators, patients])
+  }, [currentUser, navigators, patients, getSupervisor, getTeamNavigators])
 
   // Build thread list from messages and contacts
   const threads = useMemo((): ThreadPreview[] => {
@@ -464,7 +460,7 @@ export function ChatInterface() {
                           {msg.type === "nudge" && msg.patientName && msg.patientId && (
                             <button
                               type="button"
-                              onClick={() => navigateTo("patient-detail", { patientId: msg.patientId })}
+                              onClick={() => msg.patientId && navigateTo("patient-detail", { patientId: msg.patientId })}
                               className="mb-2 flex items-center gap-1.5 text-xs font-medium text-amber-800 hover:text-amber-900 hover:underline transition-colors"
                             >
                               <Bell className="h-3 w-3" />
@@ -476,7 +472,7 @@ export function ChatInterface() {
                           {msg.type === "nudge" && msg.patientId && (
                             <button
                               type="button"
-                              onClick={() => navigateTo("patient-detail", { patientId: msg.patientId })}
+                              onClick={() => msg.patientId && navigateTo("patient-detail", { patientId: msg.patientId })}
                               className="mt-3 flex items-center gap-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-md transition-colors"
                             >
                               <User className="h-3 w-3" />

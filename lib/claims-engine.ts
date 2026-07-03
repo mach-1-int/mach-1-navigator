@@ -309,7 +309,9 @@ export function generateMonthlyClaims(
 
     // Validate the claim with payer-specific thresholds
     const validationErrors = validateClaimData(patient, totalMinutes, config)
-    const status: BillableClaim["status"] = validationErrors.length > 0 ? "MISSING_DATA" : "READY"
+    const currentMonth = new Date().toISOString().slice(0, 7)
+    const status: BillableClaim["status"] =
+      validationErrors.length > 0 ? "NEEDS_ATTENTION" : month === currentMonth ? "DRAFT" : "VALIDATED"
 
     // Collect diagnosis codes
     const diagnosisCodes: string[] = []
@@ -418,10 +420,12 @@ export function calculateTotalRevenue(
     const claimValue = calculateClaimValue(claim.primaryUnits, claim.addOnUnits, config)
     totalValue += claimValue
 
-    if (claim.status === "READY") {
+    // VALIDATED and DRAFT both count as billable-in-progress ("ready" bucket);
+    // NEEDS_ATTENTION is pending correction.
+    if (claim.status === "VALIDATED" || claim.status === "DRAFT") {
       readyValue += claimValue
       readyCount++
-    } else if (claim.status === "MISSING_DATA") {
+    } else if (claim.status === "NEEDS_ATTENTION") {
       pendingCount++
     }
   }

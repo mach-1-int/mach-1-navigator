@@ -1,4 +1,4 @@
-3/**
+/**
  * Centralized Store for Mach 1 Care Navigator
  * 
  * This module provides:
@@ -10,18 +10,21 @@
 import type {
   Patient,
   Navigator,
+  User,
+  Supervisor,
   Appointment,
   PatientNote,
   AdverseEvent,
   Referral,
-  SupervisorMessage,
   Message,
   RiskAssessmentData,
   CareTemplate,
   CarePlan,
   GoalTracking,
   GoalDataPoint,
-  PayerRate,
+  Payer,
+  RemarkCode,
+  OrganizationSettings,
   AuditLog,
   NoteTemplate,
   NoteDraft,
@@ -32,34 +35,41 @@ import type {
   TimeLog,
   MonthlyTimeSummary,
   BillingEncounter,
+  ClaimRecord,
   // Scheduling Types (Phase 4)
   ScheduleEvent,
   NavigatorShift,
   TimeOffRequest,
   // Navigator Safety Map
   NavigatorLocation,
+  SOSEvent,
 } from "./types"
 import {
   initialPatients,
   initialNavigators,
+  initialUsers,
+  initialSupervisors,
   initialAppointments,
   initialNotes,
   initialAdverseEvents,
   initialReferrals,
   initialCareTemplates,
   initialCarePlans,
-  initialPayerRates,
+  initialPayers,
+  initialRemarkCodes,
+  initialOrganizationSettings,
   initialAuditLogs,
   initialNoteTemplates,
   // CMS Billing Initial Data (Phase 2.1)
   initialCPTCodes,
   initialZCodes,
+  initialIntakeRecords,
   initialTimeLogs,
   // Scheduling Initial Data (Phase 4)
   initialScheduleEvents,
   initialNavigatorShifts,
-  // Supervisor Messages (Nudges)
-  initialSupervisorMessages,
+  // Direct Messages (incl. nudges)
+  initialDirectMessages,
   // Navigator Safety Map
   initialNavigatorLocations,
 } from "./initial-data"
@@ -78,15 +88,18 @@ const STORAGE_KEY = "mach1-navigator-store"
 export interface StoreState {
   patients: Patient[]
   navigators: Navigator[]
+  users: User[]
+  supervisors: Supervisor[]
   appointments: Appointment[]
   notes: PatientNote[]
   adverseEvents: AdverseEvent[]
   referrals: Referral[]
-  messages: SupervisorMessage[]
   directMessages: Message[]
   careTemplates: CareTemplate[]
   carePlans: CarePlan[]
-  payerRates: PayerRate[]
+  payers: Payer[]
+  remarkCodes: RemarkCode[]
+  organizationSettings: OrganizationSettings
   auditLogs: AuditLog[]
   noteTemplates: NoteTemplate[]
   noteDrafts: NoteDraft[]
@@ -97,6 +110,7 @@ export interface StoreState {
   timeLogs: TimeLog[]
   monthlyTimeSummaries: MonthlyTimeSummary[]
   billingEncounters: BillingEncounter[]
+  claimRecords: ClaimRecord[]
   // Payer-Agnostic Billing State (Phase 2.2)
   activePayerConfigId: string // "medicaid-bh" | "medicare-pin" | "medicare-chi"
   // Scheduling State (Phase 4)
@@ -105,9 +119,19 @@ export interface StoreState {
   timeOffRequests: TimeOffRequest[]
   // Navigator Safety Map
   navigatorLocations: NavigatorLocation[]
+  sosEvents: SOSEvent[]
   lastAssignedPatientId: string | null
   _version: number // For future migrations
 }
+
+// ============================================================================
+// PERSISTENCE VERSION
+// ============================================================================
+
+// Current schema version - bump this when seed data changes to force refresh.
+// MUST be defined above createInitialState so fresh state is stamped with it;
+// a stale literal here once caused every reload to wipe localStorage.
+const CURRENT_VERSION = 11 // Bumped for production-hardening blitz: payers/claims/SOS/identity slices
 
 // ============================================================================
 // INITIAL STATE
@@ -118,25 +142,29 @@ export const createInitialState = (): StoreState => ({
   // DOBs and enrollmentDate are frozen inside rebaseToToday(). See date-rebase.ts.
   patients: rebaseToToday(initialPatients),
   navigators: initialNavigators,
+  users: initialUsers,
+  supervisors: initialSupervisors,
   appointments: rebaseToToday(initialAppointments),
   notes: rebaseToToday(initialNotes),
   adverseEvents: rebaseToToday(initialAdverseEvents),
   referrals: rebaseToToday(initialReferrals),
-  messages: rebaseToToday(initialSupervisorMessages),
-  directMessages: [],
+  directMessages: rebaseToToday(initialDirectMessages),
   careTemplates: initialCareTemplates,
   carePlans: rebaseToToday(initialCarePlans),
-  payerRates: initialPayerRates,
+  payers: initialPayers,
+  remarkCodes: initialRemarkCodes,
+  organizationSettings: initialOrganizationSettings,
   auditLogs: rebaseToToday(initialAuditLogs),
   noteTemplates: initialNoteTemplates,
   noteDrafts: [],
   // CMS Billing Initial State (Phase 2.1)
   cptCodes: initialCPTCodes,
   zCodes: initialZCodes,
-  intakeRecords: [],
+  intakeRecords: rebaseToToday(initialIntakeRecords),
   timeLogs: rebaseToToday(initialTimeLogs),
   monthlyTimeSummaries: [],
   billingEncounters: [],
+  claimRecords: [],
   // Payer-Agnostic Billing (Phase 2.2) - Default to Medicaid BH for demo
   activePayerConfigId: "medicaid-bh",
   // Scheduling Initial State (Phase 4)
@@ -145,16 +173,14 @@ export const createInitialState = (): StoreState => ({
   timeOffRequests: [],
   // Navigator Safety Map
   navigatorLocations: initialNavigatorLocations,
+  sosEvents: [],
   lastAssignedPatientId: null,
-  _version: 7, // Bumped to add Navigator Safety Map
+  _version: CURRENT_VERSION,
 })
 
 // ============================================================================
 // PERSISTENCE HELPERS
 // ============================================================================
-
-// Current schema version - bump this when seed data changes to force refresh
-const CURRENT_VERSION = 10 // Bumped for date rebasing: operational dates now relative to today
 
 /**
  * Load state from localStorage, falling back to initial state if not found
@@ -189,15 +215,18 @@ export function loadState(): StoreState {
           // Ensure arrays are never undefined
           patients: parsed.patients || initialState.patients,
           navigators: parsed.navigators || initialState.navigators,
+          users: parsed.users || initialState.users,
+          supervisors: parsed.supervisors || initialState.supervisors,
           appointments: parsed.appointments || initialState.appointments,
           notes: parsed.notes || initialState.notes,
           adverseEvents: parsed.adverseEvents || initialState.adverseEvents,
           referrals: parsed.referrals || initialState.referrals,
-          messages: (parsed.messages && parsed.messages.length > 0) ? parsed.messages : initialState.messages,
           directMessages: parsed.directMessages || initialState.directMessages,
           careTemplates: parsed.careTemplates || initialState.careTemplates,
           carePlans: parsed.carePlans || initialState.carePlans,
-          payerRates: parsed.payerRates || initialState.payerRates,
+          payers: parsed.payers || initialState.payers,
+          remarkCodes: parsed.remarkCodes || initialState.remarkCodes,
+          organizationSettings: parsed.organizationSettings || initialState.organizationSettings,
           auditLogs: parsed.auditLogs || initialState.auditLogs,
           noteTemplates: parsed.noteTemplates || initialState.noteTemplates,
           noteDrafts: parsed.noteDrafts || initialState.noteDrafts,
@@ -208,6 +237,7 @@ export function loadState(): StoreState {
           timeLogs: parsed.timeLogs || initialState.timeLogs,
           monthlyTimeSummaries: parsed.monthlyTimeSummaries || initialState.monthlyTimeSummaries,
           billingEncounters: parsed.billingEncounters || initialState.billingEncounters,
+          claimRecords: parsed.claimRecords || initialState.claimRecords,
           // Payer-Agnostic Billing (Phase 2.2)
           activePayerConfigId: parsed.activePayerConfigId || initialState.activePayerConfigId,
           // Scheduling (Phase 4)
@@ -216,6 +246,7 @@ export function loadState(): StoreState {
           timeOffRequests: parsed.timeOffRequests || initialState.timeOffRequests,
           // Navigator Safety Map
           navigatorLocations: parsed.navigatorLocations || initialState.navigatorLocations,
+          sosEvents: parsed.sosEvents || initialState.sosEvents,
           _version: CURRENT_VERSION,
         }
       }

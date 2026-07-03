@@ -34,7 +34,7 @@ import type { PatientNote } from "@/lib/types"
 
 export function NavigatorDashboard() {
   const { navigateTo, currentUser } = useRole()
-  const { patients, navigators, addNote, getPatientNotes, lastAssignedPatientId, getNavigatorMessages, markMessageRead } = useDemoData()
+  const { patients, navigators, addNote, getPatientNotes, lastAssignedPatientId, getNudgesForNavigator, markDirectMessageRead } = useDemoData()
   // Use the logged-in user if available, otherwise fall back to first navigator
   const currentNavigator = navigators.find(n => n.id === currentUser?.id) || navigators[0]
   // Sort patients to show newly assigned first
@@ -53,11 +53,11 @@ export function NavigatorDashboard() {
   const [dismissedNudges, setDismissedNudges] = useState<Set<string>>(new Set())
 
   // Get unread nudges for this navigator
-  const navigatorMessages = getNavigatorMessages(currentNavigator.id)
-  const unreadNudges = navigatorMessages.filter(m => !m.read && !dismissedNudges.has(m.id))
+  const navigatorMessages = getNudgesForNavigator(currentNavigator.id)
+  const unreadNudges = navigatorMessages.filter(m => !m.readStatus && !dismissedNudges.has(m.id))
 
   const handleDismissNudge = (nudgeId: string) => {
-    markMessageRead(nudgeId)
+    markDirectMessageRead(nudgeId)
     setDismissedNudges(prev => new Set([...prev, nudgeId]))
   }
 
@@ -137,7 +137,7 @@ export function NavigatorDashboard() {
                     <span className="font-medium">{nudge.patientName}:</span> {nudge.content}
                   </p>
                   <p className="text-xs text-amber-600 mt-0.5">
-                    From {nudge.fromSupervisorName} • {new Date(nudge.createdAt).toLocaleString()}
+                    From {nudge.senderName} • {new Date(nudge.timestamp).toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -145,7 +145,7 @@ export function NavigatorDashboard() {
                 <Button
                   variant="outline"
                   className="border-amber-300 text-amber-700 hover:bg-amber-100"
-                  onClick={() => navigateTo("patient-detail", { patientId: nudge.patientId })}
+                  onClick={() => nudge.patientId && navigateTo("patient-detail", { patientId: nudge.patientId })}
                 >
                   View Patient
                   <ChevronRight className="h-4 w-4 ml-1" />
@@ -214,10 +214,10 @@ export function NavigatorDashboard() {
         />
         <StatCard
           title="Supervisor Nudges"
-          value={navigatorMessages.filter(m => !m.read).length}
-          subtitle={navigatorMessages.filter(m => !m.read).length === 1 ? "needs attention" : "need attention"}
+          value={navigatorMessages.filter(m => !m.readStatus).length}
+          subtitle={navigatorMessages.filter(m => !m.readStatus).length === 1 ? "needs attention" : "need attention"}
           icon={Bell}
-          variant={navigatorMessages.filter(m => !m.read).length > 0 ? "warning" : "default"}
+          variant={navigatorMessages.filter(m => !m.readStatus).length > 0 ? "warning" : "default"}
         />
         <StatCard
           title="Medication Alerts"
