@@ -204,16 +204,22 @@ export function ChatInterface() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [currentThreadMessages])
 
-  // Handle draft message from navigation (e.g., reschedule request)
+  // Handle draft message from navigation (e.g., reschedule request).
+  // Local state is adjusted during render (previous-value pattern) instead of
+  // in an effect; only the context cleanup stays in an effect since parent
+  // state cannot be updated while rendering this component.
+  if (draftMessage && !draftApplied) {
+    // Auto-select the recipient thread
+    setSelectedThread(draftMessage.recipientId)
+    // Pre-fill the message input
+    setMessageInput(draftMessage.content)
+    // Mark draft as applied so we don't keep re-applying
+    setDraftApplied(true)
+  }
+
+  // Clear the applied draft from context
   useEffect(() => {
-    if (draftMessage && !draftApplied) {
-      // Auto-select the recipient thread
-      setSelectedThread(draftMessage.recipientId)
-      // Pre-fill the message input
-      setMessageInput(draftMessage.content)
-      // Mark draft as applied so we don't keep re-applying
-      setDraftApplied(true)
-      // Clear the draft from context
+    if (draftMessage && draftApplied) {
       setDraftMessage(null)
     }
   }, [draftMessage, draftApplied, setDraftMessage])

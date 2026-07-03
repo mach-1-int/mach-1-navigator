@@ -23,7 +23,6 @@ export type ViewType =
   | "settings"
   | "messages"
   | "referrals"
-  | "referral-intake"
   | "intake-workspace"
   | "assessment-wizard"
   | "admin-payer-rates"

@@ -17,12 +17,12 @@ Run this before anyone sees the screen. It validates **Distance**, **Language**,
 **Scenario:** Incoming Patient is in **85303** (West Valley).
 
 **Expected:**
-- **Maria Gonzalez** (85301 – Glendale) → ranked **#1**, card shows **"~3 miles away"**.
+- **Maria Gonzalez** (85301 – Glendale) → ranked **#1**, card shows **"~4 miles away"**.
 - **John Mitchell** (85201 – Mesa) → ranked **lower**, score **&lt;50%** (e.g. "Too Far" / outside service area).
 
 **Steps:**
 1. On Referrals, click **"Match & Assign"** on **Elena Rodriguez** (or any referral with Zip **85303**).
-2. **Check Maria’s card:** Does it say **"~3 miles away"** (or similar)?
+2. **Check Maria’s card:** Does it say **"~4 miles away"** (or similar)?
 3. **Check John’s card:** Is his score significantly lower (e.g. **&lt;50%**) and/or does it show **"Too Far"**?
 
 **Pass / Fail:** _________
@@ -95,3 +95,34 @@ Run this before anyone sees the screen. It validates **Distance**, **Language**,
 - **Matching engine:** `lib/matching-logic.ts` (distance, language, capacity, acuity).
 - **Live caseload:** Navigator cards use **live** `patientCount` from state after assignments.
 - **Language override:** Left pane **Matching Criteria** → **Language** dropdown toggles effective language for ranking (for Test B).
+
+---
+
+## Distances are computed
+
+Matching distances and travel times are no longer a hardcoded mock table — they come from a **haversine geo adapter** (`lib/geo.ts`): great-circle distance between zip centroids × a 1.3 road-winding factor, with a metro-average speed heuristic for drive times.
+
+- **Maria** 85301 → 85303 ≈ **4 mi** (within her radius).
+- **John** 85201 → 85303 ≈ **30 mi** — a **hard fail** beyond his **20 mi** service-area radius (−100 score).
+- Consequence for Test A: the old **"~3 miles"** expectation is now **"~4 miles"**.
+- Unknown zips fall back to 20 mi / 30 min (matches the old mock-table defaults).
+
+---
+
+## AI Scribe degraded modes
+
+Verify the AI Recorder / Note Builder fails safe in each mode:
+
+1. **No API key:** Unset `GEMINI_API_KEY` and restart. Dictating shows an **amber "Demo Mode" banner** — values are canned mock output and are clearly labeled as such (not passed off as AI).
+2. **Network failure:** Kill the network mid-request. A **red failure banner** appears with a **Retry** button and a **"Use demo values instead"** fallback action.
+3. **Refresh mid-dictation:** Refresh the page while a dictation is in progress. On return, a **restore banner** offers the **saved transcript** (Restore action recovers the unsaved draft).
+
+---
+
+## HL7 ingestion
+
+From the Supervisor **Referrals** view:
+
+1. **"Simulate Incoming Referral"** creates a live referral from a **rotating pool** of sample HL7 messages (deterministic rotation; every generated message round-trips through the real parser).
+2. **"Paste HL7…"** opens a dialog that parses **arbitrary HL7v2** referral messages, surfacing parse **warnings** for malformed or missing segments.
+3. The **raw HL7v2 message** renders on the referral card (Raw HL7 section) for ingested referrals, so the source payload is always inspectable.

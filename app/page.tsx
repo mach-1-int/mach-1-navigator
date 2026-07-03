@@ -21,7 +21,6 @@ import { NavigatorSchedule } from "@/components/navigator/navigator-schedule"
 import { NavigatorPatients } from "@/components/navigator/navigator-patients"
 import { ClinicalFeed } from "@/components/navigator/clinical-feed"
 import { AssessmentWizard } from "@/components/navigator/assessment-wizard"
-import { ReferralIntake } from "@/components/supervisor/referral-intake"
 import { ReferralReviewView } from "@/components/supervisor/referral-review-view"
 import { IntakeWorkspace } from "@/components/supervisor/intake-workspace"
 import { ChatInterface } from "@/components/messaging/chat-interface"
@@ -35,7 +34,7 @@ import { Toaster } from "@/components/ui/sonner"
 // Define which views are implemented for each role
 const implementedViews: Record<string, ViewType[]> = {
   executive: ["dashboard", "revenue-cycle"],
-  supervisor: ["dashboard", "safety-map", "referrals", "navigators", "navigator-detail", "team-schedule", "compliance", "events", "patient-detail", "messages", "referral-intake", "intake-workspace"],
+  supervisor: ["dashboard", "safety-map", "referrals", "navigators", "navigator-detail", "team-schedule", "compliance", "events", "patient-detail", "messages", "intake-workspace"],
   navigator: ["dashboard", "patients", "patient-detail", "schedule", "notes", "messages", "assessment-wizard"],
   patient: ["dashboard", "appointments", "medications", "profile", "messages"],
   admin: ["dashboard", "admin-payer-rates", "admin-audit-log", "revenue-cycle"],
@@ -62,7 +61,6 @@ const viewTitles: Record<ViewType, { title: string; subtitle: string }> = {
   settings: { title: "Settings", subtitle: "Application preferences" },
   messages: { title: "Messages", subtitle: "Communicate with your care team" },
   referrals: { title: "Pending Referrals", subtitle: "Review and process incoming patient referrals" },
-  "referral-intake": { title: "Referral Intake", subtitle: "Review and accept patient referrals" },
   "intake-workspace": { title: "Match & Assign", subtitle: "Ranked navigator matching by distance, language, and load" },
   "assessment-wizard": { title: "Risk Assessment", subtitle: "Initial home visit assessment" },
   "admin-payer-rates": { title: "Payer Rates", subtitle: "Configure revenue rates by payer" },
@@ -185,9 +183,6 @@ function DashboardContent() {
       }
       if (navigation.view === "team-schedule") {
         return <SchedulingView supervisorId={currentUser.id} />
-      }
-      if (navigation.view === "referral-intake" && navigation.params?.referralId) {
-        return <ReferralIntake referralId={navigation.params.referralId} />
       }
       if (navigation.view === "intake-workspace" && navigation.params?.referralId) {
         return <IntakeWorkspace referralId={navigation.params.referralId} />

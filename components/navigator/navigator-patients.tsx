@@ -36,6 +36,10 @@ export function NavigatorPatients() {
   const [noteText, setNoteText] = useState("")
   const [noteType, setNoteType] = useState<PatientNote["type"]>("general")
 
+  // Stable "now" for days-since-contact math (Date.now() is impure during
+  // render; a lazy useState initializer captures it once per mount)
+  const [now] = useState(() => Date.now())
+
   const myPatients = patients
     .filter((p) => p.assignedNavigator === currentNavigator.id)
     .sort((a, b) => {
@@ -57,7 +61,7 @@ export function NavigatorPatients() {
 
   const highRiskCount = myPatients.filter((p) => p.riskLevel === 3).length
   const gapCount = myPatients.filter(
-    (p) => Math.floor((Date.now() - new Date(p.lastContactDate).getTime()) / (1000 * 60 * 60 * 24)) > 14,
+    (p) => Math.floor((now - new Date(p.lastContactDate).getTime()) / (1000 * 60 * 60 * 24)) > 14,
   ).length
 
   const selectedPatientNotes = selectedPatient ? getPatientNotes(selectedPatient) : []
@@ -168,7 +172,7 @@ export function NavigatorPatients() {
                   const daysSinceContact = Math.max(
                     0,
                     Math.floor(
-                      (Date.now() - new Date(patient.lastContactDate).getTime()) / (1000 * 60 * 60 * 24),
+                      (now - new Date(patient.lastContactDate).getTime()) / (1000 * 60 * 60 * 24),
                     ),
                   )
                   const contactWarning = daysSinceContact > 14

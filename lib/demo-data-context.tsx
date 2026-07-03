@@ -239,6 +239,9 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
   // Hydrate from localStorage on mount
   useEffect(() => {
     const savedState = loadState()
+    // Legitimate external-system sync: localStorage hydration must happen after
+    // mount so the server render and first client render match (SSR correctness).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setState(savedState)
     setIsHydrated(true)
   }, [])

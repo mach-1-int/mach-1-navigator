@@ -106,6 +106,17 @@ function getStatusIcon(status: GoalTracking["status"]) {
   }
 }
 
+// Render helpers (module scope) so icon components are not created during render
+function renderStatusIcon(status: GoalTracking["status"], className: string) {
+  const Icon = getStatusIcon(status)
+  return <Icon className={className} />
+}
+
+function renderMetricIcon(unit: string, className: string) {
+  const Icon = getMetricIcon(unit)
+  return <Icon className={className} />
+}
+
 // Format date for sparkline
 function formatChartDate(dateString: string) {
   const date = new Date(dateString)
@@ -346,8 +357,6 @@ function GoalCard({
   onInputChange: (value: string) => void
   onLogValue: () => void
 }) {
-  const StatusIcon = getStatusIcon(goal.status)
-  const MetricIcon = getMetricIcon(goal.metricUnit)
   const trend = getTrend(goal.history, goal.direction)
 
   // Prepare chart data
@@ -364,7 +373,7 @@ function GoalCard({
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2">
             <div className={cn("p-2 rounded-lg", getStatusBgColor(goal.status))}>
-              <MetricIcon className={cn("h-4 w-4", getStatusColor(goal.status))} />
+              {renderMetricIcon(goal.metricUnit, cn("h-4 w-4", getStatusColor(goal.status)))}
             </div>
             <div>
               <CardTitle className="text-sm font-medium text-card-foreground">
@@ -376,7 +385,7 @@ function GoalCard({
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <StatusIcon className={cn("h-4 w-4", getStatusColor(goal.status))} />
+            {renderStatusIcon(goal.status, cn("h-4 w-4", getStatusColor(goal.status)))}
             {trend === "improving" && <TrendingDown className="h-4 w-4 text-emerald-600" />}
             {trend === "worsening" && <TrendingUp className="h-4 w-4 text-red-600" />}
           </div>

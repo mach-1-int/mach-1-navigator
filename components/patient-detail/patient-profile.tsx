@@ -536,7 +536,7 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
                       <DialogHeader>
                         <DialogTitle>Nudge Navigator</DialogTitle>
                         <DialogDescription>
-                          Send a message to {navigator?.name} about {patient.name}'s medication compliance.
+                          Send a message to {navigator?.name} about {patient.name}&apos;s medication compliance.
                         </DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4 py-4">
@@ -584,7 +584,7 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
                           <DialogHeader>
                             <DialogTitle>Nudge Navigator</DialogTitle>
                             <DialogDescription>
-                              Send a message to {navigator?.name} about {patient.name}'s PCP compliance.
+                              Send a message to {navigator?.name} about {patient.name}&apos;s PCP compliance.
                             </DialogDescription>
                           </DialogHeader>
                           <div className="space-y-4 py-4">

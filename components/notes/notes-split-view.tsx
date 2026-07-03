@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -42,16 +42,16 @@ const MODALITY_ICONS = {
 export function NotesSplitView({ notes, emptyMessage = "No notes available" }: NotesSplitViewProps) {
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
 
-  // Auto-select first note on mount or when notes change
-  useEffect(() => {
-    if (notes.length > 0 && !selectedNoteId) {
-      setSelectedNoteId(notes[0].id)
-    } else if (notes.length > 0 && !notes.find(n => n.id === selectedNoteId)) {
-      setSelectedNoteId(notes[0].id)
-    }
-  }, [notes, selectedNoteId])
+  // Derive the effective selection during render: fall back to the first note
+  // when nothing is selected or the selected note is no longer in the list.
+  const effectiveNoteId =
+    selectedNoteId && notes.some(n => n.id === selectedNoteId)
+      ? selectedNoteId
+      : notes.length > 0
+        ? notes[0].id
+        : null
 
-  const selectedNote = notes.find(n => n.id === selectedNoteId)
+  const selectedNote = notes.find(n => n.id === effectiveNoteId)
 
   if (notes.length === 0) {
     return (
@@ -78,7 +78,7 @@ export function NotesSplitView({ notes, emptyMessage = "No notes available" }: N
         <ScrollArea className="h-[calc(100%-52px)]">
           <div className="p-2 space-y-1">
             {notes.map((note) => {
-              const isSelected = note.id === selectedNoteId
+              const isSelected = note.id === effectiveNoteId
               const typeConfig = NOTE_TYPE_CONFIG[note.type] || NOTE_TYPE_CONFIG.general
               return (
                 <button

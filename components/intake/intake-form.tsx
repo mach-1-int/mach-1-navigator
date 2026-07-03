@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -140,10 +140,14 @@ export function IntakeForm({
     if (sdoh.foodInsecurity) score += 1
     if (sdoh.transportationIssues) score += 1
     return Math.min(score, 3) as 0 | 1 | 2 | 3
-  }, [patient?.riskAssessment])
+  }, [patient])
 
-  // Reset form when dialog opens - pre-populate from Risk Assessment if available
-  useEffect(() => {
+  // Reset form when dialog opens - pre-populate from Risk Assessment if available.
+  // Uses the "adjust state during render" previous-value pattern instead of an
+  // effect, so the reset happens without a cascading post-render setState.
+  const [prevOpen, setPrevOpen] = useState(false)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
     if (open) {
       setCurrentStep(1)
       setInitiatingVisitDate(undefined)
@@ -162,7 +166,7 @@ export function IntakeForm({
         literacy: 0,
       })
     }
-  }, [open, patient?.billingTrack, riskAssessmentZCodes, suggestedBarrierScore])
+  }
 
   // Validation for each step
   const canProceedStep1 = consentObtained && costShareNotified && initiatingVisitDate && !dateValidation?.error
