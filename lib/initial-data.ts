@@ -13,9 +13,6 @@ import type {
   Appointment,
   User,
   Message,
-  HealthPlanRevenue,
-  ReferralSource,
-  BillingData,
   CareTemplate,
   CarePlan,
   Payer,
@@ -827,50 +824,6 @@ export const initialNotes: PatientNote[] = [
     createdAt: "2026-01-15T09:00:00Z"
   },
 ]
-
-// ============================================================================
-// EXECUTIVE/KPI DATA (Static for demo)
-// ============================================================================
-
-export const healthPlanRevenue: HealthPlanRevenue[] = [
-  { planName: "United Healthcare", pmpmRevenue: 285000, patientCount: 156, color: "hsl(var(--chart-1))" },
-  { planName: "Mercy Care", pmpmRevenue: 198000, patientCount: 112, color: "hsl(var(--chart-2))" },
-  { planName: "Molina", pmpmRevenue: 142000, patientCount: 87, color: "hsl(var(--chart-3))" },
-  { planName: "AHCCCS", pmpmRevenue: 89000, patientCount: 45, color: "hsl(var(--chart-4))" },
-]
-
-export const referralSources: ReferralSource[] = [
-  { name: "Valleywise Health", count: 89, trend: "up" },
-  { name: "Dignity Health", count: 67, trend: "stable" },
-  { name: "Banner Health", count: 54, trend: "up" },
-  { name: "HonorHealth", count: 42, trend: "down" },
-  { name: "Phoenix VA", count: 38, trend: "stable" },
-]
-
-export const monthlyBillingData: BillingData[] = [
-  { date: "Jan 1", units: 245, target: 280 },
-  { date: "Jan 5", units: 312, target: 280 },
-  { date: "Jan 10", units: 287, target: 280 },
-  { date: "Jan 15", units: 298, target: 280 },
-  { date: "Jan 20", units: 265, target: 280 },
-  { date: "Jan 25", units: 325, target: 280 },
-]
-
-export const kpiMetrics = {
-  totalRevenue: 714000,
-  revenueGrowth: 12.5,
-  totalPatients: 400,
-  activePatients: 385,
-  avgEngagement: 11,
-  avgUnitsPerNavigator: 255,
-  medicationComplianceTarget: 95,
-  pcpComplianceTarget: 90,
-  patientsAwaitingIntake: 23,
-  avgDaysInQueue: 4.2,
-  highCostPatients: 12,
-  totalAdverseEvents: 18,
-  currentInpatients: 3,
-}
 
 // ============================================================================
 // CARE TEMPLATES (Phase 3)
@@ -2196,7 +2149,7 @@ export const initialNavigatorShifts: NavigatorShift[] = [
 // TIME LOGS (Billing Bridge - Phase 2.1)
 // ============================================================================
 
-import type { TimeLog, ActivityType } from "./types"
+import type { TimeLog } from "./types"
 
 /**
  * Sample time logs for demonstrating billing aggregation
@@ -2491,6 +2444,234 @@ export const initialTimeLogs: TimeLog[] = [
     verifiedAt: "2026-01-17T17:00:00-07:00",
     billingPeriod: "2026-01",
     activityType: "CHECK_IN", // -> H0038 (Peer Support)
+  },
+  // Additional January activity so the executive daily-units chart has full
+  // month coverage. NO logs for pt3 / pt-billing / pt-validation-test — those
+  // patients are QA guardrail fixtures with fixed minute totals.
+  {
+    id: "tl-015",
+    patientId: "pt1",
+    date: "2026-01-26",
+    startTime: "2026-01-26T09:00:00-07:00",
+    endTime: "2026-01-26T09:40:00-07:00",
+    durationMinutes: 40,
+    modality: "In-Person",
+    serviceType: "PIN",
+    navigatorId: "nav-maria",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-26T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "HOME_VISIT", // -> H2015 (Community Support)
+  },
+  {
+    id: "tl-016",
+    patientId: "pt1",
+    date: "2026-01-29",
+    startTime: "2026-01-29T13:00:00-07:00",
+    endTime: "2026-01-29T13:20:00-07:00",
+    durationMinutes: 20,
+    modality: "Phone",
+    serviceType: "PIN",
+    navigatorId: "nav-maria",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-29T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "CHECK_IN", // -> H0038 (Peer Support)
+  },
+  {
+    id: "tl-017",
+    patientId: "pt2",
+    date: "2026-01-06",
+    startTime: "2026-01-06T10:00:00-07:00",
+    endTime: "2026-01-06T10:35:00-07:00",
+    durationMinutes: 35,
+    modality: "In-Person",
+    serviceType: "CHI",
+    navigatorId: "nav-maria",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-06T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "TRANSPORT", // -> H2015 (Community Support)
+  },
+  {
+    id: "tl-018",
+    patientId: "pt2",
+    date: "2026-01-14",
+    startTime: "2026-01-14T11:00:00-07:00",
+    endTime: "2026-01-14T11:50:00-07:00",
+    durationMinutes: 50,
+    modality: "In-Person",
+    serviceType: "CHI",
+    navigatorId: "nav-maria",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-14T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "HOME_VISIT", // -> H2015 (Community Support)
+  },
+  {
+    id: "tl-019",
+    patientId: "pt2",
+    date: "2026-01-24",
+    startTime: "2026-01-24T14:00:00-07:00",
+    endTime: "2026-01-24T14:30:00-07:00",
+    durationMinutes: 30,
+    modality: "Phone",
+    serviceType: "CHI",
+    navigatorId: "nav-maria",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-24T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "CHECK_IN", // -> H0038 (Peer Support)
+  },
+  {
+    id: "tl-020",
+    patientId: "pt4",
+    date: "2026-01-07",
+    startTime: "2026-01-07T09:30:00-07:00",
+    endTime: "2026-01-07T10:10:00-07:00",
+    durationMinutes: 40,
+    modality: "Video",
+    serviceType: "CHI",
+    navigatorId: "nav2",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-07T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038 (Peer Support)
+  },
+  {
+    id: "tl-021",
+    patientId: "pt4",
+    date: "2026-01-21",
+    startTime: "2026-01-21T10:00:00-07:00",
+    endTime: "2026-01-21T10:55:00-07:00",
+    durationMinutes: 55,
+    modality: "In-Person",
+    serviceType: "CHI",
+    navigatorId: "nav2",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-21T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "HOME_VISIT", // -> H2015 (Community Support)
+  },
+  {
+    id: "tl-022",
+    patientId: "pt4",
+    date: "2026-01-27",
+    startTime: "2026-01-27T15:00:00-07:00",
+    endTime: "2026-01-27T15:30:00-07:00",
+    durationMinutes: 30,
+    modality: "Phone",
+    serviceType: "CHI",
+    navigatorId: "nav2",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-27T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "CHECK_IN", // -> H0038 (Peer Support)
+  },
+  {
+    id: "tl-023",
+    patientId: "pt5",
+    date: "2026-01-13",
+    startTime: "2026-01-13T09:00:00-07:00",
+    endTime: "2026-01-13T09:45:00-07:00",
+    durationMinutes: 45,
+    modality: "In-Person",
+    serviceType: "PIN",
+    navigatorId: "nav3",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-13T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "HOME_VISIT", // -> H2015 (Community Support)
+  },
+  {
+    id: "tl-024",
+    patientId: "pt5",
+    date: "2026-01-23",
+    startTime: "2026-01-23T13:00:00-07:00",
+    endTime: "2026-01-23T14:00:00-07:00",
+    durationMinutes: 60,
+    modality: "In-Person",
+    serviceType: "PIN",
+    navigatorId: "nav3",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-23T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "HOME_VISIT", // -> H2015 (Community Support)
+  },
+  {
+    id: "tl-025",
+    patientId: "pt5",
+    date: "2026-01-28",
+    startTime: "2026-01-28T10:00:00-07:00",
+    endTime: "2026-01-28T10:25:00-07:00",
+    durationMinutes: 25,
+    modality: "Phone",
+    serviceType: "PIN",
+    navigatorId: "nav3",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-28T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "OUTREACH", // -> H0023 (Outreach)
+  },
+  // Elena Rodriguez (pt-elena) - enrolled 2026-01-28, first navigation contacts
+  {
+    id: "tl-026",
+    patientId: "pt-elena",
+    date: "2026-01-28",
+    startTime: "2026-01-28T11:00:00-07:00",
+    endTime: "2026-01-28T12:00:00-07:00",
+    durationMinutes: 60,
+    modality: "In-Person",
+    serviceType: "PIN",
+    navigatorId: "nav-maria",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-28T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "HOME_VISIT", // -> H2015 (Community Support)
+  },
+  {
+    id: "tl-027",
+    patientId: "pt-elena",
+    date: "2026-01-29",
+    startTime: "2026-01-29T10:00:00-07:00",
+    endTime: "2026-01-29T10:30:00-07:00",
+    durationMinutes: 30,
+    modality: "Phone",
+    serviceType: "PIN",
+    navigatorId: "nav-maria",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-29T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "CHECK_IN", // -> H0038 (Peer Support)
+  },
+  {
+    id: "tl-028",
+    patientId: "pt-elena",
+    date: "2026-01-30",
+    startTime: "2026-01-30T14:00:00-07:00",
+    endTime: "2026-01-30T14:45:00-07:00",
+    durationMinutes: 45,
+    modality: "In-Person",
+    serviceType: "PIN",
+    navigatorId: "nav-maria",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-30T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "TRANSPORT", // -> H2015 (Community Support)
   },
 ]
 

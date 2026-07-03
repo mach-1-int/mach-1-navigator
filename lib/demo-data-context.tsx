@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
 import type { Patient, PatientNote, Appointment, Navigator, User, Supervisor, NavigatorAttributes, AdverseEvent, Referral, Message, UserRole, RiskAssessmentData, CareTemplate, CarePlan, Payer, RemarkCode, OrganizationSettings, AuditLog, AuditAction, NoteTemplate, NoteDraft, TemplateField, IntakeRecord, ZCode, TimeLog, ServiceType, AcuityScore, PayerConfig, NavigatorLocation, SafetyStatus, BillableClaim, ClaimRecord, ClaimRecordStatus, SOSEvent, GeoPoint, ScheduleEvent, NavigatorShift, TimeOffRequest } from "./types"
 import { getPayerConfig, getAllPayerConfigs, resolvePayerByName, getPayerForPatient } from "./payer-config"
+import { acuityLevelToRiskLevel, lineToRiskLevel } from "./acuity"
 import {
   createClaimRecords,
   transitionClaimRecord,
@@ -363,7 +364,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
       name: referral.patientName,
       dob: referral.dob,
       chartNumber: `C${Math.floor(Math.random() * 90000) + 10000}`,
-      riskLevel: referral.riskScore,
+      riskLevel: lineToRiskLevel(referral.requiredAcuity),
       survivalStatus: "active",
       assignedNavigator: navigatorId,
       assignedSupervisor: "sup1",
@@ -446,7 +447,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
       name: patientData.name || referral.patientName,
       dob: patientData.dob || referral.dob,
       chartNumber: patientData.chartNumber || `GH-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000) + 1000}`,
-      riskLevel: patientData.riskLevel || referral.riskScore,
+      riskLevel: patientData.riskLevel || lineToRiskLevel(referral.requiredAcuity),
       survivalStatus: "active",
       assignedNavigator: navigatorId,
       assignedSupervisor: patientData.assignedSupervisor || "sup1",
@@ -1771,13 +1772,12 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
     setState(prev => ({
       ...prev,
       intakeRecords: [...prev.intakeRecords, newIntake],
-      // Update patient risk level based on acuity
+      // Update patient risk level based on acuity (one chain: acuity -> tier)
       patients: prev.patients.map(p => {
         if (p.id === intake.patientId) {
-          const newRiskLevel = intake.acuity.level === "High" ? 3 : intake.acuity.level === "Moderate" ? 2 : 1
           return {
             ...p,
-            riskLevel: newRiskLevel as 1 | 2 | 3,
+            riskLevel: acuityLevelToRiskLevel(intake.acuity.level),
             riskScore: Math.round((intake.acuity.totalScore / 12) * 100),
             billingTrack: intake.serviceType,
           }
@@ -2098,6 +2098,3 @@ export function useDemoData() {
   }
   return context
 }
-
-// Alias for cleaner naming
-export const useStore = useDemoData

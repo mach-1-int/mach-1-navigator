@@ -7,9 +7,19 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Textarea } from "@/components/ui/textarea"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import {
   Activity,
   Calendar,
-  Clock,
   AlertTriangle,
   Pill,
   Phone,
@@ -21,12 +31,15 @@ import {
   CheckCircle2,
   Sparkles,
   Bell,
+  Siren,
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState } from "react"
 import { useRole } from "@/lib/role-context"
 import { useDemoData } from "@/lib/demo-data-context"
+import { useToast } from "@/hooks/use-toast"
+import { getCurrentPositionSafe } from "@/lib/geo"
 import { AMDSourceIndicator } from "@/components/amd-source-indicator"
 import { daysSince, todayISO } from "@/lib/schedule-utils"
 import { ExternalLink } from "lucide-react"
@@ -35,7 +48,8 @@ import type { PatientNote } from "@/lib/types"
 
 export function NavigatorDashboard() {
   const { navigateTo, currentUser } = useRole()
-  const { patients, navigators, addNote, getPatientNotes, lastAssignedPatientId, getNudgesForNavigator, markDirectMessageRead } = useDemoData()
+  const { patients, navigators, addNote, getPatientNotes, lastAssignedPatientId, getNudgesForNavigator, markDirectMessageRead, triggerSOS } = useDemoData()
+  const { toast } = useToast()
   // Use the logged-in user if available, otherwise fall back to first navigator
   const currentNavigator = navigators.find(n => n.id === currentUser?.id) || navigators[0]
   // Sort patients to show newly assigned first
@@ -74,6 +88,21 @@ export function NavigatorDashboard() {
       )
       setNoteText("")
     }
+  }
+
+  // SOS trigger - real device location when available
+  const handleSOS = async () => {
+    const point = await getCurrentPositionSafe()
+    triggerSOS(currentNavigator.id, point ?? undefined)
+    toast({
+      title: "SOS sent to supervisor",
+      description: (
+        <div className="flex items-center gap-2">
+          <Siren className="h-4 w-4 text-red-500" />
+          <span>Your supervisor has been alerted with your current location.</span>
+        </div>
+      ),
+    })
   }
 
   const selectedPatientNotes = selectedPatient ? getPatientNotes(selectedPatient) : []
@@ -117,6 +146,39 @@ export function NavigatorDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Header action area */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">Welcome back, {currentNavigator.name.split(" ")[0]}</h2>
+          <p className="text-sm text-muted-foreground">Here&apos;s your field overview for today</p>
+        </div>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="outline"
+              className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+            >
+              <Siren className="h-4 w-4 mr-2" />
+              SOS
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Send SOS alert?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Send an emergency alert to your supervisor with your current location?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleSOS}>
+                Send SOS
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+
       {/* Supervisor Nudge Alerts */}
       {unreadNudges.length > 0 && (
         <div className="space-y-2">

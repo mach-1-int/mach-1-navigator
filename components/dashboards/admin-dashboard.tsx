@@ -22,6 +22,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { useToast } from "@/hooks/use-toast"
@@ -39,11 +46,14 @@ import {
   UserPlus,
   ClipboardList,
   AlertCircle,
+  BookText,
+  Building2,
   Calendar,
+  Plus,
   RotateCcw,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { AuditAction, Payer } from "@/lib/types"
+import type { AuditAction, OrganizationSettings, Payer, RemarkCode } from "@/lib/types"
 
 // Action type configuration for audit log display
 const actionConfig: Record<AuditAction, { label: string; icon: typeof Edit2; color: string }> = {
@@ -73,8 +83,52 @@ const actionConfig: Record<AuditAction, { label: string; icon: typeof Edit2; col
   sos_resolved: { label: "SOS Resolved", icon: Check, color: "bg-green-100 text-green-700 border-green-200" },
 }
 
+/** Blank form used before the org settings load into the edit dialog */
+type OrgFormFields = {
+  organizationName: string
+  npi: string
+  taxId: string
+  taxonomyCode: string
+  submitterId: string
+  supervisingProviderName: string
+  supervisingProviderNpi: string
+  street: string
+  city: string
+  state: string
+  zip: string
+  contactPhone: string
+}
+
+function orgSettingsToForm(settings: OrganizationSettings): OrgFormFields {
+  return {
+    organizationName: settings.organizationName,
+    npi: settings.npi,
+    taxId: settings.taxId,
+    taxonomyCode: settings.taxonomyCode,
+    submitterId: settings.submitterId,
+    supervisingProviderName: settings.supervisingProvider.name,
+    supervisingProviderNpi: settings.supervisingProvider.npi,
+    street: settings.address.street,
+    city: settings.address.city,
+    state: settings.address.state,
+    zip: settings.address.zip,
+    contactPhone: settings.contactPhone,
+  }
+}
+
 export function AdminDashboard() {
-  const { payers, auditLogs, updatePayer, calculateDynamicRevenue, resetDemo } = useDemoData()
+  const {
+    payers,
+    auditLogs,
+    updatePayer,
+    calculateDynamicRevenue,
+    resetDemo,
+    remarkCodes,
+    organizationSettings,
+    addRemarkCode,
+    updateRemarkCode,
+    updateOrganizationSettings,
+  } = useDemoData()
   const { currentUser, navigation, logout } = useRole()
   const { toast } = useToast()
 
@@ -82,6 +136,19 @@ export function AdminDashboard() {
   const [editValue, setEditValue] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [resetDialogOpen, setResetDialogOpen] = useState(false)
+
+  // Remark code dialogs
+  const [editingRemark, setEditingRemark] = useState<RemarkCode | null>(null)
+  const [remarkCodeValue, setRemarkCodeValue] = useState("")
+  const [remarkDescriptionValue, setRemarkDescriptionValue] = useState("")
+  const [addRemarkOpen, setAddRemarkOpen] = useState(false)
+  const [newRemarkType, setNewRemarkType] = useState<"CARC" | "RARC">("CARC")
+
+  // Organization settings dialog
+  const [orgDialogOpen, setOrgDialogOpen] = useState(false)
+  const [orgForm, setOrgForm] = useState<OrgFormFields>(() =>
+    orgSettingsToForm(organizationSettings)
+  )
 
   // Determine which tab to show based on navigation
   const activeTab = navigation.view === "admin-audit-log" ? "audit" : "rates"
@@ -127,6 +194,112 @@ export function AdminDashboard() {
     })
     setResetDialogOpen(false)
     logout() // Return to role selector
+  }
+
+  // ---- Remark code handlers ----
+
+  const handleEditRemarkClick = (code: RemarkCode) => {
+    setEditingRemark(code)
+    setRemarkCodeValue(code.code)
+    setRemarkDescriptionValue(code.description)
+  }
+
+  const handleSaveRemark = () => {
+    if (!editingRemark || !currentUser) return
+    if (!remarkCodeValue.trim() || !remarkDescriptionValue.trim()) {
+      toast({
+        title: "Missing Fields",
+        description: "Code and description are required",
+        variant: "destructive",
+      })
+      return
+    }
+    updateRemarkCode(
+      editingRemark.id,
+      { code: remarkCodeValue.trim(), description: remarkDescriptionValue.trim() },
+      currentUser.id,
+      currentUser.name
+    )
+    toast({
+      title: "Remark Code Updated",
+      description: `${editingRemark.type} ${remarkCodeValue.trim()} saved`,
+    })
+    setEditingRemark(null)
+  }
+
+  const handleAddRemarkClick = () => {
+    setNewRemarkType("CARC")
+    setRemarkCodeValue("")
+    setRemarkDescriptionValue("")
+    setAddRemarkOpen(true)
+  }
+
+  const handleAddRemark = () => {
+    if (!currentUser) return
+    if (!remarkCodeValue.trim() || !remarkDescriptionValue.trim()) {
+      toast({
+        title: "Missing Fields",
+        description: "Code and description are required",
+        variant: "destructive",
+      })
+      return
+    }
+    addRemarkCode(
+      {
+        type: newRemarkType,
+        code: remarkCodeValue.trim(),
+        description: remarkDescriptionValue.trim(),
+      },
+      currentUser.id,
+      currentUser.name
+    )
+    toast({
+      title: "Remark Code Added",
+      description: `${newRemarkType} ${remarkCodeValue.trim()} added to the dictionary`,
+    })
+    setAddRemarkOpen(false)
+  }
+
+  // ---- Organization settings handlers ----
+
+  const handleEditOrgClick = () => {
+    setOrgForm(orgSettingsToForm(organizationSettings))
+    setOrgDialogOpen(true)
+  }
+
+  const handleSaveOrg = () => {
+    if (!currentUser) return
+    updateOrganizationSettings(
+      {
+        organizationName: orgForm.organizationName.trim(),
+        npi: orgForm.npi.trim(),
+        taxId: orgForm.taxId.trim(),
+        taxonomyCode: orgForm.taxonomyCode.trim(),
+        submitterId: orgForm.submitterId.trim(),
+        contactPhone: orgForm.contactPhone.trim(),
+        address: {
+          street: orgForm.street.trim(),
+          city: orgForm.city.trim(),
+          state: orgForm.state.trim(),
+          zip: orgForm.zip.trim(),
+        },
+        supervisingProvider: {
+          name: orgForm.supervisingProviderName.trim(),
+          npi: orgForm.supervisingProviderNpi.trim(),
+        },
+      },
+      currentUser.id,
+      currentUser.name
+    )
+    toast({
+      title: "Organization Settings Updated",
+      description: "Claim exports will use the updated billing provider details",
+    })
+    setOrgDialogOpen(false)
+  }
+
+  const setOrgField = (field: keyof OrgFormFields, value: string) => {
+    setOrgForm((prev) => ({ ...prev, [field]: value }))
   }
 
   return (
@@ -202,6 +375,14 @@ export function AdminDashboard() {
             <DollarSign className="h-4 w-4" />
             Payer Rates
           </TabsTrigger>
+          <TabsTrigger value="remarks" className="flex items-center gap-2">
+            <BookText className="h-4 w-4" />
+            Remark Codes
+          </TabsTrigger>
+          <TabsTrigger value="organization" className="flex items-center gap-2">
+            <Building2 className="h-4 w-4" />
+            Organization
+          </TabsTrigger>
           <TabsTrigger value="audit" className="flex items-center gap-2">
             <History className="h-4 w-4" />
             Audit Log
@@ -261,6 +442,172 @@ export function AdminDashboard() {
                   ))}
                 </TableBody>
               </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Remark Codes Tab */}
+        <TabsContent value="remarks">
+          <Card className="bg-card">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-card-foreground">Remark Code Dictionary</CardTitle>
+                  <CardDescription>
+                    CARC/RARC adjudication codes used when posting 835 remittances and denials
+                  </CardDescription>
+                </div>
+                <Button onClick={handleAddRemarkClick}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Code
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-border hover:bg-transparent">
+                    <TableHead className="text-muted-foreground w-24">Type</TableHead>
+                    <TableHead className="text-muted-foreground w-24">Code</TableHead>
+                    <TableHead className="text-muted-foreground">Description</TableHead>
+                    <TableHead className="text-right text-muted-foreground">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {remarkCodes.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                        No remark codes configured
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    remarkCodes.map((code) => (
+                      <TableRow key={code.id} className="border-border">
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              code.type === "CARC"
+                                ? "bg-amber-100 text-amber-700 border-amber-200"
+                                : "bg-slate-100 text-slate-700 border-slate-200"
+                            )}
+                          >
+                            {code.type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-mono font-semibold text-card-foreground">
+                          {code.code}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {code.description}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditRemarkClick(code)}
+                          >
+                            <Edit2 className="h-4 w-4 mr-1" />
+                            Edit
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Organization Tab */}
+        <TabsContent value="organization">
+          <Card className="bg-card">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-card-foreground">Organization Settings</CardTitle>
+                  <CardDescription>
+                    Billing provider identity used by CSV and 837P claim exports
+                  </CardDescription>
+                </div>
+                <Button onClick={handleEditOrgClick}>
+                  <Edit2 className="h-4 w-4 mr-2" />
+                  Edit Settings
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-6 md:grid-cols-2">
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Organization Name</p>
+                    <p className="font-medium text-card-foreground">
+                      {organizationSettings.organizationName}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">NPI</p>
+                      <p className="font-mono text-card-foreground">{organizationSettings.npi}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Tax ID</p>
+                      <p className="font-mono text-card-foreground">
+                        {organizationSettings.taxId}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Taxonomy Code</p>
+                      <p className="font-mono text-card-foreground">
+                        {organizationSettings.taxonomyCode}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Submitter ID</p>
+                      <p className="font-mono text-card-foreground">
+                        {organizationSettings.submitterId}
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Supervising Provider</p>
+                    <p className="font-medium text-card-foreground">
+                      {organizationSettings.supervisingProvider.name}{" "}
+                      <span className="font-mono text-sm text-muted-foreground">
+                        (NPI {organizationSettings.supervisingProvider.npi})
+                      </span>
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Address</p>
+                    <p className="text-card-foreground">
+                      {organizationSettings.address.street}
+                      <br />
+                      {organizationSettings.address.city}, {organizationSettings.address.state}{" "}
+                      {organizationSettings.address.zip}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Contact Phone</p>
+                    <p className="text-card-foreground">{organizationSettings.contactPhone}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Last Updated</p>
+                    <p className="text-card-foreground">
+                      {new Date(organizationSettings.lastUpdated).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -391,6 +738,221 @@ export function AdminDashboard() {
             <Button onClick={handleSaveRate}>
               <Check className="h-4 w-4 mr-2" />
               Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Remark Code Dialog */}
+      <Dialog open={editingRemark !== null} onOpenChange={(open) => !open && setEditingRemark(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Remark Code</DialogTitle>
+            <DialogDescription>
+              Update the {editingRemark?.type} code definition
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Type</label>
+              <p className="font-semibold">{editingRemark?.type}</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Code</label>
+              <Input
+                value={remarkCodeValue}
+                onChange={(e) => setRemarkCodeValue(e.target.value)}
+                className="font-mono"
+                placeholder="e.g., 45 or N30"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Description</label>
+              <Input
+                value={remarkDescriptionValue}
+                onChange={(e) => setRemarkDescriptionValue(e.target.value)}
+                placeholder="Description shown on remittance details"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingRemark(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveRemark}>
+              <Check className="h-4 w-4 mr-2" />
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Remark Code Dialog */}
+      <Dialog open={addRemarkOpen} onOpenChange={setAddRemarkOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Remark Code</DialogTitle>
+            <DialogDescription>
+              Add a CARC or RARC code to the adjudication dictionary
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Type</label>
+              <Select
+                value={newRemarkType}
+                onValueChange={(v) => setNewRemarkType(v as "CARC" | "RARC")}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CARC">CARC — Claim Adjustment Reason Code</SelectItem>
+                  <SelectItem value="RARC">RARC — Remittance Advice Remark Code</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Code</label>
+              <Input
+                value={remarkCodeValue}
+                onChange={(e) => setRemarkCodeValue(e.target.value)}
+                className="font-mono"
+                placeholder="e.g., 45 or N30"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Description</label>
+              <Input
+                value={remarkDescriptionValue}
+                onChange={(e) => setRemarkDescriptionValue(e.target.value)}
+                placeholder="Description shown on remittance details"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddRemarkOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddRemark}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Code
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Organization Settings Dialog */}
+      <Dialog open={orgDialogOpen} onOpenChange={setOrgDialogOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Organization Settings</DialogTitle>
+            <DialogDescription>
+              Billing provider details stamped onto exported claims (CSV and 837P)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Organization Name</label>
+              <Input
+                value={orgForm.organizationName}
+                onChange={(e) => setOrgField("organizationName", e.target.value)}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">NPI</label>
+                <Input
+                  value={orgForm.npi}
+                  onChange={(e) => setOrgField("npi", e.target.value)}
+                  className="font-mono"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Tax ID</label>
+                <Input
+                  value={orgForm.taxId}
+                  onChange={(e) => setOrgField("taxId", e.target.value)}
+                  className="font-mono"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Taxonomy Code</label>
+                <Input
+                  value={orgForm.taxonomyCode}
+                  onChange={(e) => setOrgField("taxonomyCode", e.target.value)}
+                  className="font-mono"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Submitter ID</label>
+                <Input
+                  value={orgForm.submitterId}
+                  onChange={(e) => setOrgField("submitterId", e.target.value)}
+                  className="font-mono"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Supervising Provider Name</label>
+                <Input
+                  value={orgForm.supervisingProviderName}
+                  onChange={(e) => setOrgField("supervisingProviderName", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Supervising Provider NPI</label>
+                <Input
+                  value={orgForm.supervisingProviderNpi}
+                  onChange={(e) => setOrgField("supervisingProviderNpi", e.target.value)}
+                  className="font-mono"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Street Address</label>
+              <Input
+                value={orgForm.street}
+                onChange={(e) => setOrgField("street", e.target.value)}
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">City</label>
+                <Input
+                  value={orgForm.city}
+                  onChange={(e) => setOrgField("city", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">State</label>
+                <Input
+                  value={orgForm.state}
+                  onChange={(e) => setOrgField("state", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">ZIP</label>
+                <Input
+                  value={orgForm.zip}
+                  onChange={(e) => setOrgField("zip", e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Contact Phone</label>
+              <Input
+                value={orgForm.contactPhone}
+                onChange={(e) => setOrgField("contactPhone", e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOrgDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveOrg}>
+              <Check className="h-4 w-4 mr-2" />
+              Save Settings
             </Button>
           </DialogFooter>
         </DialogContent>

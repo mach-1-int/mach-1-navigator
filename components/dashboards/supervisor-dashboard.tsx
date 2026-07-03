@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Progress } from "@/components/ui/progress"
 import { Users, AlertTriangle, Activity, CheckCircle2, XCircle, Clock } from "lucide-react"
-import { kpiMetrics } from "@/lib/mock-data"
+import { PROGRAM_TARGETS } from "@/lib/executive-metrics"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { ReferralQueue } from "@/components/dashboards/referral-queue"
@@ -72,13 +72,13 @@ export function SupervisorDashboard() {
         <ComplianceGauge
           title="Medication Compliance"
           value={avgMedicationCompliance}
-          target={kpiMetrics.medicationComplianceTarget}
+          target={PROGRAM_TARGETS.medicationCompliance}
           subtitle="Team average"
         />
         <ComplianceGauge
           title="PCP Compliance"
           value={avgPcpCompliance}
-          target={kpiMetrics.pcpComplianceTarget}
+          target={PROGRAM_TARGETS.pcpCompliance}
           subtitle="Post-hospitalization"
         />
         <Card className="bg-card sm:col-span-2">
@@ -134,7 +134,7 @@ export function SupervisorDashboard() {
             <TableBody>
               {teamNavigators.map((navigator) => {
                 const isLowPerformer = navigator.monthlyUnits < 220
-                const hasComplianceIssue = navigator.medicationCompliance < kpiMetrics.medicationComplianceTarget
+                const hasComplianceIssue = navigator.medicationCompliance < PROGRAM_TARGETS.medicationCompliance
                 return (
                   <TableRow key={navigator.id} className={cn("border-border", isLowPerformer && "bg-destructive/5")}>
                     <TableCell>

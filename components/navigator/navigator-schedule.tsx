@@ -21,10 +21,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { useToast } from "@/hooks/use-toast"
-import { Plus, Home, Phone, Video, Building, ChevronLeft, ChevronRight, AlertTriangle, Calendar, Clock, Map, List, LogIn, LogOut, MapPin, BadgeCheck, CalendarClock, Info, Users } from "lucide-react"
+import { getCurrentPositionSafe } from "@/lib/geo"
+import { Plus, Home, Phone, Video, Building, ChevronLeft, ChevronRight, AlertTriangle, Calendar, Clock, Map, List, LogIn, LogOut, MapPin, BadgeCheck, CalendarClock, Info, Users, Siren } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Appointment, NavigatorShift, ScheduleEvent, DayOfWeek } from "@/lib/types"
 import { RouteMap } from "./route-map"
@@ -75,7 +87,7 @@ const DAY_MAP: Record<number, DayOfWeek> = {
 }
 
 export function NavigatorSchedule() {
-  const { patients, navigators, scheduleAppointment, updateAppointment, checkInAppointment, checkOutAppointment, getSupervisor, scheduleEvents, navigatorShifts, updateScheduleEvent, isHydrated } = useDemoData()
+  const { patients, navigators, scheduleAppointment, updateAppointment, checkInAppointment, checkOutAppointment, getSupervisor, scheduleEvents, navigatorShifts, updateScheduleEvent, updateNavigatorLocation, triggerSOS, isHydrated } = useDemoData()
   const { currentUser } = useRole()
   const { toast } = useToast()
   const currentNavigator = navigators.find((n) => n.id === currentUser?.id) ?? navigators[0]
@@ -263,28 +275,58 @@ export function NavigatorSchedule() {
     }
   }
 
-  // EVV Check-In handler
-  const handleCheckIn = (appointment: AppointmentWithPatient) => {
-    // Simulate GPS capture - use patient's location or a mock Phoenix location
+  // EVV Check-In handler - real device GPS when available, fallback otherwise
+  const handleCheckIn = async (appointment: AppointmentWithPatient) => {
+    // Fallback coords: patient's location or a mock Phoenix location
     const patient = patients.find(p => p.id === appointment.patientId)
-    const mockLocation = patient?.lat && patient?.lng
+    const fallbackLocation = patient?.lat && patient?.lng
       ? { lat: patient.lat + (Math.random() - 0.5) * 0.001, lng: patient.lng + (Math.random() - 0.5) * 0.001 }
       : { lat: 33.4484, lng: -112.0740 }
 
-    checkInAppointment(appointment.id, mockLocation)
+    const point = await getCurrentPositionSafe()
+    const location = point ?? fallbackLocation
+
+    checkInAppointment(appointment.id, location)
+
+    // Surface the field check-in on the supervisor safety map (real check-in)
+    updateNavigatorLocation(currentNavigator.id, location.lat, location.lng, {
+      touchCheckIn: true,
+      currentTask: `Home Visit: ${appointment.patientName}`,
+      currentPatientId: appointment.patientId,
+      speed: 0,
+    })
 
     toast({
       title: "Visit Started",
       description: (
         <div className="flex items-center gap-2">
-          <MapPin className="h-4 w-4 text-green-500" />
-          <span>Location Verified</span>
+          <MapPin className={cn("h-4 w-4", point ? "text-green-500" : "text-amber-500")} />
+          <span>
+            {point
+              ? "Checked in (GPS verified)"
+              : "Checked in (approximate location — GPS unavailable)"}
+          </span>
         </div>
       ),
     })
 
     setDetailsDialogOpen(false)
     setSelectedAppointment(null)
+  }
+
+  // SOS handler - real device location when available
+  const handleSOS = async () => {
+    const point = await getCurrentPositionSafe()
+    triggerSOS(currentNavigator.id, point ?? undefined)
+    toast({
+      title: "SOS sent to supervisor",
+      description: (
+        <div className="flex items-center gap-2">
+          <Siren className="h-4 w-4 text-red-500" />
+          <span>Your supervisor has been alerted with your current location.</span>
+        </div>
+      ),
+    })
   }
 
   // EVV Check-Out handler
@@ -420,6 +462,32 @@ export function NavigatorSchedule() {
           >
             {showTeamView ? "My Schedule" : "Team View"}
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+              >
+                <Siren className="h-4 w-4 mr-1.5" />
+                SOS
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Send SOS alert?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Send an emergency alert to your supervisor with your current location?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleSOS}>
+                  Send SOS
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button>

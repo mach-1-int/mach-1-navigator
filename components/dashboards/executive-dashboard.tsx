@@ -3,8 +3,20 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { StatCard } from "@/components/dashboard/stat-card"
 import { DollarSign, Users, Activity, TrendingUp, AlertTriangle, Clock, UserPlus, CheckCircle2 } from "lucide-react"
-import { kpiMetrics, healthPlanRevenue, referralSources, monthlyBillingData, performanceData } from "@/lib/mock-data"
 import { useDemoData } from "@/lib/demo-data-context"
+import {
+  PROGRAM_TARGETS,
+  computeRevenue,
+  computeDailyUnits,
+  computeReferralSources,
+  computeHealthPlanRevenue,
+  computePerformanceData,
+  computeCensus,
+  avgEngagementMonths,
+  highRiskCount,
+  computeAdverseEventsSummary,
+  avgUnitsPerNavigator,
+} from "@/lib/executive-metrics"
 import {
   AreaChart,
   Area,
@@ -24,8 +36,30 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 export function ExecutiveDashboard() {
-  const { patients, referrals, navigators, appointments, getLastAssignedPatient, calculateDynamicRevenue } = useDemoData()
-  const topPerformers = performanceData.filter((p) => p.tier === "top").slice(0, 5)
+  const {
+    patients,
+    referrals,
+    navigators,
+    appointments,
+    timeLogs,
+    intakeRecords,
+    adverseEvents,
+    payers,
+    activePayerConfig,
+    getLastAssignedPatient,
+  } = useDemoData()
+
+  // All KPI/chart data computed live from store slices
+  const revenue = computeRevenue(navigators, patients, timeLogs, intakeRecords, activePayerConfig, appointments, payers)
+  const dailyUnits = computeDailyUnits(timeLogs, activePayerConfig)
+  const referralSources = computeReferralSources(referrals)
+  const healthPlanRevenue = computeHealthPlanRevenue(patients, payers)
+  const performanceData = computePerformanceData(navigators)
+  const census = computeCensus(patients)
+  const engagementMonths = avgEngagementMonths(patients)
+  const highRiskPatients = highRiskCount(patients)
+  const adverseEventsSummary = computeAdverseEventsSummary(adverseEvents)
+  const avgUnits = avgUnitsPerNavigator(navigators)
   const lowPerformers = performanceData.filter((p) => p.tier === "low")
 
   const lastAssignedPatient = getLastAssignedPatient()
@@ -35,11 +69,8 @@ export function ExecutiveDashboard() {
   const pendingReferrals = referrals.filter(r => r.status === "pending").length
   const acceptedReferrals = referrals.filter(r => r.status === "accepted").length
 
-  // Calculate live revenue using dynamic payer rates
   const completedAppointments = appointments.filter(apt => apt.status === "completed").length
-  const dynamicRevenue = calculateDynamicRevenue()
-  const liveRevenue = kpiMetrics.totalRevenue + dynamicRevenue
-  
+
   // Awaiting Intake = pending referrals
   const awaitingIntake = pendingReferrals
 
@@ -48,31 +79,31 @@ export function ExecutiveDashboard() {
       {/* KPI Cards Row */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Total Revenue"
-          value={`$${(liveRevenue / 1000).toFixed(0)}K`}
-          trend={{ value: kpiMetrics.revenueGrowth, direction: "up" }}
-          subtitle={completedAppointments > 0 ? `+$${dynamicRevenue.toLocaleString()} from ${completedAppointments} visits` : "vs last month"}
+          title="Est. Revenue (Current Month)"
+          value={`$${revenue.total.toLocaleString()}`}
+          subtitle={
+            completedAppointments > 0
+              ? `$${revenue.claimsRevenue.toLocaleString()} claims + $${revenue.appointmentRevenue.toLocaleString()} from ${completedAppointments} visits`
+              : `${revenue.claimCount} claims this billing month`
+          }
           icon={DollarSign}
           variant="success"
         />
         <StatCard
           title="Active Patients"
-          value={kpiMetrics.activePatients}
-          trend={{ value: 8, direction: "up" }}
-          subtitle={`of ${kpiMetrics.totalPatients} total`}
+          value={census.active}
+          subtitle={`of ${census.total} total`}
           icon={Users}
         />
         <StatCard
           title="Avg. Engagement"
-          value={`${kpiMetrics.avgEngagement} mo`}
-          trend={{ value: 5, direction: "up" }}
+          value={`${engagementMonths} mo`}
           subtitle="length of program"
           icon={Activity}
         />
         <StatCard
           title="Awaiting Intake"
           value={awaitingIntake}
-          trend={{ value: awaitingIntake < kpiMetrics.patientsAwaitingIntake ? -12 : 0, direction: "down" }}
           subtitle={`${acceptedReferrals} accepted this session`}
           icon={Clock}
           variant="warning"
@@ -85,12 +116,12 @@ export function ExecutiveDashboard() {
         <Card className="bg-card lg:col-span-4">
           <CardHeader>
             <CardTitle className="text-card-foreground">Daily Billing Units</CardTitle>
-            <CardDescription>Units billed vs target this month</CardDescription>
+            <CardDescription>Units logged per day vs daily target this billing month</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={monthlyBillingData}>
+                <AreaChart data={dailyUnits}>
                   <defs>
                     <linearGradient id="colorUnits" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.3} />
@@ -135,7 +166,7 @@ export function ExecutiveDashboard() {
         <Card className="bg-card lg:col-span-3">
           <CardHeader>
             <CardTitle className="text-card-foreground">Revenue by Health Plan</CardTitle>
-            <CardDescription>PMPM distribution across payers</CardDescription>
+            <CardDescription>Active census × contracted rate per payer</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
@@ -152,7 +183,7 @@ export function ExecutiveDashboard() {
                     nameKey="planName"
                   >
                     {healthPlanRevenue.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={`hsl(var(--chart-${index + 1}))`} />
+                      <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
                   <Tooltip
@@ -162,7 +193,7 @@ export function ExecutiveDashboard() {
                       borderRadius: "8px",
                       color: "hsl(var(--popover-foreground))",
                     }}
-                    formatter={(value: number) => [`$${(value / 1000).toFixed(0)}K`, "Revenue"]}
+                    formatter={(value: number) => [`$${value.toLocaleString()}`, "Revenue"]}
                   />
                   <Legend
                     formatter={(value) => <span className="text-muted-foreground text-sm">{value}</span>}
@@ -201,7 +232,7 @@ export function ExecutiveDashboard() {
                         variant={source.trend === "up" ? "default" : source.trend === "down" ? "destructive" : "secondary"}
                         className="text-xs"
                       >
-                        {source.trend === "up" ? "+12%" : source.trend === "down" ? "-5%" : "0%"}
+                        {source.trend === "up" ? "Active (7d)" : source.trend === "down" ? "Down" : "Stable"}
                       </Badge>
                     </TableCell>
                   </TableRow>
@@ -318,12 +349,12 @@ export function ExecutiveDashboard() {
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm font-medium text-card-foreground">
               <AlertTriangle className="h-4 w-4 text-destructive" />
-              High-Cost Patients
+              High-Risk Patients
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-card-foreground">{kpiMetrics.highCostPatients}</p>
-            <p className="text-xs text-muted-foreground">Require immediate intervention review</p>
+            <p className="text-2xl font-bold text-card-foreground">{highRiskPatients}</p>
+            <p className="text-xs text-muted-foreground">Level 3 — require intervention review</p>
           </CardContent>
         </Card>
 
@@ -335,8 +366,8 @@ export function ExecutiveDashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-card-foreground">{kpiMetrics.totalAdverseEvents}</p>
-            <p className="text-xs text-muted-foreground">{kpiMetrics.currentInpatients} currently inpatient</p>
+            <p className="text-2xl font-bold text-card-foreground">{adverseEventsSummary.total}</p>
+            <p className="text-xs text-muted-foreground">{adverseEventsSummary.currentInpatients} currently inpatient</p>
           </CardContent>
         </Card>
 
@@ -348,8 +379,8 @@ export function ExecutiveDashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-card-foreground">{kpiMetrics.avgUnitsPerNavigator}</p>
-            <p className="text-xs text-muted-foreground">Target: 280 units/month</p>
+            <p className="text-2xl font-bold text-card-foreground">{avgUnits}</p>
+            <p className="text-xs text-muted-foreground">Target: {PROGRAM_TARGETS.monthlyUnitsPerNavigator} units/month</p>
           </CardContent>
         </Card>
       </div>

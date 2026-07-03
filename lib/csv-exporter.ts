@@ -5,7 +5,7 @@
  * Follows CMS 1500 / 837P format conventions for healthcare billing.
  */
 
-import type { BillableClaim, Patient } from "./types"
+import type { BillableClaim, Navigator, OrganizationSettings, Patient } from "./types"
 
 /**
  * CSV Headers for Medical Billing Export
@@ -52,19 +52,6 @@ interface CSVRow {
 }
 
 /**
- * Navigator ID to name mapping for demo
- */
-const NAVIGATOR_NAMES: Record<string, string> = {
-  "nav-maria": "Maria Gonzalez, CHW",
-  "nav-david": "David Chen, CHW",
-  "nav-john": "John Smith, CHW",
-  "nav-sarah": "Sarah Jones, CHW",
-  "nav1": "Emily Rodriguez, CHW",
-  "nav2": "David Chen, CHW",
-  "nav3": "Maria Santos, CHW",
-}
-
-/**
  * Get the last day of a month from a YYYY-MM string
  * Returns formatted as MM/DD/YYYY
  */
@@ -76,13 +63,6 @@ function getLastDayOfMonth(monthStr: string): string {
   const dd = String(lastDay.getDate()).padStart(2, "0")
   const yyyy = lastDay.getFullYear()
   return `${mm}/${dd}/${yyyy}`
-}
-
-/**
- * Get navigator name from ID
- */
-function getNavigatorName(navigatorId: string): string {
-  return NAVIGATOR_NAMES[navigatorId] || `Navigator ${navigatorId}`
 }
 
 /**
@@ -102,11 +82,12 @@ function escapeCSVField(value: string): string {
  */
 function claimToCSVRows(
   claim: BillableClaim,
-  patientDOB: string = "01/01/1950" // Default DOB for demo
+  patientDOB: string,
+  serviceProvider: string,
+  renderingProvider: string
 ): CSVRow[] {
   const rows: CSVRow[] = []
   const dateOfService = getLastDayOfMonth(claim.month)
-  const serviceProvider = getNavigatorName(claim.navigatorId)
 
   // Format billing model for display
   const billingModelDisplay = claim.billingModel
@@ -119,7 +100,7 @@ function claimToCSVRows(
     Member_ID: claim.memberId,
     DOB: patientDOB,
     Date_Of_Service: dateOfService,
-    Rendering_Provider: "Dr. Supervising MD",
+    Rendering_Provider: renderingProvider,
     Service_Provider: serviceProvider,
     Diagnosis_1: claim.diagnosisCodes[0] || "",
     Diagnosis_2: claim.diagnosisCodes[1] || "",
@@ -157,7 +138,9 @@ function claimToCSVRows(
  */
 export function generateBillingCSV(
   claims: BillableClaim[],
-  patients?: Patient[]
+  patients?: Patient[],
+  navigators?: Navigator[],
+  orgSettings?: OrganizationSettings
 ): string {
   // Create patient DOB lookup if patients provided
   const dobLookup = new Map<string, string>()
@@ -171,11 +154,19 @@ export function generateBillingCSV(
     })
   }
 
+  // Navigator id -> name lookup (fallback: raw id)
+  const navigatorLookup = new Map<string, string>()
+  navigators?.forEach((n) => navigatorLookup.set(n.id, n.name))
+
+  const renderingProvider = orgSettings?.supervisingProvider.name ?? ""
+
   // Convert all claims to rows
   const allRows: CSVRow[] = []
   for (const claim of claims) {
-    const patientDOB = dobLookup.get(claim.patientId) || "01/01/1950"
-    const rows = claimToCSVRows(claim, patientDOB)
+    // Empty DOB when the patient is missing — never fabricate demographics
+    const patientDOB = dobLookup.get(claim.patientId) || ""
+    const serviceProvider = navigatorLookup.get(claim.navigatorId) ?? claim.navigatorId
+    const rows = claimToCSVRows(claim, patientDOB, serviceProvider, renderingProvider)
     allRows.push(...rows)
   }
 
@@ -189,12 +180,17 @@ export function generateBillingCSV(
 }
 
 /**
- * Trigger browser download of CSV file
+ * Trigger browser download of a text file (CSV, 837, 835, ...)
  */
-export function triggerCSVDownload(csvContent: string, filename: string): void {
-  // Create blob with BOM for Excel compatibility
-  const BOM = "\uFEFF"
-  const blob = new Blob([BOM + csvContent], { type: "text/csv;charset=utf-8;" })
+export function triggerFileDownload(
+  content: string,
+  filename: string,
+  mimeType: string = "text/csv"
+): void {
+  // Prepend BOM to CSV files for Excel compatibility
+  const isCsv = mimeType.startsWith("text/csv")
+  const payload = isCsv ? `\uFEFF${content}` : content
+  const blob = new Blob([payload], { type: `${mimeType};charset=utf-8;` })
 
   // Create download link
   const url = URL.createObjectURL(blob)
@@ -213,16 +209,27 @@ export function triggerCSVDownload(csvContent: string, filename: string): void {
 }
 
 /**
+ * Trigger browser download of CSV file (thin wrapper for compatibility)
+ */
+export function triggerCSVDownload(csvContent: string, filename: string): void {
+  triggerFileDownload(csvContent, filename, "text/csv")
+}
+
+/**
  * Main export function: Download claims as CSV
  *
  * @param claims - Array of billable claims to export
  * @param patients - Optional array of patients for DOB lookup
  * @param filename - Optional custom filename (defaults to claims-export-YYYY-MM-DD.csv)
+ * @param navigators - Optional array of navigators for Service_Provider names
+ * @param orgSettings - Optional org settings for Rendering_Provider
  */
 export function downloadClaimsCsv(
   claims: BillableClaim[],
   patients?: Patient[],
-  filename?: string
+  filename?: string,
+  navigators?: Navigator[],
+  orgSettings?: OrganizationSettings
 ): void {
   if (claims.length === 0) {
     console.warn("No claims to export")
@@ -230,7 +237,7 @@ export function downloadClaimsCsv(
   }
 
   // Generate CSV content
-  const csvContent = generateBillingCSV(claims, patients)
+  const csvContent = generateBillingCSV(claims, patients, navigators, orgSettings)
 
   // Generate filename if not provided
   const exportFilename =
@@ -254,10 +261,12 @@ export function generateMonthlyFilename(month: string): string {
 export function downloadMonthlyClaimsCsv(
   claims: BillableClaim[],
   month: string,
-  patients?: Patient[]
+  patients?: Patient[],
+  navigators?: Navigator[],
+  orgSettings?: OrganizationSettings
 ): void {
   const filename = generateMonthlyFilename(month)
-  downloadClaimsCsv(claims, patients, filename)
+  downloadClaimsCsv(claims, patients, filename, navigators, orgSettings)
 }
 
 /**

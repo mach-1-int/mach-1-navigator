@@ -131,7 +131,7 @@ export interface StoreState {
 // Current schema version - bump this when seed data changes to force refresh.
 // MUST be defined above createInitialState so fresh state is stamped with it;
 // a stale literal here once caused every reload to wipe localStorage.
-const CURRENT_VERSION = 11 // Bumped for production-hardening blitz: payers/claims/SOS/identity slices
+const CURRENT_VERSION = 12 // Production-hardening blitz: payers/claims/SOS/identity slices + enriched time logs
 
 // ============================================================================
 // INITIAL STATE
@@ -786,16 +786,6 @@ export function getRecentGoalHistory(
 // ============================================================================
 // CMS BILLING HELPERS (Phase 2.1)
 // ============================================================================
-
-/**
- * Calculate acuity level from total score
- * Low: 0-4, Moderate: 5-8, High: 9-12
- */
-export function calculateAcuityLevel(totalScore: number): "Low" | "Moderate" | "High" {
-  if (totalScore <= 4) return "Low"
-  if (totalScore <= 8) return "Moderate"
-  return "High"
-}
 
 /**
  * Get time logs for a patient within a billing period

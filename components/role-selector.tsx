@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useRole } from "@/lib/role-context"
 import { useDemoData } from "@/lib/demo-data-context"
 import type { UserRole } from "@/lib/types"
-import { users } from "@/lib/mock-data"
+import { initialUsers as users } from "@/lib/initial-data"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {

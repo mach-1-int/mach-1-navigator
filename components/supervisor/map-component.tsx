@@ -21,7 +21,7 @@ function formatLastCheckIn(isoString: string): string {
 }
 
 // Fix for default marker icons in Leaflet with Next.js
-const createCustomIcon = (status: SafetyStatus) => {
+const createCustomIcon = (status: SafetyStatus, isSOS: boolean) => {
   const colors: Record<SafetyStatus, string> = {
     ACTIVE: "#059669", // emerald-600
     IDLE: "#6b7280", // gray-500 (changed from amber for better visibility)
@@ -40,6 +40,32 @@ const createCustomIcon = (status: SafetyStatus) => {
   return L.divIcon({
     className: "custom-marker",
     html: `
+      ${isSOS ? `
+        <div class="sos-ring" style="
+          position: absolute;
+          top: -6px;
+          left: -6px;
+          width: 44px;
+          height: 44px;
+          border: 3px solid #b91c1c;
+          border-radius: 50%;
+        "></div>
+        <div style="
+          position: absolute;
+          top: -14px;
+          left: 50%;
+          transform: translateX(-50%);
+          background-color: #b91c1c;
+          color: white;
+          font-size: 9px;
+          font-weight: bold;
+          letter-spacing: 0.5px;
+          padding: 1px 5px;
+          border-radius: 9999px;
+          border: 1px solid white;
+          z-index: 10;
+        ">SOS</div>
+      ` : ""}
       <div class="${animationClass}" style="
         width: 32px;
         height: 32px;
@@ -96,15 +122,22 @@ function FlyToLocation({ location }: { location: NavigatorLocation | null }) {
 }
 
 interface MapComponentProps {
+  /** Locations arrive with `status` already replaced by the derived status */
   locations: NavigatorLocation[]
   selectedNavigatorId: string | null
   onSelectNavigator: (navigatorId: string) => void
+  /** Navigators with a live (ACTIVE/ACKNOWLEDGED) SOS - extra ring + badge */
+  sosNavigatorIds?: Set<string>
+  /** Phone per navigatorId (resolved by parent from users); no phone = no Call Now */
+  phones?: Record<string, string | undefined>
 }
 
 export default function MapComponent({
   locations,
   selectedNavigatorId,
   onSelectNavigator,
+  sosNavigatorIds,
+  phones,
 }: MapComponentProps) {
   const selectedLocation = selectedNavigatorId
     ? locations.find((loc) => loc.navigatorId === selectedNavigatorId)
@@ -187,6 +220,21 @@ export default function MapComponent({
           animation: badgePulse 0.5s infinite;
         }
 
+        /* Expanding ring for an active SOS */
+        @keyframes sosRing {
+          0% {
+            transform: scale(1);
+            opacity: 1;
+          }
+          100% {
+            transform: scale(1.6);
+            opacity: 0;
+          }
+        }
+        .sos-ring {
+          animation: sosRing 1s infinite;
+        }
+
         .leaflet-popup-content-wrapper {
           border-radius: 12px;
           padding: 0;
@@ -209,12 +257,13 @@ export default function MapComponent({
           padding: 8px 12px;
           margin-top: 8px;
           background-color: #2563eb;
-          color: white;
+          color: white !important;
           border: none;
           border-radius: 6px;
           font-size: 13px;
           font-weight: 500;
           cursor: pointer;
+          text-decoration: none;
           transition: background-color 0.2s;
         }
         .call-now-btn:hover {
@@ -241,48 +290,59 @@ export default function MapComponent({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {locations.map((location) => (
-          <Marker
-            key={location.id}
-            position={[location.lat, location.lng]}
-            icon={createCustomIcon(location.status)}
-            eventHandlers={{
-              click: () => onSelectNavigator(location.navigatorId),
-            }}
-          >
-            <Popup>
-              <div className="p-3">
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className="font-semibold text-sm">{location.navigatorName}</span>
-                  <span
-                    className="status-badge"
-                    style={{
-                      backgroundColor: statusConfig[location.status].bgColor,
-                      color: statusConfig[location.status].textColor,
-                    }}
-                  >
-                    Status: {statusConfig[location.status].label}
-                  </span>
+        {locations.map((location) => {
+          const isSOS = sosNavigatorIds?.has(location.navigatorId) ?? false
+          const phone = phones?.[location.navigatorId]
+          return (
+            <Marker
+              key={location.id}
+              position={[location.lat, location.lng]}
+              icon={createCustomIcon(location.status, isSOS)}
+              eventHandlers={{
+                click: () => onSelectNavigator(location.navigatorId),
+              }}
+            >
+              <Popup>
+                <div className="p-3">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="font-semibold text-sm">{location.navigatorName}</span>
+                    <span
+                      className="status-badge"
+                      style={{
+                        backgroundColor: statusConfig[location.status].bgColor,
+                        color: statusConfig[location.status].textColor,
+                      }}
+                    >
+                      Status: {statusConfig[location.status].label}
+                    </span>
+                  </div>
+                  {isSOS && (
+                    <p className="text-xs font-bold mb-2" style={{ color: "#b91c1c" }}>
+                      SOS ACTIVE — acknowledge in the sidebar
+                    </p>
+                  )}
+                  {location.currentTask && (
+                    <p className="text-xs text-gray-600 mb-2">{location.currentTask}</p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    Last Check-in: {formatLastCheckIn(location.lastCheckIn)}
+                  </p>
+                  {location.batteryLevel !== undefined && (
+                    <p className="text-xs text-gray-500 mb-1">Battery: {location.batteryLevel}%</p>
+                  )}
+                  {phone && (
+                    <a href={`tel:${phone}`} className="call-now-btn">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+                      </svg>
+                      Call Now
+                    </a>
+                  )}
                 </div>
-                {location.currentTask && (
-                  <p className="text-xs text-gray-600 mb-2">{location.currentTask}</p>
-                )}
-                <p className="text-xs text-gray-500">
-                  Last Check-in: {formatLastCheckIn(location.lastCheckIn)}
-                </p>
-                {location.batteryLevel !== undefined && (
-                  <p className="text-xs text-gray-500 mb-1">Battery: {location.batteryLevel}%</p>
-                )}
-                <button className="call-now-btn">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
-                  </svg>
-                  Call Now
-                </button>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+              </Popup>
+            </Marker>
+          )
+        })}
 
         <FlyToLocation location={selectedLocation || null} />
       </MapContainer>

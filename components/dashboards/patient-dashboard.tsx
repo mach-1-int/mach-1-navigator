@@ -16,7 +16,6 @@ import {
   AlertCircle,
   ChevronRight,
 } from "lucide-react"
-import { patients as mockPatients, navigators as mockNavigators } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
 import { AMDSourceIndicator } from "@/components/amd-source-indicator"
 import { useRole } from "@/lib/role-context"
@@ -26,20 +25,18 @@ export function PatientDashboard() {
   const { demoPatientId } = useRole()
   const { patients, navigators } = useDemoData()
   
-  // Use demo patient if logged in as one, otherwise default to James Thompson
-  const currentPatient = demoPatientId 
-    ? patients.find(p => p.id === demoPatientId) || mockPatients[0]
-    : mockPatients[0]
-  const myNavigator = navigators.find((n) => n.id === currentPatient.assignedNavigator) || mockNavigators[0]
+  // Use demo patient if logged in as one, otherwise default to the first patient (James Thompson)
+  const currentPatient = demoPatientId
+    ? patients.find(p => p.id === demoPatientId) || patients[0]
+    : patients[0]
+  const myNavigator = navigators.find((n) => n.id === currentPatient?.assignedNavigator) || navigators[0]
+
+  if (!currentPatient) return null
 
   const enrollmentDays = Math.floor(
     (new Date().getTime() - new Date(currentPatient.enrollmentDate).getTime()) / (1000 * 60 * 60 * 24)
   )
   const enrollmentMonths = Math.floor(enrollmentDays / 30)
-
-  const upcomingMeds = currentPatient.medications.filter(
-    (med) => new Date(med.nextRefillDate) <= new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
-  )
 
   return (
     <div className="space-y-6">
@@ -312,7 +309,7 @@ export function PatientDashboard() {
                 <div>
                   <p className="font-medium text-card-foreground">Great Progress!</p>
                   <p className="text-sm text-muted-foreground">
-                    You're doing well on your health journey. Keep taking your medications and attending your appointments!
+                    You&apos;re doing well on your health journey. Keep taking your medications and attending your appointments!
                   </p>
                 </div>
               </div>

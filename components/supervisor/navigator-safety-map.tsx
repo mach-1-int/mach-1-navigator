@@ -5,22 +5,24 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Separator } from "@/components/ui/separator"
+import { Switch } from "@/components/ui/switch"
 import {
   AlertTriangle,
   MapPin,
   Clock,
-  Phone,
   User,
   Battery,
   Navigation,
   RefreshCw,
   ChevronRight,
+  Siren,
   Zap,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
+import { useSafetySimulation } from "@/hooks/use-safety-simulation"
+import { deriveSafetyStatus, SAFETY_RULES } from "@/lib/safety-status"
 import type { NavigatorLocation, SafetyStatus } from "@/lib/types"
 import dynamic from "next/dynamic"
 
@@ -159,10 +161,58 @@ function NavigatorCard({ location, isSelected, onSelect, onViewPatient }: Naviga
 }
 
 export function NavigatorSafetyMap() {
-  const { navigatorLocations, patients } = useDemoData()
-  const { navigateTo } = useRole()
+  const {
+    navigatorLocations,
+    scheduleEvents,
+    appointments,
+    sosEvents,
+    acknowledgeSOS,
+    resolveSOS,
+    getUser,
+  } = useDemoData()
+  const { navigateTo, currentUser } = useRole()
   const [selectedNavigatorId, setSelectedNavigatorId] = useState<string | null>(null)
   const [lastRefresh, setLastRefresh] = useState(new Date())
+  const [now, setNow] = useState(new Date())
+  const [simulateActivity, setSimulateActivity] = useState(false)
+
+  // Live movement simulator (defaults off; supervisor toggles it for demos)
+  useSafetySimulation(simulateActivity)
+
+  // Re-derive statuses on a clock so alerts fire without any data mutation
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 30_000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Locations with COMPUTED status - the seeded `.status` is only a fallback
+  // snapshot; every consumer below (counts, cards, banner, map) uses this.
+  const derivedLocations = useMemo(() => {
+    return navigatorLocations.map((loc) => ({
+      ...loc,
+      status: deriveSafetyStatus(loc, scheduleEvents, appointments, sosEvents, now),
+    }))
+  }, [navigatorLocations, scheduleEvents, appointments, sosEvents, now])
+
+  // SOS lifecycle slices for the alarm banner + map badges
+  const activeSOS = useMemo(() => sosEvents.filter((s) => s.status === "ACTIVE"), [sosEvents])
+  const acknowledgedSOS = useMemo(() => sosEvents.filter((s) => s.status === "ACKNOWLEDGED"), [sosEvents])
+  const sosNavigatorIds = useMemo(
+    () =>
+      new Set(
+        sosEvents.filter((s) => s.status !== "RESOLVED").map((s) => s.navigatorId)
+      ),
+    [sosEvents]
+  )
+
+  // Phone per navigator for the map popup "Call Now" action
+  const phones = useMemo(() => {
+    const result: Record<string, string | undefined> = {}
+    derivedLocations.forEach((loc) => {
+      result[loc.navigatorId] = getUser(loc.navigatorId)?.phone
+    })
+    return result
+  }, [derivedLocations, getUser])
 
   // Sort locations by status priority (RISK_ALERT first, then IDLE, then ACTIVE)
   const sortedLocations = useMemo(() => {
@@ -171,26 +221,23 @@ export function NavigatorSafetyMap() {
       IDLE: 1,
       ACTIVE: 2,
     }
-    return [...navigatorLocations].sort(
+    return [...derivedLocations].sort(
       (a, b) => statusOrder[a.status] - statusOrder[b.status]
     )
-  }, [navigatorLocations])
+  }, [derivedLocations])
 
   // Count by status
   const statusCounts = useMemo(() => {
     const counts = { ACTIVE: 0, IDLE: 0, RISK_ALERT: 0 }
-    navigatorLocations.forEach((loc) => {
+    derivedLocations.forEach((loc) => {
       counts[loc.status]++
     })
     return counts
-  }, [navigatorLocations])
-
-  const selectedLocation = selectedNavigatorId
-    ? navigatorLocations.find((loc) => loc.navigatorId === selectedNavigatorId)
-    : null
+  }, [derivedLocations])
 
   const handleRefresh = () => {
-    // In a real app, this would fetch fresh data from the server
+    // Re-derive every status against the current clock
+    setNow(new Date())
     setLastRefresh(new Date())
   }
 
@@ -198,15 +245,12 @@ export function NavigatorSafetyMap() {
     navigateTo("patient-detail", { patientId })
   }
 
-  // Auto-select first RISK_ALERT if any
-  useEffect(() => {
-    if (!selectedNavigatorId) {
-      const riskAlert = navigatorLocations.find((loc) => loc.status === "RISK_ALERT")
-      if (riskAlert) {
-        setSelectedNavigatorId(riskAlert.navigatorId)
-      }
-    }
-  }, [navigatorLocations, selectedNavigatorId])
+  // Auto-select first RISK_ALERT until the supervisor picks someone (derived,
+  // not state-synced, so re-derivation never fights an explicit selection)
+  const effectiveSelectedId =
+    selectedNavigatorId ??
+    derivedLocations.find((loc) => loc.status === "RISK_ALERT")?.navigatorId ??
+    null
 
   return (
     <div className="h-[calc(100vh-12rem)] grid grid-cols-[350px_1fr] gap-4">
@@ -215,7 +259,7 @@ export function NavigatorSafetyMap() {
         {/* Status Summary */}
         <Card>
           <CardContent className="pt-4 pb-3">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-2">
               <h3 className="font-semibold text-sm">Team Status</h3>
               <Button
                 variant="ghost"
@@ -227,6 +271,17 @@ export function NavigatorSafetyMap() {
                 Refresh
               </Button>
             </div>
+            <label className="flex items-center justify-between gap-2 mb-3 text-xs text-muted-foreground cursor-pointer">
+              <span className="flex items-center gap-1">
+                <Zap className="h-3 w-3" />
+                Simulate live activity
+              </span>
+              <Switch
+                checked={simulateActivity}
+                onCheckedChange={setSimulateActivity}
+                aria-label="Simulate live activity"
+              />
+            </label>
             <div className="grid grid-cols-3 gap-2">
               <div className={cn("p-2 rounded-lg text-center", STATUS_CONFIG.ACTIVE.bgColor)}>
                 <p className={cn("text-xl font-bold", STATUS_CONFIG.ACTIVE.color)}>
@@ -250,6 +305,61 @@ export function NavigatorSafetyMap() {
           </CardContent>
         </Card>
 
+        {/* SOS Alarm Banner - above the risk banner, deeper red, pulsing */}
+        {(activeSOS.length > 0 || acknowledgedSOS.length > 0) && (
+          <div className="space-y-2">
+            {activeSOS.map((sos) => (
+              <div
+                key={sos.id}
+                className="bg-red-700 border-2 border-red-800 rounded-lg p-3 flex items-center gap-2 animate-pulse"
+              >
+                <Siren className="h-5 w-5 text-white shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-white truncate">
+                    SOS — {sos.navigatorName}
+                  </p>
+                  <p className="text-xs text-red-100">
+                    Triggered {formatTimeAgo(sos.triggeredAt)}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 text-xs shrink-0"
+                  onClick={() => acknowledgeSOS(sos.id, currentUser?.name ?? "Supervisor")}
+                >
+                  Acknowledge
+                </Button>
+              </div>
+            ))}
+            {acknowledgedSOS.map((sos) => (
+              <div
+                key={sos.id}
+                className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2"
+              >
+                <Siren className="h-4 w-4 text-red-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-red-800 truncate">
+                    SOS — {sos.navigatorName} (acknowledged
+                    {sos.acknowledgedBy ? ` by ${sos.acknowledgedBy}` : ""})
+                  </p>
+                  <p className="text-[10px] text-red-600">
+                    Triggered {formatTimeAgo(sos.triggeredAt)}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs shrink-0 border-red-300 text-red-700 hover:bg-red-100"
+                  onClick={() => resolveSOS(sos.id)}
+                >
+                  Resolve
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Risk Alert Banner */}
         {statusCounts.RISK_ALERT > 0 && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2">
@@ -258,7 +368,9 @@ export function NavigatorSafetyMap() {
               <p className="text-sm font-medium text-red-800">
                 {statusCounts.RISK_ALERT} Navigator{statusCounts.RISK_ALERT > 1 ? "s" : ""} Need Attention
               </p>
-              <p className="text-xs text-red-600">No check-in for 30+ minutes</p>
+              <p className="text-xs text-red-600">
+                SOS, overdue high-risk visit ({SAFETY_RULES.HIGH_RISK_VISIT_OVERDUE_MIN}+ min), or missed check-in ({SAFETY_RULES.MISSED_CHECKIN_MIN}+ min)
+              </p>
             </div>
           </div>
         )}
@@ -268,7 +380,7 @@ export function NavigatorSafetyMap() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <MapPin className="h-4 w-4" />
-              Field Team ({navigatorLocations.length})
+              Field Team ({derivedLocations.length})
             </CardTitle>
           </CardHeader>
           <ScrollArea className="h-[calc(100%-3.5rem)]">
@@ -277,7 +389,7 @@ export function NavigatorSafetyMap() {
                 <NavigatorCard
                   key={location.id}
                   location={location}
-                  isSelected={selectedNavigatorId === location.navigatorId}
+                  isSelected={effectiveSelectedId === location.navigatorId}
                   onSelect={() => setSelectedNavigatorId(location.navigatorId)}
                   onViewPatient={handleViewPatient}
                 />
@@ -298,9 +410,11 @@ export function NavigatorSafetyMap() {
         </CardHeader>
         <CardContent className="p-0 h-[calc(100%-3.5rem)]">
           <MapComponent
-            locations={navigatorLocations}
-            selectedNavigatorId={selectedNavigatorId}
+            locations={derivedLocations}
+            selectedNavigatorId={effectiveSelectedId}
             onSelectNavigator={setSelectedNavigatorId}
+            sosNavigatorIds={sosNavigatorIds}
+            phones={phones}
           />
         </CardContent>
       </Card>

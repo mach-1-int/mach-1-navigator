@@ -3,8 +3,9 @@
  * Run: npm run verify:safety-map
  */
 
-import { initialNavigatorLocations } from "../lib/initial-data"
-import type { NavigatorLocation } from "../lib/types"
+import { initialNavigatorLocations, initialScheduleEvents, initialAppointments } from "../lib/initial-data"
+import { deriveSafetyStatus, SAFETY_RULES } from "../lib/safety-status"
+import type { NavigatorLocation, SOSEvent } from "../lib/types"
 
 const assert = (condition: boolean, message: string) => {
   if (!condition) throw new Error(`FAIL: ${message}`)
@@ -98,10 +99,52 @@ run("Scenario 3: Maria (Glendale) in list for pan-to-pin", () => {
 run("Map: Phoenix metro center and bounds", () => {
   const lats = initialNavigatorLocations.map((l) => l.lat)
   const lngs = initialNavigatorLocations.map((l) => l.lng)
-  const phoenixLat = 33.4484
-  const phoenixLng = -112.074
   assert(lats.every((lat) => lat > 33.3 && lat < 33.7), "All pins within Phoenix metro latitude")
   assert(lngs.every((lng) => lng > -112.3 && lng < -111.8), "All pins within Phoenix metro longitude")
+})
+
+// ============================================================================
+// Derived-status rules (lib/safety-status.ts) - status is COMPUTED, not a flag
+// ============================================================================
+
+const deriveSeed = (loc: NavigatorLocation, sosEvents: SOSEvent[] = []) =>
+  deriveSafetyStatus(loc, initialScheduleEvents, initialAppointments, sosEvents, new Date())
+
+run("Derivation: seed statuses match deriveSafetyStatus", () => {
+  initialNavigatorLocations.forEach((loc) => {
+    const derived = deriveSeed(loc)
+    assert(
+      derived === loc.status,
+      `${loc.navigatorName}: derived ${derived} === seeded ${loc.status}`
+    )
+  })
+})
+
+run("Derivation: an ACTIVE SOS forces RISK_ALERT", () => {
+  const maria = initialNavigatorLocations.find((loc) => loc.navigatorId === "nav-maria")
+  assert(!!maria, "Maria exists")
+  assert(deriveSeed(maria!) === "ACTIVE", "Maria derives ACTIVE without an SOS")
+  const sos: SOSEvent = {
+    id: "sos-test",
+    navigatorId: "nav-maria",
+    navigatorName: "Maria Gonzalez",
+    triggeredAt: new Date().toISOString(),
+    lat: maria!.lat,
+    lng: maria!.lng,
+    status: "ACTIVE",
+  }
+  assert(deriveSeed(maria!, [sos]) === "RISK_ALERT", "Maria flips to RISK_ALERT with an ACTIVE SOS")
+})
+
+run("Derivation: Sarah's seed check-in is inside the idle window", () => {
+  const sarah = initialNavigatorLocations.find((loc) => loc.navigatorId === "nav-sarah")
+  assert(!!sarah, "Sarah exists")
+  const ageMin = (Date.now() - new Date(sarah!.lastCheckIn).getTime()) / 60000
+  assert(
+    ageMin >= SAFETY_RULES.IDLE_AFTER_MIN,
+    `Sarah's lastCheckIn is >= ${SAFETY_RULES.IDLE_AFTER_MIN} min old (got ${ageMin.toFixed(1)} min)`
+  )
+  assert(deriveSeed(sarah!) === "IDLE", "Sarah derives IDLE (stationary + stale check-in)")
 })
 
 console.log("\n==========================================")

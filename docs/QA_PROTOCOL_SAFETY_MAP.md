@@ -30,7 +30,7 @@
 - [ ] **4. Check:**
   - Does it say **"Status: RISK ALERT"**?
   - Does it show **"Last Check-in: 2 hours ago"**?
-- [ ] **5. Demo Talk Track:** *"The system flagged John automatically because he checked into a high-risk home visit 2 hours ago and hasn't checked out. This allows you to intervene instantly."*
+- [ ] **5. Demo Talk Track:** *"The system derives John's alert from a high-risk check-in with no checkout after 60 minutes — this is a live rule, not a flag. Every status on this screen is computed from check-in age, movement, visit risk, and SOS events (see `lib/safety-status.ts`), so you intervene the moment a rule fires."*
 
 ---
 
@@ -42,6 +42,46 @@
 - [ ] **2. Action:** Click on **"Maria Gonzalez"** (who is in Glendale – West).
 - [ ] **3. Verify:** Does the map **smoothly animate/pan** to center on her **Green** pin?
 - [ ] **4. Demo Talk Track:** *"If you need to find someone specifically, just click their name. You see exactly what task they are working on."*
+
+---
+
+## Test Scenario 4: Live Simulation Toggle
+
+**Goal:** Verify the "Simulate live activity" switch animates the fleet without breaking alerts.
+
+- [ ] **1. Action:** In the **Team Status** card (left panel), flip on **"Simulate live activity"** (default off).
+- [ ] **2. Verify (within ~10 seconds):**
+  - Maria's and Sarah's pins **move** every few seconds (toward their next scheduled stop, or drifting slightly), speed and battery values change.
+  - **John's red pin does NOT move** — navigators in RISK_ALERT are never simulated.
+- [ ] **3. Check:** John's **"Last Check-in: 2 hours ago"** stays stale while pins move. Movement ticks do NOT count as check-ins (only every 6th tick emits a real check-in for ACTIVE navigators), so risk alerts never self-heal.
+- [ ] **4. Action:** Flip the switch off. Movement stops; the **Refresh** button still re-derives every status against the current clock.
+
+---
+
+## Test Scenario 5: SOS End-to-End
+
+**Goal:** Verify a navigator's SOS reaches the supervisor and can be acknowledged and resolved.
+
+- [ ] **1. Action:** Switch to the **Navigator** role. On the dashboard header (or the Schedule toolbar), click the red **SOS** button.
+- [ ] **2. Verify:** A confirmation dialog asks *"Send an emergency alert to your supervisor with your current location?"*. Confirm it. A toast shows **"SOS sent to supervisor"**. (The browser may prompt for location; denial is fine — the last known location is used.)
+- [ ] **3. Action:** Switch to the **Supervisor** role → **Safety Map**.
+- [ ] **4. Verify:**
+  - A **deep-red pulsing SOS banner** with a siren icon sits ABOVE the risk banner, naming the navigator and how long ago it fired.
+  - The navigator's map pin shows an **expanding red ring and an "SOS" badge**; its popup says **"SOS ACTIVE — acknowledge in the sidebar"**.
+  - The navigator's derived status is **RISK_ALERT** (an unresolved SOS always wins).
+- [ ] **5. Action:** Click **Acknowledge**. The banner turns subdued and records who acknowledged it, with a **Resolve** button.
+- [ ] **6. Action:** Click **Resolve**. The banner clears and the navigator's status re-derives from normal rules.
+
+---
+
+## Test Scenario 6: EVV Check-In Appears on the Map
+
+**Goal:** Verify a field check-in updates the supervisor safety map in real time.
+
+- [ ] **1. Action:** As **Navigator**, open **Schedule**, click a `scheduled` appointment and press **Check In**.
+- [ ] **2. Verify:** Toast says **"Checked in (GPS verified)"** (real device GPS) or **"Checked in (approximate location — GPS unavailable)"** (fallback to the patient's coordinates).
+- [ ] **3. Action:** Switch to **Supervisor** → **Safety Map**.
+- [ ] **4. Verify:** The navigator's pin sits at the check-in location, the card shows the task **"Home Visit: [patient name]"**, and **"Last Check-in"** reads **"Just now"** — EVV check-ins are real check-ins and reset the check-in clock.
 
 ---
 
@@ -59,10 +99,14 @@
 
 ## Quick Reference: Seed Data
 
+Statuses below are **derived live** by `deriveSafetyStatus` (`lib/safety-status.ts`) — the seeded values are only a snapshot that the rules reproduce. Rules: unresolved SOS → RISK_ALERT; high-risk visit overdue 60+ min → RISK_ALERT; check-in older than 90 min → RISK_ALERT; stationary with check-in 15+ min old → IDLE; else ACTIVE.
+
 | Navigator       | Location   | Status     | Last Check-in | Pin color |
 |----------------|------------|------------|----------------|-----------|
 | Maria Gonzalez | Glendale   | ACTIVE     | 10 mins ago    | Green     |
 | John Mitchell  | Mesa       | RISK_ALERT | 2 hours ago    | Red       |
-| Sarah Thompson | Downtown   | IDLE       | 5 mins ago     | Gray      |
+| Sarah Thompson | Downtown   | IDLE       | 20 mins ago    | Gray      |
 
 **Role:** Supervisor (Vivian) → Sidebar → **Safety Map**.
+
+**Note:** The **"Call Now"** button in a pin's popup is a real `tel:` link — it opens the device dialer with the navigator's phone number (hidden when no phone is on file).

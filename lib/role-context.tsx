@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, type ReactNode } from "react"
 import type { UserRole, User } from "./types"
-import { users } from "./mock-data"
+import { initialUsers as users } from "./initial-data"
 
 export type ViewType =
   | "dashboard"

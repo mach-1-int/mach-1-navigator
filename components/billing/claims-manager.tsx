@@ -35,13 +35,17 @@ import {
   DollarSign,
   Download,
   AlertTriangle,
+  BookOpenCheck,
   CheckCircle2,
   Clock,
+  FileOutput,
   Send,
   Users,
   TrendingUp,
+  Wallet,
 } from "lucide-react"
 import { useDemoData } from "@/lib/demo-data-context"
+import { useRole } from "@/lib/role-context"
 import {
   generateMonthlyClaims,
   filterClaimsByStatus,
@@ -51,8 +55,10 @@ import {
   getAvailableMonths,
   formatMonthDisplay,
 } from "@/lib/claims-engine"
-import { getPayerConfig } from "@/lib/payer-config"
-import { downloadMonthlyClaimsCsv, generateExportSummary } from "@/lib/csv-exporter"
+import { claimRecordKey, getActiveClaimRecordKeys } from "@/lib/claim-lifecycle"
+import { generate837P } from "@/lib/edi/edi-837p-generator"
+import { downloadMonthlyClaimsCsv, triggerFileDownload } from "@/lib/csv-exporter"
+import { ClaimsLedger } from "@/components/billing/claims-ledger"
 import type { BillableClaim } from "@/lib/types"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -77,22 +83,24 @@ export function ClaimsManager() {
     availablePayerConfigs,
     setActivePayerConfig,
     sendNudge,
+    claimRecords,
+    payers,
+    organizationSettings,
+    exportClaims,
+    getNavigatorDisplayName,
   } = useDemoData()
+  const { currentUser } = useRole()
 
   // State
   const [selectedMonth, setSelectedMonth] = useState<string>("")
-  const [selectedTab, setSelectedTab] = useState<"ready" | "attention">("ready")
+  const [selectedTab, setSelectedTab] = useState<"ready" | "attention" | "ledger">("ready")
   const [selectedClaims, setSelectedClaims] = useState<Set<string>>(new Set())
   const [nudgeDialogOpen, setNudgeDialogOpen] = useState(false)
   const [claimToNudge, setClaimToNudge] = useState<BillableClaim | null>(null)
 
   // Generate all claims using active payer configuration
   const allClaims = useMemo(() => {
-    console.log(`📊 ClaimsManager: Processing ${timeLogs.length} time logs for ${patients.length} patients`)
-    console.log(`📊 ClaimsManager: Using payer config: ${activePayerConfig.name}`)
-    const claims = generateMonthlyClaims(navigators, patients, timeLogs, activePayerConfig, intakeRecords)
-    console.log(`📊 ClaimsManager: Generated ${claims.length} claims`)
-    return claims
+    return generateMonthlyClaims(navigators, patients, timeLogs, activePayerConfig, intakeRecords)
   }, [navigators, patients, timeLogs, activePayerConfig, intakeRecords])
 
   // Get available months
@@ -103,10 +111,18 @@ export function ClaimsManager() {
   // Set default month to most recent if not set
   const activeMonth = selectedMonth || availableMonths[0] || "2026-01"
 
+  // Patient-month-payers already tracked by an active (non-voided) ClaimRecord
+  // stay out of the derived working tabs — the ledger owns them now.
+  const activeRecordKeys = useMemo(() => {
+    return getActiveClaimRecordKeys(claimRecords)
+  }, [claimRecords])
+
   // Filter claims by month and status
   const monthClaims = useMemo(() => {
-    return filterClaimsByMonth(allClaims, activeMonth)
-  }, [allClaims, activeMonth])
+    return filterClaimsByMonth(allClaims, activeMonth).filter(
+      (claim) => !activeRecordKeys.has(claimRecordKey(claim.patientId, claim.month, activePayerConfigId))
+    )
+  }, [allClaims, activeMonth, activeRecordKeys, activePayerConfigId])
 
   const readyClaims = useMemo(() => {
     // VALIDATED (past months) and DRAFT (current, still-accruing month) are both exportable
@@ -124,6 +140,21 @@ export function ClaimsManager() {
   const revenueMetrics = useMemo(() => {
     return calculateTotalRevenue(monthClaims, activePayerConfig)
   }, [monthClaims, activePayerConfig])
+
+  // Ledger metrics from persisted claim records
+  const activeRecords = useMemo(() => claimRecords.filter((r) => !r.voided), [claimRecords])
+
+  const outstandingAR = useMemo(() => {
+    return activeRecords
+      .filter((r) => r.status === "EXPORTED" || r.status === "SUBMITTED" || r.status === "ACCEPTED")
+      .reduce((sum, r) => sum + r.billedAmount, 0)
+  }, [activeRecords])
+
+  const paidTotal = useMemo(() => {
+    return activeRecords
+      .filter((r) => r.status === "PAID")
+      .reduce((sum, r) => sum + (r.remittance?.paidAmount ?? 0), 0)
+  }, [activeRecords])
 
   // Handle claim selection
   const handleSelectClaim = useCallback((claimId: string, checked: boolean) => {
@@ -156,13 +187,11 @@ export function ClaimsManager() {
       return
     }
 
-    // Use the new CSV exporter with medical billing format
-    // Pass patients for DOB lookup
-    downloadMonthlyClaimsCsv(claimsToExport, activeMonth, patients)
+    // Persist immutable ClaimRecords in the ledger (EXPORTED)
+    exportClaims(claimsToExport, "CSV", currentUser?.id ?? "biller1")
 
-    // Generate summary for console/logging
-    const summary = generateExportSummary(claimsToExport)
-    console.log(summary)
+    // Use the CSV exporter with medical billing format
+    downloadMonthlyClaimsCsv(claimsToExport, activeMonth, patients, navigators, organizationSettings)
 
     // Calculate row count (base + add-on codes = separate rows)
     const rowCount = claimsToExport.reduce(
@@ -170,11 +199,55 @@ export function ClaimsManager() {
       0
     )
 
-    toast.success(`Exported ${claimsToExport.length} claims (${rowCount} billing rows) to CSV`)
+    toast.success(
+      `Exported ${claimsToExport.length} claims (${rowCount} billing rows) to CSV`,
+      { description: "Claims moved to the Ledger for tracking" }
+    )
 
     // Clear selection after export
     setSelectedClaims(new Set())
-  }, [readyClaims, selectedClaims, activeMonth, patients])
+  }, [readyClaims, selectedClaims, activeMonth, patients, navigators, organizationSettings, exportClaims, currentUser])
+
+  // Handle 837P export: persist records, generate X12, download
+  const handleExport837P = useCallback(() => {
+    const claimsToExport = readyClaims.filter((c) => selectedClaims.has(c.id))
+
+    if (claimsToExport.length === 0) {
+      toast.error("No claims selected for export")
+      return
+    }
+
+    const records = exportClaims(claimsToExport, "837P", currentUser?.id ?? "biller1")
+
+    const payer =
+      payers.find((p) => p.payerConfigId === activePayerConfigId) ?? payers[0]
+    const content = generate837P(records, {
+      patients,
+      navigators,
+      payer,
+      payerConfig: activePayerConfig,
+      orgSettings: organizationSettings,
+    })
+    triggerFileDownload(content, `claims-${activeMonth}.837`, "text/plain")
+
+    toast.success(`Exported ${records.length} claims as 837P`, {
+      description: "Claims moved to the Ledger for tracking",
+    })
+
+    setSelectedClaims(new Set())
+  }, [
+    readyClaims,
+    selectedClaims,
+    activeMonth,
+    patients,
+    navigators,
+    payers,
+    activePayerConfig,
+    activePayerConfigId,
+    organizationSettings,
+    exportClaims,
+    currentUser,
+  ])
 
   // Handle nudge navigator
   const handleNudgeNavigator = useCallback((claim: BillableClaim) => {
@@ -200,7 +273,7 @@ export function ClaimsManager() {
       )
 
       toast.success(
-        `Nudge sent to ${getNavigatorName(claimToNudge.navigatorId)}`,
+        `Nudge sent to ${getNavigatorDisplayName(claimToNudge.navigatorId)}`,
         {
           description: `Issues: ${issuesList}`,
         }
@@ -208,7 +281,7 @@ export function ClaimsManager() {
     }
     setNudgeDialogOpen(false)
     setClaimToNudge(null)
-  }, [claimToNudge, sendNudge])
+  }, [claimToNudge, sendNudge, getNavigatorDisplayName])
 
   // Format codes display: "G0023 (1 Unit)" and "G0023 (1 Unit) + G0024 (1 Unit)"
   const formatCodesDisplay = (claim: BillableClaim): string => {
@@ -222,26 +295,6 @@ export function ClaimsManager() {
       parts.push(`${claim.addOnCode} (${claim.addOnUnits} ${u})`)
     }
     return parts.length > 0 ? parts.join(" + ") : "—"
-  }
-
-  // Get navigator name from Navigator[] (Navigator type has id and name)
-  const getNavigatorName = (navigatorId: string): string => {
-    // Navigator IDs in time logs may differ from navigator entity IDs
-    // Try direct match first, then partial match
-    const navigator = navigators.find((n) => n.id === navigatorId)
-    if (navigator) return navigator.name
-
-    // Check for nav-maria -> nav1 style mapping
-    const navIdMap: Record<string, string> = {
-      "nav-maria": "Maria Gonzalez",
-      "nav-david": "David Chen",
-      "nav-john": "John Smith",
-      "nav-sarah": "Sarah Jones",
-      "nav1": "Emily Rodriguez",
-      "nav2": "David Chen",
-      "nav3": "Maria Santos",
-    }
-    return navIdMap[navigatorId] || navigatorId
   }
 
   return (
@@ -290,7 +343,7 @@ export function ClaimsManager() {
       </div>
 
       {/* Metrics Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
@@ -364,6 +417,44 @@ export function ClaimsManager() {
             </div>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-indigo-100">
+                <FileOutput className="h-5 w-5 text-indigo-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Outstanding A/R</p>
+                <p className="text-2xl font-bold text-indigo-600">
+                  ${outstandingAR.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  exported, submitted, accepted
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-emerald-100">
+                <Wallet className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Paid</p>
+                <p className="text-2xl font-bold text-emerald-600">
+                  ${paidTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  posted from remittances
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Rate Info - Show active payer config */}
@@ -399,8 +490,8 @@ export function ClaimsManager() {
       </Card>
 
       {/* Claims Tabs */}
-      <Tabs value={selectedTab} onValueChange={(v) => setSelectedTab(v as "ready" | "attention")}>
-        <TabsList className="grid w-full grid-cols-2 max-w-md">
+      <Tabs value={selectedTab} onValueChange={(v) => setSelectedTab(v as "ready" | "attention" | "ledger")}>
+        <TabsList className="grid w-full grid-cols-3 max-w-xl">
           <TabsTrigger value="ready" className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4" />
             Ready to Bill
@@ -413,6 +504,13 @@ export function ClaimsManager() {
             Needs Attention
             <Badge variant="secondary" className="bg-red-100 text-red-700">
               {attentionClaims.length}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="ledger" className="flex items-center gap-2">
+            <BookOpenCheck className="h-4 w-4" />
+            Ledger
+            <Badge variant="secondary" className="bg-blue-100 text-blue-700">
+              {activeRecords.length}
             </Badge>
           </TabsTrigger>
         </TabsList>
@@ -428,14 +526,25 @@ export function ClaimsManager() {
                     Claims that have passed validation and are ready for export
                   </CardDescription>
                 </div>
-                <Button
-                  onClick={handleExportCSV}
-                  disabled={selectedClaims.size === 0}
-                  className="bg-emerald-600 hover:bg-emerald-700"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Export Selected ({selectedClaims.size})
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={handleExportCSV}
+                    disabled={selectedClaims.size === 0}
+                    className="bg-emerald-600 hover:bg-emerald-700"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Export Selected ({selectedClaims.size})
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleExport837P}
+                    disabled={selectedClaims.size === 0}
+                    className="text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                  >
+                    <FileOutput className="h-4 w-4 mr-2" />
+                    Export 837P
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -478,7 +587,17 @@ export function ClaimsManager() {
                           </TableCell>
                           <TableCell>
                             <div>
-                              <p className="font-medium">{claim.patientName}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium">{claim.patientName}</p>
+                                {claim.status === "DRAFT" && (
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-amber-50 text-amber-700 border-amber-200 text-xs"
+                                  >
+                                    In-progress month
+                                  </Badge>
+                                )}
+                              </div>
                               <p className="text-xs text-muted-foreground">
                                 {claim.serviceType} • {claim.diagnosisCodes.slice(0, 2).join(", ")}
                               </p>
@@ -500,7 +619,7 @@ export function ClaimsManager() {
                             </span>
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground">
-                            {getNavigatorName(claim.navigatorId)}
+                            {getNavigatorDisplayName(claim.navigatorId)}
                           </TableCell>
                           <TableCell className="text-right font-medium text-emerald-600">
                             ${claimValue.toFixed(2)}
@@ -598,7 +717,7 @@ export function ClaimsManager() {
                           </div>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {getNavigatorName(claim.navigatorId)}
+                          {getNavigatorDisplayName(claim.navigatorId)}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
@@ -619,6 +738,11 @@ export function ClaimsManager() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Ledger Tab */}
+        <TabsContent value="ledger" className="mt-4">
+          <ClaimsLedger />
+        </TabsContent>
       </Tabs>
 
       {/* Nudge Confirmation Dialog */}
@@ -632,7 +756,7 @@ export function ClaimsManager() {
                   <>
                     <p className="mb-2">
                       This will send a notification to{" "}
-                      <strong>{getNavigatorName(claimToNudge.navigatorId)}</strong> about:
+                      <strong>{getNavigatorDisplayName(claimToNudge.navigatorId)}</strong> about:
                     </p>
                     <div className="bg-muted p-3 rounded-lg space-y-1">
                       <p>
