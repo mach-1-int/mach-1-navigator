@@ -72,6 +72,20 @@ export function getActiveClaimRecordKeys(records: ClaimRecord[]): Set<string> {
 }
 
 /**
+ * Patient-months with ANY active record, regardless of payer config.
+ * The working tabs must exclude by this key: the same service minutes must
+ * never be exportable under a second payer just because the biller switched
+ * the payer dropdown (double billing). Format: `${patientId}:${month}`.
+ */
+export function getActiveClaimMonthKeys(records: ClaimRecord[]): Set<string> {
+  return new Set(
+    records
+      .filter((r) => !r.voided)
+      .map((r) => `${r.snapshot.patientId}:${r.snapshot.month}`)
+  )
+}
+
+/**
  * Create persisted ClaimRecords from derived claims at export time.
  * Rebills of the same patient-month get versioned ids (-v2, -v3, ...) based on
  * how many prior records (voided or not) exist for that source claim.
@@ -91,8 +105,12 @@ export function createClaimRecords(
     const priorVersions = existing.filter((r) => r.sourceClaimId === claim.id).length
     const version = priorVersions + 1
     const billedAmount = calculateClaimValue(claim.primaryUnits, claim.addOnUnits, payerConfig)
-    const payerId =
-      claim.payerId ?? payers.find((p) => p.payerConfigId === payerConfig.id)?.id ?? "unknown"
+    // claim.payerId is the ONLY source of payer identity — a payerConfig maps
+    // to many payers (Molina/Mercy/AHCCCS all share medicaid-bh), so guessing
+    // from the config would attribute claims to the wrong payer. Claims
+    // without a payerId fail validation upstream ("Missing payer assignment")
+    // and can't legitimately reach export; "unknown" marks the escape hatch.
+    const payerId = claim.payerId ?? "unknown"
 
     const initialEvent: ClaimStatusEvent = {
       status: "EXPORTED",

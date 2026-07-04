@@ -33,6 +33,7 @@ import {
   calculateClaimValue as calculateValueFromConfig,
   getDominantHCode,
 } from "./payer-config"
+import { localCurrentMonth } from "./date-rebase"
 
 /**
  * Generate a unique claim ID
@@ -143,12 +144,9 @@ function validateClaimData(
     errors.push(`Insufficient Time (${totalMinutes}/${payerConfig.baseMinimum} mins)`)
   }
 
-  // Check for member ID (real insurance ID, or legacy healthPlan-derived fallback)
-  const hasMemberId =
-    (patient.memberId && patient.memberId.length > 0) ||
-    (patient.healthPlan && patient.healthPlan.length > 0)
-
-  if (!hasMemberId) {
+  // Check for member ID: only a real payer-issued ID satisfies this — a health
+  // plan NAME is not a subscriber ID, and fabricated IDs guarantee denials.
+  if (!patient.memberId || patient.memberId.length === 0) {
     errors.push("Missing Member ID")
   }
 
@@ -215,18 +213,6 @@ function getPrimaryNavigator(timeLogs: TimeLog[]): string {
   }
 
   return primaryNavigatorId
-}
-
-/**
- * Synthesize a member ID for a patient (legacy fallback only)
- * Used when the patient record has no real memberId from the payer.
- */
-function generateMemberId(patient: Patient): string {
-  // For demo, create from health plan abbreviation + patient ID
-  const planPrefix = patient.healthPlan
-    ? patient.healthPlan.slice(0, 3).toUpperCase()
-    : "UNK"
-  return `${planPrefix}-${patient.id.toUpperCase()}`
 }
 
 /**
@@ -316,17 +302,31 @@ export function generateMonthlyClaims(
       serviceType,
       uniqueDiagnosisCodes
     )
-    const currentMonth = new Date().toISOString().slice(0, 7)
+
+    // Supervisor-verification guardrail: unverified minutes are never exportable.
+    // The claim still surfaces (in Needs Attention) so the pending time is
+    // visible, but it cannot reach VALIDATED until every log is verified.
+    const unverifiedMinutes = logs
+      .filter((log) => !log.verified)
+      .reduce((sum, log) => sum + log.durationMinutes, 0)
+    if (unverifiedMinutes > 0) {
+      validationErrors.push(
+        `Unverified time (${unverifiedMinutes} min) — supervisor review required`
+      )
+    }
+
+    // Current billing month on the LOCAL calendar (matches date-rebase semantics)
+    const currentMonth = localCurrentMonth()
     const status: BillableClaim["status"] =
       validationErrors.length > 0 ? "NEEDS_ATTENTION" : month === currentMonth ? "DRAFT" : "VALIDATED"
 
     // Get primary navigator
     const navigatorId = getPrimaryNavigator(logs)
 
-    // Member ID: real payer-issued ID first, synthesized fallback if absent
-    const memberId = patient
-      ? patient.memberId || generateMemberId(patient)
-      : "UNKNOWN"
+    // Member ID: the real payer-issued ID only. The UNK- synthesis is a marked
+    // placeholder that validation flags and the clearinghouse rejects — it can
+    // never silently reach an accepted claim.
+    const memberId = patient?.memberId || `UNK-${patientId.toUpperCase()}`
 
     // Create the claim
     const claim: BillableClaim = {

@@ -153,6 +153,15 @@ export function AdminDashboard() {
   // Determine which tab to show based on navigation
   const activeTab = navigation.view === "admin-audit-log" ? "audit" : "rates"
 
+  // Controlled tab state, synced to sidebar navigation via the "adjust state
+  // during render" previous-value pattern (no setState-in-useEffect).
+  const [tab, setTab] = useState(activeTab)
+  const [prevView, setPrevView] = useState(navigation.view)
+  if (navigation.view !== prevView) {
+    setPrevView(navigation.view)
+    setTab(activeTab)
+  }
+
   const handleEditClick = (rate: Payer) => {
     setEditingRate(rate)
     setEditValue(rate.ratePerUnit.toFixed(2))
@@ -369,7 +378,7 @@ export function AdminDashboard() {
       </div>
 
       {/* Main Content Tabs */}
-      <Tabs defaultValue={activeTab} className="space-y-4">
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="rates" className="flex items-center gap-2">
             <DollarSign className="h-4 w-4" />

@@ -59,6 +59,7 @@ import { generate837P } from "@/lib/edi/edi-837p-generator"
 import { generateSample835 } from "@/lib/edi/edi-835-simulator"
 import { defaultClearinghouse } from "@/lib/clearinghouse/adapter"
 import { triggerFileDownload } from "@/lib/csv-exporter"
+import { localTodayISO } from "@/lib/date-rebase"
 import { RemittanceImportDialog } from "@/components/billing/remittance-import-dialog"
 import type { BillableClaim, ClaimRecord, ClaimStatus } from "@/lib/types"
 import { toast } from "sonner"
@@ -122,6 +123,7 @@ export function ClaimsLedger() {
     remarkCodes,
     organizationSettings,
     updateClaimStatus,
+    recordManualPayment,
     reopenClaimRecord,
     submitClaimBatch,
     getNavigatorDisplayName,
@@ -258,33 +260,32 @@ export function ClaimsLedger() {
   const confirmPaymentDialog = useCallback(() => {
     if (!paymentDialog) return
     const { record, mode } = paymentDialog
-    const carc = paymentCarc === "none" ? null : paymentCarc
+    const carc = paymentCarc === "none" ? undefined : paymentCarc
 
-    let note: string
+    let amount = 0
     if (mode === "PAID") {
-      const amount = parseFloat(paymentAmount)
+      amount = parseFloat(paymentAmount)
       if (isNaN(amount) || amount < 0) {
         toast.error("Please enter a valid payment amount")
         return
       }
-      note = `Manual payment $${amount.toFixed(2)}${carc ? ` (CARC ${carc})` : ""}`
-    } else {
-      note = `Denied manually${carc ? ` (CARC ${carc}: ${remarkDescription("CARC", carc)})` : ""}`
     }
 
-    const ok = updateClaimStatus(record.id, mode, userId, note)
+    // Persists the dollar amount as real remittance data so the Paid column,
+    // detail panel, and Paid metrics all reflect manual postings.
+    const ok = recordManualPayment(record.id, mode, amount, userId, carc)
     if (ok) {
       toast.success(
         mode === "PAID"
-          ? `Payment recorded for ${record.snapshot.patientName}`
+          ? `Payment of $${amount.toFixed(2)} recorded for ${record.snapshot.patientName}`
           : `${record.snapshot.patientName} marked Denied`,
-        { description: note }
+        { description: carc ? `CARC ${carc}: ${remarkDescription("CARC", carc)}` : undefined }
       )
     } else {
       toast.error(`Cannot transition ${record.status} to ${mode}`)
     }
     setPaymentDialog(null)
-  }, [paymentDialog, paymentAmount, paymentCarc, remarkDescription, updateClaimStatus, userId])
+  }, [paymentDialog, paymentAmount, paymentCarc, remarkDescription, recordManualPayment, userId])
 
   const handleReopen = useCallback(
     (record: ClaimRecord) => {
@@ -312,7 +313,7 @@ export function ClaimsLedger() {
     }
 
     const text = generateSample835(eligible, payers)
-    const date = new Date().toISOString().split("T")[0]
+    const date = localTodayISO()
     triggerFileDownload(text, `sample-remit-${date}.835`, "text/plain")
     setPreloadedText(text)
 

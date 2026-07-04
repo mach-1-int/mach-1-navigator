@@ -15,6 +15,7 @@ import type {
   User,
 } from "./types"
 import { generateMonthlyClaims, calculateTotalRevenue, filterClaimsByMonth } from "./claims-engine"
+import { localCurrentMonth } from "./date-rebase"
 
 // ============================================================================
 // REVENUE CALCULATIONS
@@ -43,8 +44,14 @@ export function calculateEstimatedMonthlyRevenue(
   }
 
   const claims = generateMonthlyClaims(navigators, patients, timeLogs, payerConfig, intakeRecords)
-  const currentMonth = new Date().toISOString().slice(0, 7)
-  const currentMonthClaims = filterClaimsByMonth(claims, currentMonth)
+  // Local-calendar month (UTC would flip a month early for evening users);
+  // fall back to the latest month on record when the current month is empty.
+  const currentMonth = localCurrentMonth()
+  const months = [...new Set(claims.map((c) => c.month))].sort()
+  const reportMonth = months.includes(currentMonth)
+    ? currentMonth
+    : months.filter((m) => m <= currentMonth).pop() ?? currentMonth
+  const currentMonthClaims = filterClaimsByMonth(claims, reportMonth)
   const { totalValue } = calculateTotalRevenue(currentMonthClaims, payerConfig)
 
   return Math.round(totalValue)

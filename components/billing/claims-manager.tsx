@@ -55,7 +55,7 @@ import {
   getAvailableMonths,
   formatMonthDisplay,
 } from "@/lib/claims-engine"
-import { claimRecordKey, getActiveClaimRecordKeys } from "@/lib/claim-lifecycle"
+import { getActiveClaimMonthKeys } from "@/lib/claim-lifecycle"
 import { generate837P } from "@/lib/edi/edi-837p-generator"
 import { downloadMonthlyClaimsCsv, triggerFileDownload } from "@/lib/csv-exporter"
 import { ClaimsLedger } from "@/components/billing/claims-ledger"
@@ -87,6 +87,7 @@ export function ClaimsManager() {
     payers,
     organizationSettings,
     exportClaims,
+    reopenClaimRecord,
     getNavigatorDisplayName,
   } = useDemoData()
   const { currentUser } = useRole()
@@ -111,18 +112,42 @@ export function ClaimsManager() {
   // Set default month to most recent if not set
   const activeMonth = selectedMonth || availableMonths[0] || "2026-01"
 
-  // Patient-month-payers already tracked by an active (non-voided) ClaimRecord
-  // stay out of the derived working tabs — the ledger owns them now.
-  const activeRecordKeys = useMemo(() => {
-    return getActiveClaimRecordKeys(claimRecords)
+  // Patient-months already tracked by an active (non-voided) ClaimRecord stay
+  // out of the derived working tabs — the ledger owns them now. Keyed by
+  // patient-month WITHOUT the payer config: the same service minutes must not
+  // become exportable again just because the payer dropdown changed.
+  const activeMonthKeys = useMemo(() => {
+    return getActiveClaimMonthKeys(claimRecords)
   }, [claimRecords])
 
   // Filter claims by month and status
   const monthClaims = useMemo(() => {
     return filterClaimsByMonth(allClaims, activeMonth).filter(
-      (claim) => !activeRecordKeys.has(claimRecordKey(claim.patientId, claim.month, activePayerConfigId))
+      (claim) => !activeMonthKeys.has(`${claim.patientId}:${claim.month}`)
     )
-  }, [allClaims, activeMonth, activeRecordKeys, activePayerConfigId])
+  }, [allClaims, activeMonth, activeMonthKeys])
+
+  // Post-export activity guard: exported snapshots are frozen, so any minutes
+  // logged AFTER an export would otherwise vanish (suppressed from the tabs,
+  // absent from the snapshot). Surface those patient-months for rebill.
+  const unbilledResiduals = useMemo(() => {
+    const activeByKey = new Map(
+      claimRecords
+        .filter((r) => !r.voided)
+        .map((r) => [`${r.snapshot.patientId}:${r.snapshot.month}`, r] as const)
+    )
+    return filterClaimsByMonth(allClaims, activeMonth)
+      .map((claim) => {
+        const record = activeByKey.get(`${claim.patientId}:${claim.month}`)
+        if (!record || claim.totalMinutes <= record.snapshot.totalMinutes) return null
+        return {
+          record,
+          patientName: claim.patientName,
+          newMinutes: claim.totalMinutes - record.snapshot.totalMinutes,
+        }
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null)
+  }, [allClaims, activeMonth, claimRecords])
 
   const readyClaims = useMemo(() => {
     // VALIDATED (past months) and DRAFT (current, still-accruing month) are both exportable
@@ -219,18 +244,36 @@ export function ClaimsManager() {
 
     const records = exportClaims(claimsToExport, "837P", currentUser?.id ?? "biller1")
 
-    const payer =
-      payers.find((p) => p.payerConfigId === activePayerConfigId) ?? payers[0]
-    const content = generate837P(records, {
-      patients,
-      navigators,
-      payer,
-      payerConfig: activePayerConfig,
-      orgSettings: organizationSettings,
-    })
-    triggerFileDownload(content, `claims-${activeMonth}.837`, "text/plain")
+    // An 837P file is addressed to ONE payer. Group records by their claim's
+    // payerId (validation guarantees exported claims carry one) and emit one
+    // file per payer — never guess a payer from the shared billing config.
+    const byPayer = new Map<string, typeof records>()
+    for (const record of records) {
+      const group = byPayer.get(record.payerId) ?? []
+      group.push(record)
+      byPayer.set(record.payerId, group)
+    }
 
-    toast.success(`Exported ${records.length} claims as 837P`, {
+    let files = 0
+    for (const [payerId, payerRecords] of byPayer) {
+      const payer = payers.find((p) => p.id === payerId)
+      if (!payer) {
+        toast.error(`${payerRecords.length} claim(s) skipped: unresolved payer "${payerId}"`)
+        continue
+      }
+      const content = generate837P(payerRecords, {
+        patients,
+        navigators,
+        payer,
+        payerConfig: activePayerConfig,
+        orgSettings: organizationSettings,
+      })
+      const suffix = byPayer.size > 1 ? `-${payer.id.replace(/^payer-/, "")}` : ""
+      triggerFileDownload(content, `claims-${activeMonth}${suffix}.837`, "text/plain")
+      files++
+    }
+
+    toast.success(`Exported ${records.length} claims as 837P (${files} file${files === 1 ? "" : "s"})`, {
       description: "Claims moved to the Ledger for tracking",
     })
 
@@ -243,7 +286,6 @@ export function ClaimsManager() {
     navigators,
     payers,
     activePayerConfig,
-    activePayerConfigId,
     organizationSettings,
     exportClaims,
     currentUser,
@@ -517,6 +559,47 @@ export function ClaimsManager() {
 
         {/* Ready to Bill Tab */}
         <TabsContent value="ready" className="mt-4">
+          {unbilledResiduals.length > 0 && (
+            <Card className="mb-4 border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-base text-amber-800 dark:text-amber-300">
+                  <AlertTriangle className="h-4 w-4" />
+                  Unbilled activity since export
+                </CardTitle>
+                <CardDescription>
+                  Time was logged after these claims were exported. The exported
+                  snapshots are frozen — reopen a claim to rebill the full month.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 pt-0">
+                {unbilledResiduals.map(({ record, patientName, newMinutes }) => (
+                  <div
+                    key={record.id}
+                    className="flex items-center justify-between rounded-md border border-amber-200 bg-card px-3 py-2 dark:border-amber-900"
+                  >
+                    <span className="text-sm">
+                      <span className="font-medium">{patientName}</span>
+                      <span className="text-muted-foreground">
+                        {" "}— {newMinutes} min logged since export ({record.snapshot.month})
+                      </span>
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-amber-400 text-amber-700 hover:bg-amber-100 dark:text-amber-300"
+                      disabled={record.status !== "REJECTED" && record.status !== "DENIED" && record.status !== "EXPORTED"}
+                      onClick={() => {
+                        reopenClaimRecord(record.id, currentUser?.id ?? "biller1")
+                        toast.info(`${patientName}'s claim reopened — the full month is back in the working tabs`)
+                      }}
+                    >
+                      Reopen for rebill
+                    </Button>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">

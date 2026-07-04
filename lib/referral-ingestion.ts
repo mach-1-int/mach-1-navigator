@@ -11,6 +11,7 @@
 
 import type { Referral, ReferralRawData } from "./types"
 import { AZ_ZIP_CENTROIDS } from "./geo"
+import { localTodayISO } from "./date-rebase"
 
 // ============================================================================
 // ADAPTER INTERFACE
@@ -238,7 +239,7 @@ export function parseHL7v2(raw: string): ParsedReferralResult {
 
   // --- Assemble Referral ---------------------------------------------------
   const now = new Date()
-  const todayIso = now.toISOString().slice(0, 10)
+  const todayIso = localTodayISO()
   const requiredAcuity = acuityFromIcdCodes(icdCodes)
   const riskScore: 1 | 2 | 3 = requiredAcuity === "L3" ? 3 : requiredAcuity === "L2" ? 2 : 1
 

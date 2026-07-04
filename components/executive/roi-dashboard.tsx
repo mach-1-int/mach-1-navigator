@@ -1,5 +1,6 @@
 "use client"
 
+import { useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -26,7 +27,6 @@ import {
   Legend,
 } from "recharts"
 import { useDemoData } from "@/lib/demo-data-context"
-import { initialUsers } from "@/lib/initial-data"
 import {
   getOperationalMetrics,
   getReferralsByAcuity,
@@ -41,25 +41,39 @@ import {
  * derived from the store without modifying any data.
  */
 export function ROIDashboard() {
-  const { patients, referrals, timeLogs, navigators, intakeRecords, activePayerConfig, isHydrated } = useDemoData()
+  const { patients, referrals, timeLogs, navigators, intakeRecords, activePayerConfig, isHydrated, getNavigatorsWithAttributes } = useDemoData()
 
-  // Get navigators with attributes from initialUsers
-  const navigatorsWithAttributes = initialUsers.filter(
-    (user) => user.role === "navigator" && user.attributes
+  // Live navigator identities with attributes (caseloads reflect assignments
+  // made this session, unlike the static seed import this replaced)
+  const navigatorsWithAttributes = useMemo(
+    () => getNavigatorsWithAttributes(),
+    [getNavigatorsWithAttributes]
   )
 
-  // Calculate all metrics using analytics utilities (read-only)
-  const summary = getDashboardSummary(
-    navigators,
-    patients,
-    timeLogs,
-    intakeRecords,
-    activePayerConfig,
-    navigatorsWithAttributes
+  // All metrics memoized on the slices they read: getDashboardSummary runs
+  // full claims generation, and this consumer re-renders on every mutation
+  // in the app-wide context.
+  const summary = useMemo(
+    () =>
+      getDashboardSummary(
+        navigators,
+        patients,
+        timeLogs,
+        intakeRecords,
+        activePayerConfig,
+        navigatorsWithAttributes
+      ),
+    [navigators, patients, timeLogs, intakeRecords, activePayerConfig, navigatorsWithAttributes]
   )
-  const operationalMetrics = getOperationalMetrics(referrals, navigatorsWithAttributes)
-  const acuityDistribution = getReferralsByAcuity(referrals)
-  const caseloadBuckets = getCaseloadDistribution(navigatorsWithAttributes)
+  const operationalMetrics = useMemo(
+    () => getOperationalMetrics(referrals, navigatorsWithAttributes),
+    [referrals, navigatorsWithAttributes]
+  )
+  const acuityDistribution = useMemo(() => getReferralsByAcuity(referrals), [referrals])
+  const caseloadBuckets = useMemo(
+    () => getCaseloadDistribution(navigatorsWithAttributes),
+    [navigatorsWithAttributes]
+  )
 
   // Prepare data for pie chart (acuity distribution)
   const acuityChartData = [

@@ -147,6 +147,7 @@ interface DemoDataContextType {
   updateClaimStatus: (claimRecordId: string, next: ClaimRecordStatus, by: string, note?: string) => boolean
   reopenClaimRecord: (claimRecordId: string, by: string) => void
   applyRemittance: (application: RemittanceApplication, by: string) => { applied: number; unmatched: number }
+  recordManualPayment: (claimRecordId: string, outcome: "PAID" | "DENIED", amount: number, by: string, carcCode?: string) => boolean
   submitClaimBatch: (claimRecordIds: string[], adapter: ClearinghouseAdapter, fileContent: string, fileName: string, by: string) => Promise<SubmissionResult>
 
   // Note drafts (AI Scribe transcript resilience)
@@ -246,10 +247,20 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
     setIsHydrated(true)
   }, [])
 
-  // Persist to localStorage on state changes (after hydration)
+  // Persist to localStorage on state changes (after hydration), debounced:
+  // serializing the whole store synchronously on every mutation is expensive
+  // once high-churn writers exist (safety simulation ticks every 4s, transcript
+  // autosave every 1.5s). A 400ms trailing write coalesces bursts; the final
+  // state always lands because the effect re-arms on every change.
   useEffect(() => {
-    if (isHydrated) {
-      saveState(state)
+    if (!isHydrated) return
+    const timer = setTimeout(() => saveState(state), 400)
+    // Flush synchronously if the tab closes inside the debounce window
+    const flush = () => saveState(state)
+    window.addEventListener("beforeunload", flush)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener("beforeunload", flush)
     }
   }, [state, isHydrated])
 
@@ -714,7 +725,10 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
     setState(prev => ({
       ...prev,
       directMessages: prev.directMessages.map(m =>
-        m.senderId === partnerId && m.receiverId === userId
+        // Nudges keep their unread state until explicitly acted on (dismissed
+        // on the dashboard or opened via View Patient) — merely opening a chat
+        // thread must not clear an un-actioned clinical nudge.
+        m.senderId === partnerId && m.receiverId === userId && m.type !== "nudge"
           ? { ...m, readStatus: true }
           : m
       )
@@ -1328,13 +1342,16 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
   }, [claimRecords, getNavigatorDisplayName])
 
   /**
-   * Void a REJECTED/DENIED record so its patient-month returns to the derived
-   * working tabs for correction and rebill.
+   * Void a record so its patient-month returns to the derived working tabs
+   * for correction and rebill. Allowed for REJECTED/DENIED (adjudication came
+   * back negative) and EXPORTED (file generated but not yet transmitted —
+   * e.g. new time was logged after the export froze the snapshot).
+   * SUBMITTED/ACCEPTED records are with the payer and must adjudicate first.
    */
   const reopenClaimRecord = useCallback((claimRecordId: string, by: string) => {
     setState(prev => {
       const record = prev.claimRecords.find(r => r.id === claimRecordId)
-      if (!record || !["REJECTED", "DENIED"].includes(record.status)) return prev
+      if (!record || !["REJECTED", "DENIED", "EXPORTED"].includes(record.status)) return prev
 
       const auditEntry: AuditLog = {
         id: generateId(),
@@ -1362,54 +1379,110 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
    * Apply matched 835 remittance results: set PAID/DENIED with remittance
    * details. Records still in EXPORTED are auto-bumped through SUBMITTED with
    * a system note so history stays truthful.
+   *
+   * Transitions are computed BEFORE setState so the returned counts reflect
+   * what actually posted — re-importing an 835 against already-adjudicated
+   * records reports 0 applied, never a false success.
    */
   const applyRemittance = useCallback((
     application: RemittanceApplication,
     by: string
   ): { applied: number; unmatched: number } => {
+    const updatedById = new Map<string, ClaimRecord>()
     let applied = 0
 
-    setState(prev => {
-      const now = new Date().toISOString()
-      const updatedRecords = prev.claimRecords.map(record => {
-        const match = application.matches.find(m => m.claimRecordId === record.id)
-        if (!match) return record
+    for (const match of application.matches) {
+      const record = claimRecords.find(r => r.id === match.claimRecordId)
+      if (!record) continue
 
-        let working = record
-        // Walk the record forward through any legal intermediate states
-        if (working.status === "EXPORTED") {
-          working = transitionClaimRecord(working, "SUBMITTED", "system:835", "Inferred from remittance") ?? working
-        }
-        if (working.status === "SUBMITTED") {
-          working = transitionClaimRecord(working, "ACCEPTED", "system:835", "Inferred from remittance") ?? working
-        }
-        const final = transitionClaimRecord(working, match.resolvedStatus, "system:835")
-        if (!final) return record
-
-        applied++
-        return { ...final, remittance: match.remittance }
-      })
-
-      const auditEntry: AuditLog = {
-        id: generateId(),
-        userId: by,
-        userName: by,
-        userRole: "biller",
-        action: "remittance_imported",
-        timestamp: now,
-        details: `835 remittance applied: ${application.matches.length} matched, ${application.unmatchedCount} unmatched`,
-        entityType: "claim_record",
+      let working = record
+      // Walk the record forward through any legal intermediate states
+      if (working.status === "EXPORTED") {
+        working = transitionClaimRecord(working, "SUBMITTED", "system:835", "Inferred from remittance") ?? working
       }
-
-      return {
-        ...prev,
-        claimRecords: updatedRecords,
-        auditLogs: [auditEntry, ...prev.auditLogs],
+      if (working.status === "SUBMITTED") {
+        working = transitionClaimRecord(working, "ACCEPTED", "system:835", "Inferred from remittance") ?? working
       }
-    })
+      const final = transitionClaimRecord(working, match.resolvedStatus, "system:835")
+      if (!final) continue
 
-    return { applied: application.matches.length, unmatched: application.unmatchedCount }
-  }, [])
+      applied++
+      updatedById.set(record.id, { ...final, remittance: match.remittance })
+    }
+
+    const skipped = application.matches.length - applied
+    const auditEntry: AuditLog = {
+      id: generateId(),
+      userId: by,
+      userName: by,
+      userRole: "biller",
+      action: "remittance_imported",
+      timestamp: new Date().toISOString(),
+      details: `835 remittance: ${applied} applied, ${application.unmatchedCount} unmatched${skipped > 0 ? `, ${skipped} skipped (already adjudicated)` : ""}`,
+      entityType: "claim_record",
+    }
+
+    setState(prev => ({
+      ...prev,
+      claimRecords: prev.claimRecords.map(record => updatedById.get(record.id) ?? record),
+      auditLogs: [auditEntry, ...prev.auditLogs],
+    }))
+
+    return { applied, unmatched: application.unmatchedCount }
+  }, [claimRecords])
+
+  /**
+   * Post a manual payment or denial against an accepted claim, persisting the
+   * dollar amount as real remittance data (not just note text) so the Paid
+   * column, detail panel, and Paid metrics all reflect it.
+   */
+  const recordManualPayment = useCallback((
+    claimRecordId: string,
+    outcome: "PAID" | "DENIED",
+    amount: number,
+    by: string,
+    carcCode?: string
+  ): boolean => {
+    const record = claimRecords.find(r => r.id === claimRecordId)
+    if (!record) return false
+
+    const note = outcome === "PAID"
+      ? `Manual payment $${amount.toFixed(2)}${carcCode ? ` (CARC ${carcCode})` : ""}`
+      : `Manual denial${carcCode ? ` (CARC ${carcCode})` : ""}`
+    const transitioned = transitionClaimRecord(record, outcome, by, note)
+    if (!transitioned) return false
+
+    const remittance: NonNullable<ClaimRecord["remittance"]> = {
+      paidAmount: outcome === "PAID" ? amount : 0,
+      chargedAmount: record.billedAmount,
+      patientResponsibility: 0,
+      carcCodes: carcCode ? [carcCode] : [],
+      rarcCodes: [],
+      remitDate: new Date().toISOString().slice(0, 10),
+      checkOrEftNumber: "MANUAL",
+    }
+
+    const auditEntry: AuditLog = {
+      id: generateId(),
+      userId: by,
+      userName: by.startsWith("system:") ? by : getNavigatorDisplayName(by),
+      userRole: "biller",
+      action: "claim_status_changed",
+      timestamp: new Date().toISOString(),
+      details: `Claim ${record.snapshot.patientName} ${record.snapshot.month}: ${note}`,
+      entityType: "claim_record",
+      entityId: claimRecordId,
+    }
+
+    setState(prev => ({
+      ...prev,
+      claimRecords: prev.claimRecords.map(r =>
+        r.id === claimRecordId ? { ...transitioned, remittance } : r
+      ),
+      auditLogs: [auditEntry, ...prev.auditLogs],
+    }))
+    return true
+  }, [claimRecords, getNavigatorDisplayName])
 
   /**
    * Submit a batch of exported claims via a clearinghouse adapter.
@@ -1422,17 +1495,26 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
     fileName: string,
     by: string
   ): Promise<SubmissionResult> => {
+    // Compute the SUBMITTED batch once, up front: the same transitioned
+    // snapshots go to both the state update and the adapter, so the
+    // clearinghouse never sees stale pre-SUBMITTED statuses and every
+    // requested id is guaranteed to reach the adapter.
+    const batchById = new Map<string, ClaimRecord>()
+    for (const record of claimRecords) {
+      if (!claimRecordIds.includes(record.id)) continue
+      const submitted = record.status === "EXPORTED"
+        ? transitionClaimRecord(record, "SUBMITTED", by, `Via ${adapter.name}`) ?? record
+        : record
+      batchById.set(record.id, submitted)
+    }
+    const batchRecords = [...batchById.values()]
+
     // Phase 1: mark submitted
     setState(prev => ({
       ...prev,
-      claimRecords: prev.claimRecords.map(r =>
-        claimRecordIds.includes(r.id) && r.status === "EXPORTED"
-          ? (transitionClaimRecord(r, "SUBMITTED", by, `Via ${adapter.name}`) ?? r)
-          : r
-      ),
+      claimRecords: prev.claimRecords.map(r => batchById.get(r.id) ?? r),
     }))
 
-    const batchRecords = claimRecords.filter(r => claimRecordIds.includes(r.id))
     const result = await adapter.submit({ fileName, content: fileContent, claimRecords: batchRecords })
 
     // Phase 2: apply adapter verdicts
@@ -2033,6 +2115,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
       updateClaimStatus,
       reopenClaimRecord,
       applyRemittance,
+      recordManualPayment,
       submitClaimBatch,
 
       // Note drafts (AI Scribe)

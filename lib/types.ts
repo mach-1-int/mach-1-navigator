@@ -435,20 +435,8 @@ export interface CarePlan {
 // ============================================================================
 
 /**
- * @deprecated Replaced by the unified {@link Payer} entity. Kept for type
- * compatibility during migration; the store no longer carries a payerRates slice.
- */
-export interface PayerRate {
-  id: string
-  payerName: string
-  ratePerUnit: number // Revenue per completed visit
-  lastUpdated: string // ISO timestamp
-  updatedBy?: string // User ID who made the last update
-}
-
-/**
  * Unified payer entity - single source of truth for payer identity.
- * Absorbs the admin rate card (PayerRate) and links to billing rules (PayerConfig).
+ * Absorbs the admin rate card and links to billing rules (PayerConfig).
  * Patients reference payers by id (Patient.payerId); name-string matching happens
  * ONLY at data boundaries (referral acceptance) via alias resolution.
  */

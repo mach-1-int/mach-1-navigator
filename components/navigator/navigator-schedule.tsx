@@ -38,7 +38,7 @@ import { useToast } from "@/hooks/use-toast"
 import { getCurrentPositionSafe } from "@/lib/geo"
 import { Plus, Home, Phone, Video, Building, ChevronLeft, ChevronRight, AlertTriangle, Calendar, Clock, Map, List, LogIn, LogOut, MapPin, BadgeCheck, CalendarClock, Info, Users, Siren } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { Appointment, NavigatorShift, ScheduleEvent, DayOfWeek } from "@/lib/types"
+import type { Appointment, NavigatorShift, DayOfWeek } from "@/lib/types"
 import { RouteMap } from "./route-map"
 import { appointmentDraftToEvent, todayISO } from "@/lib/schedule-utils"
 import { validateScheduleEvent } from "@/lib/schedule-validation"
@@ -87,7 +87,7 @@ const DAY_MAP: Record<number, DayOfWeek> = {
 }
 
 export function NavigatorSchedule() {
-  const { patients, navigators, scheduleAppointment, updateAppointment, checkInAppointment, checkOutAppointment, getSupervisor, scheduleEvents, navigatorShifts, updateScheduleEvent, updateNavigatorLocation, triggerSOS, isHydrated } = useDemoData()
+  const { patients, navigators, scheduleAppointment, updateAppointment, checkInAppointment, checkOutAppointment, getSupervisor, scheduleEvents, navigatorShifts, updateNavigatorLocation, triggerSOS, isHydrated } = useDemoData()
   const { currentUser } = useRole()
   const { toast } = useToast()
   const currentNavigator = navigators.find((n) => n.id === currentUser?.id) ?? navigators[0]
@@ -356,21 +356,6 @@ export function NavigatorSchedule() {
   const isToday = (date: Date) => {
     const today = new Date()
     return date.toDateString() === today.toDateString()
-  }
-
-  // Handle event status change (e.g. EVV check-in on a schedule event)
-  const handleEventStatusChange = (eventId: string, newStatus: ScheduleEvent["status"]) => {
-    updateScheduleEvent(eventId, { status: newStatus })
-    if (newStatus === "IN_PROGRESS") {
-      const time = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
-      toast({ title: `Checked in at ${time}` })
-    }
-  }
-
-  // Handle reschedule (e.g. "Move to 11:00 AM") to clear travel conflict
-  const handleEventReschedule = (eventId: string, newStartTime: string, newEndTime: string) => {
-    updateScheduleEvent(eventId, { startTime: newStartTime, endTime: newEndTime })
-    toast({ title: "Event rescheduled", description: "Event moved to 11:00 AM" })
   }
 
   if (!isHydrated || !currentNavigator) return null

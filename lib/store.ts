@@ -244,8 +244,13 @@ export function loadState(): StoreState {
           scheduleEvents: parsed.scheduleEvents || initialState.scheduleEvents,
           navigatorShifts: parsed.navigatorShifts || initialState.navigatorShifts,
           timeOffRequests: parsed.timeOffRequests || initialState.timeOffRequests,
-          // Navigator Safety Map
-          navigatorLocations: parsed.navigatorLocations || initialState.navigatorLocations,
+          // Navigator Safety Map: locations are LIVE TELEMETRY, not durable
+          // data — persisted lastCheckIn timestamps go stale (a day-old store
+          // would derive RISK_ALERT for the whole fleet, and the simulator
+          // never touches alerted navigators, so it could never recover).
+          // Always start from fresh relative seeds. SOS events ARE durable
+          // user actions and persist normally.
+          navigatorLocations: initialState.navigatorLocations,
           sosEvents: parsed.sosEvents || initialState.sosEvents,
           _version: CURRENT_VERSION,
         }

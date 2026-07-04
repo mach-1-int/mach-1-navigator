@@ -109,3 +109,24 @@ export function rebaseToToday<T>(seed: T): T {
   if (days === 0) return seed
   return rebase(seed, days)
 }
+
+// ============================================================================
+// LOCAL "TODAY" HELPERS
+// This module owns demo-time semantics: everything date-related anchors to the
+// user's LOCAL calendar date, never UTC. Any code that needs "today" or "the
+// current billing month" must use these — new Date().toISOString() is UTC and
+// drifts a day/month ahead for evening users west of UTC.
+// ============================================================================
+
+/** Today as a local-calendar YYYY-MM-DD string. */
+export function localTodayISO(): string {
+  const now = new Date()
+  const mm = String(now.getMonth() + 1).padStart(2, "0")
+  const dd = String(now.getDate()).padStart(2, "0")
+  return `${now.getFullYear()}-${mm}-${dd}`
+}
+
+/** The current billing month as a local-calendar YYYY-MM string. */
+export function localCurrentMonth(): string {
+  return localTodayISO().slice(0, 7)
+}

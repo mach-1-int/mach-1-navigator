@@ -109,7 +109,11 @@ export function matchRemittance(
   const unmatched: RemitClaimPayment[] = []
   const consumed = new Set<string>() // record ids already claimed by an earlier CLP
 
-  const candidates = claimRecords.filter((r) => !r.voided)
+  // Only records still awaiting adjudication can receive a payment. Terminal
+  // (PAID/DENIED/REJECTED) and voided records are excluded from EVERY tier so
+  // a re-imported or corrected 835 surfaces those payments as unmatched
+  // instead of silently no-op'ing against a finished record.
+  const candidates = claimRecords.filter((r) => !r.voided && IN_FLIGHT_STATUSES.has(r.status))
 
   for (const claim of remit.claims) {
     const record = findRecord(claim, candidates, consumed)
@@ -144,15 +148,14 @@ function findRecord(
   const bySourceId = available.find((r) => r.sourceClaimId === claim.patientControlNumber)
   if (bySourceId) return bySourceId
 
-  // Tier 3: normalized patient name + billed amount within a cent,
-  // restricted to records still awaiting adjudication
+  // Tier 3: normalized patient name + billed amount within a cent
+  // (candidates are already restricted to in-flight, non-voided records)
   if (!claim.patientName) return undefined
   const remitName = normalizeName(claim.patientName)
   if (!remitName) return undefined
 
   return available.find(
     (r) =>
-      IN_FLIGHT_STATUSES.has(r.status) &&
       normalizeName(r.snapshot.patientName) === remitName &&
       Math.abs(r.billedAmount - claim.chargedAmount) < 0.01
   )

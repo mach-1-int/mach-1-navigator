@@ -28,6 +28,7 @@ import {
   getAvailableMonths,
 } from "./claims-engine"
 import { calculateBillingUnits, getPayerForPatient } from "./payer-config"
+import { localCurrentMonth } from "./date-rebase"
 
 // ============================================================================
 // PROGRAM TARGETS
@@ -75,7 +76,7 @@ function logMonth(log: TimeLog): string {
  * can land mostly in the prior calendar month early in a real month.)
  */
 function resolveBillingMonth(monthsOnRecord: string[]): string {
-  const currentMonth = new Date().toISOString().slice(0, 7)
+  const currentMonth = localCurrentMonth()
   if (monthsOnRecord.includes(currentMonth)) return currentMonth
   const past = monthsOnRecord.filter((m) => m <= currentMonth).sort()
   return past.length > 0 ? past[past.length - 1] : currentMonth
@@ -123,10 +124,11 @@ export function computeRevenue(
   const monthClaims = filterClaimsByMonth(claims, month)
   const { totalValue, claimCount } = calculateTotalRevenue(monthClaims, payerConfig)
 
+  const patientById = new Map(patients.map((p) => [p.id, p]))
   let appointmentRevenue = 0
   for (const apt of appointments) {
     if (apt.status !== "completed") continue
-    const patient = patients.find((p) => p.id === apt.patientId)
+    const patient = patientById.get(apt.patientId)
     if (!patient) continue
     appointmentRevenue += getPayerForPatient(payers, patient)?.ratePerUnit ?? 0
   }

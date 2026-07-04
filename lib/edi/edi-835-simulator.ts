@@ -34,6 +34,7 @@ import {
   toCCYYMMDD,
 } from "./x12"
 import type { X12Segment } from "./x12"
+import { localTodayISO } from "../date-rebase"
 
 // ============================================================================
 // OPTIONS
@@ -154,7 +155,7 @@ export function generateSample835(
   const seed = options.seed ?? 42
   const seps = DEFAULT_SEPARATORS
   const now = new Date()
-  const paymentDateIso = options.paymentDate ?? now.toISOString().slice(0, 10)
+  const paymentDateIso = options.paymentDate ?? localTodayISO()
 
   // One 835 comes from one payer — resolve from the first record with a known payer
   const payer = claimRecords

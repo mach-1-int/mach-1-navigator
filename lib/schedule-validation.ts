@@ -215,8 +215,8 @@ function timeToMinutes(time: string): number {
  * Check if two shift date ranges overlap (open-ended endDate = ongoing)
  */
 function doDateRangesOverlap(a: NavigatorShift, b: NavigatorShift): boolean {
-  const aEnd = a.endDate ?? "9999-12-31"
-  const bEnd = b.endDate ?? "9999-12-31"
+  const aEnd = a.endDate || "9999-12-31"
+  const bEnd = b.endDate || "9999-12-31"
   return a.startDate <= bEnd && b.startDate <= aEnd
 }
 

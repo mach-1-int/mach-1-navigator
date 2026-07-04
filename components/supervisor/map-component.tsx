@@ -20,8 +20,18 @@ function formatLastCheckIn(isoString: string): string {
   return `${diffHours} hours ago`
 }
 
+// Icons are cached per (status, isSOS) — only 6 combinations exist. Building
+// a fresh divIcon per marker per render would make react-leaflet tear down
+// and rebuild the marker DOM on every simulation tick / clock refresh,
+// restarting the pulse animations mid-cycle for no visual change.
+const iconCache = new Map<string, L.DivIcon>()
+
 // Fix for default marker icons in Leaflet with Next.js
 const createCustomIcon = (status: SafetyStatus, isSOS: boolean) => {
+  const cacheKey = `${status}:${isSOS}`
+  const cached = iconCache.get(cacheKey)
+  if (cached) return cached
+
   const colors: Record<SafetyStatus, string> = {
     ACTIVE: "#059669", // emerald-600
     IDLE: "#6b7280", // gray-500 (changed from amber for better visibility)
@@ -37,7 +47,7 @@ const createCustomIcon = (status: SafetyStatus, isSOS: boolean) => {
     ? "active-pulse"
     : ""
 
-  return L.divIcon({
+  const icon = L.divIcon({
     className: "custom-marker",
     html: `
       ${isSOS ? `
@@ -104,6 +114,9 @@ const createCustomIcon = (status: SafetyStatus, isSOS: boolean) => {
     iconAnchor: [16, 16],
     popupAnchor: [0, -20],
   })
+
+  iconCache.set(cacheKey, icon)
+  return icon
 }
 
 // Component to fly to selected location

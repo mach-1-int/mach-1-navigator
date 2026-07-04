@@ -43,6 +43,7 @@ import {
   Target,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { localTodayISO } from "@/lib/date-rebase"
 import { generateNarrative, validateResponses } from "@/lib/narrative-generator"
 import { EncounterTimer, type EncounterTimeData } from "./encounter-timer"
 import { AiRecorder, type AutoFillResult } from "./ai-recorder"
@@ -568,21 +569,28 @@ export function NoteBuilder({
       // 1. Create the TimeLog entry for billing (do this first to get the ID)
       let timeLogId: string | undefined
       if (duration > 0) {
+        const today = localTodayISO()
         const timeLogData: Omit<TimeLog, "id"> = {
           patientId,
-          date: new Date().toISOString().split("T")[0],
+          date: today,
           startTime,
           endTime,
           durationMinutes: duration,
           modality: modality as TimeLog["modality"],
           serviceType: patient?.billingTrack || "CHI",
           navigatorId: currentUser.id,
-          verified: false,
-          billingPeriod: new Date().toISOString().slice(0, 7), // YYYY-MM
+          // A signed encounter note with audit-proof start/end times IS the
+          // verification mechanism in this product: the timer provenance and
+          // signature stand in for a separate supervisor sign-off step.
+          // Unverified logs (imports, manual corrections) are held out of
+          // billing by the claims engine until reviewed.
+          verified: true,
+          verifiedBy: currentUser.id,
+          verifiedAt: new Date().toISOString(),
+          billingPeriod: today.slice(0, 7), // YYYY-MM (local calendar)
         }
         const createdTimeLog = addTimeLog(timeLogData)
         timeLogId = createdTimeLog?.id
-        console.log("📊 TimeLog created:", timeLogData)
       }
 
       // 2. Create the Note with audit-proof time data

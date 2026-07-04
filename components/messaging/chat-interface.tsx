@@ -42,6 +42,7 @@ export function ChatInterface() {
     getThreadMessages,
     getUnreadCount,
     markThreadAsRead,
+    markDirectMessageRead,
     getSupervisor,
     getTeamNavigators,
   } = useDemoData()
@@ -466,7 +467,11 @@ export function ChatInterface() {
                           {msg.type === "nudge" && msg.patientName && msg.patientId && (
                             <button
                               type="button"
-                              onClick={() => msg.patientId && navigateTo("patient-detail", { patientId: msg.patientId })}
+                              onClick={() => {
+                                if (!msg.patientId) return
+                                markDirectMessageRead(msg.id)
+                                navigateTo("patient-detail", { patientId: msg.patientId })
+                              }}
                               className="mb-2 flex items-center gap-1.5 text-xs font-medium text-amber-800 hover:text-amber-900 hover:underline transition-colors"
                             >
                               <Bell className="h-3 w-3" />
@@ -478,7 +483,11 @@ export function ChatInterface() {
                           {msg.type === "nudge" && msg.patientId && (
                             <button
                               type="button"
-                              onClick={() => msg.patientId && navigateTo("patient-detail", { patientId: msg.patientId })}
+                              onClick={() => {
+                                if (!msg.patientId) return
+                                markDirectMessageRead(msg.id)
+                                navigateTo("patient-detail", { patientId: msg.patientId })
+                              }}
                               className="mt-3 flex items-center gap-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-md transition-colors"
                             >
                               <User className="h-3 w-3" />

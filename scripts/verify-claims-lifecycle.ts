@@ -170,6 +170,15 @@ run("835 round-trip + matcher", () => {
   assert(body(era) === body(era2), "Same seed produces an identical 835 body")
   const denyAll = parse835(generateSample835(records, initialPayers, { scenario: "DENY_ALL", seed: 1 }))
   assert(denyAll.claims.every((c) => c.statusCode === "4" || c.paidAmount === 0), "DENY_ALL denies everything")
+  // Re-import guard: terminal records must NOT match again — a duplicate 835
+  // import surfaces its payments as unmatched instead of a false success.
+  const terminalRecords = records.map((r) => {
+    const accepted = transitionClaimRecord(r, "ACCEPTED", "verify")!
+    return transitionClaimRecord(accepted, "PAID", "verify")!
+  })
+  const reimport = matchRemittance(remit, terminalRecords)
+  assert(reimport.matches.length === 0, "Duplicate 835 import matches nothing against PAID records")
+  assert(reimport.unmatchedCount === records.length, "Duplicate payments surface as unmatched")
 })
 
 run("Payer-aware billing progress", () => {

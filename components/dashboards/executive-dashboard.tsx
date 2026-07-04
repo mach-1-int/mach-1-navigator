@@ -1,5 +1,6 @@
 "use client"
 
+import { useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { StatCard } from "@/components/dashboard/stat-card"
 import { DollarSign, Users, Activity, TrendingUp, AlertTriangle, Clock, UserPlus, CheckCircle2 } from "lucide-react"
@@ -49,18 +50,37 @@ export function ExecutiveDashboard() {
     getLastAssignedPatient,
   } = useDemoData()
 
-  // All KPI/chart data computed live from store slices
-  const revenue = computeRevenue(navigators, patients, timeLogs, intakeRecords, activePayerConfig, appointments, payers)
-  const dailyUnits = computeDailyUnits(timeLogs, activePayerConfig)
-  const referralSources = computeReferralSources(referrals)
-  const healthPlanRevenue = computeHealthPlanRevenue(patients, payers)
-  const performanceData = computePerformanceData(navigators)
-  const census = computeCensus(patients)
-  const engagementMonths = avgEngagementMonths(patients)
-  const highRiskPatients = highRiskCount(patients)
-  const adverseEventsSummary = computeAdverseEventsSummary(adverseEvents)
-  const avgUnits = avgUnitsPerNavigator(navigators)
-  const lowPerformers = performanceData.filter((p) => p.tier === "low")
+  // All KPI/chart data computed live from store slices. Memoized on the exact
+  // slices each aggregation reads: every mutation anywhere in the app-wide
+  // context re-renders this consumer, and computeRevenue alone regenerates and
+  // validates every monthly claim — without memoization that repeats on every
+  // chat message or note-draft autosave.
+  const revenue = useMemo(
+    () => computeRevenue(navigators, patients, timeLogs, intakeRecords, activePayerConfig, appointments, payers),
+    [navigators, patients, timeLogs, intakeRecords, activePayerConfig, appointments, payers]
+  )
+  const dailyUnits = useMemo(
+    () => computeDailyUnits(timeLogs, activePayerConfig),
+    [timeLogs, activePayerConfig]
+  )
+  const referralSources = useMemo(() => computeReferralSources(referrals), [referrals])
+  const healthPlanRevenue = useMemo(
+    () => computeHealthPlanRevenue(patients, payers),
+    [patients, payers]
+  )
+  const performanceData = useMemo(() => computePerformanceData(navigators), [navigators])
+  const census = useMemo(() => computeCensus(patients), [patients])
+  const engagementMonths = useMemo(() => avgEngagementMonths(patients), [patients])
+  const highRiskPatients = useMemo(() => highRiskCount(patients), [patients])
+  const adverseEventsSummary = useMemo(
+    () => computeAdverseEventsSummary(adverseEvents),
+    [adverseEvents]
+  )
+  const avgUnits = useMemo(() => avgUnitsPerNavigator(navigators), [navigators])
+  const lowPerformers = useMemo(
+    () => performanceData.filter((p) => p.tier === "low"),
+    [performanceData]
+  )
 
   const lastAssignedPatient = getLastAssignedPatient()
   const assignedNavigator = lastAssignedPatient

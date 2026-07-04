@@ -34,6 +34,21 @@ interface RouteMapProps {
   onAppointmentClick?: (appointment: RouteMapAppointment) => void
 }
 
+/**
+ * Parse a 12-hour ("9:00 AM") or 24-hour ("14:00") time string to minutes
+ * since midnight. Handles the 12 AM (00:xx) and 12 PM (12:xx) edge cases.
+ */
+function timeToMinutes(time: string): number {
+  const match = time.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i)
+  if (!match) return 0
+  let hours = parseInt(match[1], 10)
+  const minutes = parseInt(match[2], 10)
+  const meridiem = match[3]?.toUpperCase()
+  if (meridiem === "PM" && hours !== 12) hours += 12
+  if (meridiem === "AM" && hours === 12) hours = 0
+  return hours * 60 + minutes
+}
+
 export function RouteMap({ appointments, patients, onAppointmentClick }: RouteMapProps) {
   // Enrich appointments with patient coordinates and sort by time
   const enrichedAppointments = useMemo(() => {
@@ -48,10 +63,11 @@ export function RouteMap({ appointments, patients, onAppointmentClick }: RouteMa
       })
       .filter((apt) => apt.patientLat && apt.patientLng) // Only show appointments with coordinates
       .sort((a, b) => {
-        // Sort by time
-        const timeA = a.time.replace(/[^\d:]/g, "")
-        const timeB = b.time.replace(/[^\d:]/g, "")
-        return timeA.localeCompare(timeB)
+        // Visit order: date first, then real clock time. A lexicographic
+        // time-string compare would put "1:00 PM" before "9:00 AM" and
+        // interleave different days' stops.
+        if (a.date !== b.date) return a.date.localeCompare(b.date)
+        return timeToMinutes(a.time) - timeToMinutes(b.time)
       })
   }, [appointments, patients])
 
