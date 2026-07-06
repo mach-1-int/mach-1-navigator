@@ -86,7 +86,7 @@ function getRiskBadge(riskScore: 1 | 2 | 3) {
 }
 
 export function ReferralReviewView() {
-  const { getPendingReferrals, navigators, acceptReferral, rejectReferral, ingestReferral } = useDemoData()
+  const { getPendingReferrals, navigators, patients, referrals, acceptReferral, rejectReferral, ingestReferral } = useDemoData()
   const { navigateTo, currentUser } = useRole()
   const [selectedReferralId, setSelectedReferralId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -184,7 +184,14 @@ export function ReferralReviewView() {
   }
 
   const handleSimulateIncoming = () => {
-    const { parsed } = simulatedFeed.generateIncoming()
+    // Never re-produce someone already in the system: active/assigned
+    // patients and referrals of ANY status (pending, accepted, rejected)
+    // are excluded, so repeat demo runs always get a fresh person.
+    const existingNames = [
+      ...patients.map((p) => p.name),
+      ...referrals.map((r) => r.patientName),
+    ]
+    const { parsed } = simulatedFeed.generateIncoming(existingNames)
     ingestReferral(parsed.referral)
     toast.success(`New referral received from ${parsed.referral.rawData.PV1.facilityName}`)
   }

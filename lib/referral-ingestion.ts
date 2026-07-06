@@ -321,7 +321,7 @@ const SIM_PATIENT_POOL: SimPatient[] = [
     family: "Garcia", given: "Maria", dob: "19570614", gender: "F",
     street: "4402 W Camelback Rd", city: "Phoenix", zip: "85031",
     phone: "(602) 555-0173", language: "es",
-    payerName: "Mercy Care", payerId: "MC-AZ", memberId: "MC556677889",
+    payerName: "Mercy Care", payerId: "MC-AZ", memberId: "MC601124873",
     diagnoses: [{ code: "E11.9", description: "Type 2 Diabetes Mellitus" }],
     facility: "Banner Estrella Medical Center",
     referring: { family: "Martinez", given: "Ana" },
@@ -374,7 +374,76 @@ const SIM_PATIENT_POOL: SimPatient[] = [
     facility: "Tucson Medical Center",
     referring: { family: "Begay", given: "Naomi" },
   },
+  {
+    family: "Okonkwo", given: "Grace", dob: "19630227", gender: "F",
+    street: "6220 W Bell Rd", city: "Glendale", zip: "85308",
+    phone: "(623) 555-0384", language: "en",
+    payerName: "AHCCCS", payerId: "AHCCCS-AZ", memberId: "AHC220953187",
+    diagnoses: [{ code: "I10", description: "Essential hypertension" }],
+    facility: "Abrazo Arrowhead Campus",
+    referring: { family: "Delgado", given: "Rosa" },
+  },
+  {
+    family: "Reyes", given: "Carlos", dob: "19581105", gender: "M",
+    street: "5150 W Baseline Rd", city: "Laveen", zip: "85339",
+    phone: "(602) 555-0736", language: "es",
+    payerName: "Molina", payerId: "MOL-AZ", memberId: "MOL640281559",
+    diagnoses: [
+      { code: "E11.42", description: "Type 2 diabetes with polyneuropathy" },
+      { code: "I10", description: "Essential hypertension" },
+    ],
+    facility: "Valleywise Medical Center",
+    referring: { family: "Ibrahim", given: "Layla" },
+  },
+  {
+    family: "Kowalski", given: "Stanley", dob: "19470816", gender: "M",
+    street: "10401 W Thunderbird Blvd", city: "Sun City", zip: "85351",
+    phone: "(623) 555-0912", language: "en",
+    payerName: "United Healthcare", payerId: "UHC-AZ", memberId: "UHC118834920",
+    diagnoses: [
+      { code: "I50.9", description: "Heart failure, unspecified" },
+      { code: "J44.9", description: "COPD, unspecified" },
+    ],
+    facility: "Banner Boswell Medical Center",
+    referring: { family: "Patel", given: "Anjali" },
+  },
+  {
+    family: "Yazzie", given: "Marie", dob: "19660531", gender: "F",
+    street: "4025 E Chandler Blvd", city: "Phoenix", zip: "85044",
+    phone: "(480) 555-0655", language: "en",
+    payerName: "Mercy Care", payerId: "MC-AZ", memberId: "MC774209316",
+    diagnoses: [{ code: "N18.3", description: "Chronic kidney disease, stage 3" }],
+    facility: "Chandler Regional Medical Center",
+    referring: { family: "Whitehorse", given: "Daniel" },
+  },
+  {
+    family: "Petrov", given: "Irina", dob: "19740910", gender: "F",
+    street: "3320 N 35th Ave", city: "Phoenix", zip: "85021",
+    phone: "(602) 555-0248", language: "en",
+    payerName: "Molina", payerId: "MOL-AZ", memberId: "MOL905517432",
+    diagnoses: [{ code: "F33.1", description: "Major depressive disorder, recurrent" }],
+    facility: "Valleywise Behavioral Health",
+    referring: { family: "Sandoval", given: "Miguel" },
+  },
+  {
+    family: "Buckley", given: "Thomas", dob: "19520403", gender: "M",
+    street: "1818 E Broadway Rd", city: "Tucson", zip: "85710",
+    phone: "(520) 555-0177", language: "en",
+    payerName: "AHCCCS", payerId: "AHCCCS-AZ", memberId: "AHC559361208",
+    diagnoses: [
+      { code: "C61", description: "Malignant neoplasm of prostate" },
+      { code: "Z51.11", description: "Encounter for antineoplastic chemotherapy" },
+    ],
+    facility: "Tucson Medical Center",
+    referring: { family: "Nakamura", given: "Kenji" },
+  },
 ]
+
+// Name-part pools for the combinatorial fallback once every curated persona
+// is already in the system: 144 first/last combinations, each stamped with a
+// unique member ID, so back-to-back demos never require a data reset.
+const FALLBACK_GIVEN = ["Walter", "Diane", "Hector", "Pauline", "Marcus", "Yolanda", "Gerald", "Renee", "Felix", "Bernice", "Omar", "Cheryl"]
+const FALLBACK_FAMILY = ["Trujillo", "Vance", "Osei", "Lindqvist", "Marsh", "Delacruz", "Boyd", "Antone", "Kaminski", "Fuentes", "Ngata", "Sherwood"]
 
 // Sanity guard for future pool edits: every simulated zip must resolve.
 if (process.env.NODE_ENV !== "production") {
@@ -388,6 +457,42 @@ if (process.env.NODE_ENV !== "production") {
 /** Rotates deterministically through the pool across all feed instances. */
 let simRotationIndex = 0
 let simMessageControlId = 1000
+let simFallbackIndex = 0
+
+/** Case/whitespace-insensitive name key for exclusion checks */
+function nameKey(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+/**
+ * Synthesize a fresh persona once the curated pool is exhausted: rotate
+ * through 144 first/last name combinations, reusing a curated persona's
+ * clinical/payer/address profile but with a unique name and member ID.
+ */
+function synthesizeFallbackPatient(exclude: Set<string>): SimPatient {
+  for (let attempt = 0; attempt < FALLBACK_GIVEN.length * FALLBACK_FAMILY.length; attempt++) {
+    const i = simFallbackIndex++
+    const given = FALLBACK_GIVEN[i % FALLBACK_GIVEN.length]
+    const family = FALLBACK_FAMILY[Math.floor(i / FALLBACK_GIVEN.length) % FALLBACK_FAMILY.length]
+    if (exclude.has(nameKey(`${given} ${family}`))) continue
+
+    const template = SIM_PATIENT_POOL[i % SIM_PATIENT_POOL.length]
+    const serial = String(100000 + ((i * 7919) % 900000)) // unique-enough member serial
+    return {
+      ...template,
+      given,
+      family,
+      dob: `19${45 + (i % 35)}0${1 + (i % 9)}1${i % 9}`,
+      phone: `(602) 555-0${String(100 + (i % 900)).slice(0, 3)}`,
+      memberId: `${template.memberId.slice(0, 3)}${serial}`,
+    }
+  }
+  // Every combination somehow taken (demo would need 150+ ingests): make the
+  // uniqueness explicit rather than colliding silently.
+  const template = SIM_PATIENT_POOL[0]
+  const n = simFallbackIndex++
+  return { ...template, given: "Case", family: `Referral-${n}`, memberId: `SIM${100000 + n}` }
+}
 
 /** HL7 DTM timestamp (local time) for MSH-7, e.g. "20260703143005". */
 function hl7Timestamp(d: Date): string {
@@ -410,9 +515,31 @@ export class SimulatedHL7Feed implements ReferralSourceAdapter {
     return parseHL7v2(raw)
   }
 
-  generateIncoming(): { raw: string; parsed: ParsedReferralResult } {
-    const patient = SIM_PATIENT_POOL[simRotationIndex % SIM_PATIENT_POOL.length]
-    simRotationIndex++
+  /**
+   * Generate the next incoming referral. Pass the names of everyone already
+   * in the system (patients + referrals of any status) and the feed will
+   * never re-produce a person who is already schedulable or already queued —
+   * curated personas are skipped once used, and after the curated pool is
+   * exhausted a combinatorial fallback keeps producing unique people, so
+   * repeated demo runs never require a data reset.
+   */
+  generateIncoming(existingNames?: Iterable<string>): { raw: string; parsed: ParsedReferralResult } {
+    const exclude = new Set<string>()
+    for (const name of existingNames ?? []) exclude.add(nameKey(name))
+
+    let patient: SimPatient | undefined
+    for (let tries = 0; tries < SIM_PATIENT_POOL.length; tries++) {
+      const candidate = SIM_PATIENT_POOL[simRotationIndex % SIM_PATIENT_POOL.length]
+      simRotationIndex++
+      if (!exclude.has(nameKey(`${candidate.given} ${candidate.family}`))) {
+        patient = candidate
+        break
+      }
+    }
+    if (!patient) {
+      patient = synthesizeFallbackPatient(exclude)
+    }
+
     const controlId = `MACH1${simMessageControlId++}`
     const ts = hl7Timestamp(new Date())
 

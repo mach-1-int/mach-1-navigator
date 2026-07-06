@@ -62,8 +62,15 @@ Log in as **Supervisor (Marcus Williams)** → sidebar **Referrals**.
    - [ ] Deliberately mangle a segment (delete the IN1 line) and re-parse:
          amber **warnings** appear instead of a failure
    - [ ] Click **Ingest Referral** → it joins the pending list
-4. Repeat "Simulate" a few times — the pool rotates 6 personas including a
-   Spanish speaker (Maria Garcia) and an L3 dialysis patient (Harold Simmons).
+4. Repeat "Simulate" a few times — the curated pool holds 12 personas
+   including a Spanish speaker (Maria Garcia) and an L3 dialysis patient
+   (Harold Simmons), and the feed **never re-produces anyone already in the
+   system** (assigned patients and referrals of any status are excluded).
+   Once the curated pool is used up, a combinatorial generator keeps
+   producing unique people — you can run the ingest→assign loop back to back
+   all day without resetting the database.
+   - [ ] Simulate more referrals than you assign, repeatedly: no incoming
+         referral ever duplicates an existing patient or queued referral
 
 ---
 
