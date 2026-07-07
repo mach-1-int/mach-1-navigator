@@ -124,25 +124,11 @@ function acuityFromIcdCodes(icdCodes: string[]): "L1" | "L2" | "L3" {
 /** Monotonic suffix so two ingests in the same millisecond never collide. */
 let ingestSequence = 0
 
-/**
- * Parse a raw HL7v2 message (ADT^A04 / REF^I12 style) into a Referral.
- * Recoverable issues (missing DG1/IN1/PV1, unknown fields) become warnings;
- * throws only when the message has no MSH or no PID segment.
- */
-export function parseHL7v2(raw: string): ParsedReferralResult {
+type HL7Segment = string[]
+
+/** MSH-4 sending facility + MSH-9 message type sanity check. */
+function parseMsh(msh: HL7Segment): { sendingFacility: string; warnings: string[] } {
   const warnings: string[] = []
-  const segments = splitSegments(raw).map((s) => s.split(FIELD_SEP))
-
-  const msh = segments.find((s) => s[0] === "MSH")
-  if (!msh) throw new Error("Invalid HL7 message: missing MSH segment")
-  const pid = segments.find((s) => s[0] === "PID")
-  if (!pid) throw new Error("Invalid HL7 message: missing PID segment")
-
-  const dg1Segments = segments.filter((s) => s[0] === "DG1")
-  const in1 = segments.find((s) => s[0] === "IN1")
-  const pv1 = segments.find((s) => s[0] === "PV1")
-
-  // --- MSH ---------------------------------------------------------------
   const sendingFacility = components(mshField(msh, 4))[0] || "Unknown Facility"
   if (!components(mshField(msh, 4))[0]) {
     warnings.push("MSH-4 sending facility missing — source set to 'Unknown Facility'")
@@ -154,8 +140,21 @@ export function parseHL7v2(raw: string): ParsedReferralResult {
       `Unexpected message type "${messageType || "(none)"}" — expected ADT^A04 or REF^I12; parsing anyway`
     )
   }
+  return { sendingFacility, warnings }
+}
 
-  // --- PID ---------------------------------------------------------------
+/** PID-5/7/8/11/13/15 patient demographics. */
+function parsePid(pid: HL7Segment): {
+  patientName: string
+  dob: string
+  gender: "M" | "F" | "O"
+  address: { street: string; city: string; state: string; zip: string }
+  phone: string
+  language: string
+  warnings: string[]
+} {
+  const warnings: string[] = []
+
   const nameComps = components(field(pid, 5)) // family^given
   const familyName = (nameComps[0] ?? "").trim()
   const givenName = (nameComps[1] ?? "").trim()
@@ -187,12 +186,22 @@ export function parseHL7v2(raw: string): ParsedReferralResult {
 
   const language = mapLanguage(field(pid, 15))
 
-  // --- DG1 (repeatable) ----------------------------------------------------
+  return { patientName, dob, gender, address, phone, language, warnings }
+}
+
+/** DG1 (repeatable) diagnosis codes; DG1-3 may itself carry `~` repeats. */
+function parseDiagnoses(dg1Segments: HL7Segment[]): {
+  primaryDiagnosis: string
+  diagnosisDate: string
+  icdCodes: string[]
+  warnings: string[]
+} {
+  const warnings: string[] = []
   let primaryDiagnosis = ""
   let diagnosisDate = ""
   const icdCodes: string[] = []
+
   for (const dg1 of dg1Segments) {
-    // DG1-3 may itself carry repeats (~) of code^description
     for (const rep of field(dg1, 3).split(REPEAT_SEP)) {
       const dxComps = components(rep)
       const code = (dxComps[0] ?? "").trim()
@@ -204,16 +213,28 @@ export function parseHL7v2(raw: string): ParsedReferralResult {
     }
     if (!diagnosisDate) diagnosisDate = hl7DateToIso(field(dg1, 5))
   }
+
   if (dg1Segments.length === 0) {
     warnings.push("No DG1 segment — diagnosis unknown; acuity defaulted to L1")
   } else if (icdCodes.length === 0) {
     warnings.push("DG1 present but no ICD codes found")
   }
 
-  // --- IN1 ---------------------------------------------------------------
+  return { primaryDiagnosis, diagnosisDate, icdCodes, warnings }
+}
+
+/** IN1-3/4/36/49 insurance/payer fields. */
+function parseInsurance(in1: HL7Segment | undefined): {
+  payerName: string
+  payerId: string
+  memberId: string
+  warnings: string[]
+} {
+  const warnings: string[] = []
   let payerName = ""
   let payerId = ""
   let memberId = ""
+
   if (in1) {
     payerId = components(field(in1, 3))[0]?.trim() ?? ""
     payerName = components(field(in1, 4))[0]?.trim() ?? ""
@@ -224,10 +245,24 @@ export function parseHL7v2(raw: string): ParsedReferralResult {
     warnings.push("No IN1 segment — insurance information missing")
   }
 
-  // --- PV1 ---------------------------------------------------------------
+  return { payerName, payerId, memberId, warnings }
+}
+
+/** PV1-3/7/8 facility and physician fields. */
+function parseVisit(
+  pv1: HL7Segment | undefined,
+  sendingFacility: string
+): {
+  attendingPhysician: string
+  referringPhysician: string
+  facilityName: string
+  warnings: string[]
+} {
+  const warnings: string[] = []
   let attendingPhysician = ""
   let referringPhysician = ""
   let facilityName = sendingFacility
+
   if (pv1) {
     attendingPhysician = physicianName(field(pv1, 7))
     referringPhysician = physicianName(field(pv1, 8))
@@ -237,53 +272,87 @@ export function parseHL7v2(raw: string): ParsedReferralResult {
   }
   if (!referringPhysician) warnings.push("Referring physician missing")
 
+  return { attendingPhysician, referringPhysician, facilityName, warnings }
+}
+
+/**
+ * Parse a raw HL7v2 message (ADT^A04 / REF^I12 style) into a Referral.
+ * Recoverable issues (missing DG1/IN1/PV1, unknown fields) become warnings;
+ * throws only when the message has no MSH or no PID segment.
+ */
+export function parseHL7v2(raw: string): ParsedReferralResult {
+  const segments = splitSegments(raw).map((s) => s.split(FIELD_SEP))
+
+  const msh = segments.find((s) => s[0] === "MSH")
+  if (!msh) throw new Error("Invalid HL7 message: missing MSH segment")
+  const pid = segments.find((s) => s[0] === "PID")
+  if (!pid) throw new Error("Invalid HL7 message: missing PID segment")
+
+  const dg1Segments = segments.filter((s) => s[0] === "DG1")
+  const in1 = segments.find((s) => s[0] === "IN1")
+  const pv1 = segments.find((s) => s[0] === "PV1")
+
+  const mshResult = parseMsh(msh)
+  const pidResult = parsePid(pid)
+  const dg1Result = parseDiagnoses(dg1Segments)
+  const in1Result = parseInsurance(in1)
+  const pv1Result = parseVisit(pv1, mshResult.sendingFacility)
+
+  const warnings = [
+    ...mshResult.warnings,
+    ...pidResult.warnings,
+    ...dg1Result.warnings,
+    ...in1Result.warnings,
+    ...pv1Result.warnings,
+  ]
+
   // --- Assemble Referral ---------------------------------------------------
   const now = new Date()
   const todayIso = localTodayISO()
-  const requiredAcuity = acuityFromIcdCodes(icdCodes)
+  const requiredAcuity = acuityFromIcdCodes(dg1Result.icdCodes)
   const riskScore: 1 | 2 | 3 = requiredAcuity === "L3" ? 3 : requiredAcuity === "L2" ? 2 : 1
 
   const rawData: ReferralRawData = {
     PID: {
-      patientName: patientName || "Unknown Patient",
-      dob,
-      gender,
-      address,
-      phone,
+      patientName: pidResult.patientName || "Unknown Patient",
+      dob: pidResult.dob,
+      gender: pidResult.gender,
+      address: pidResult.address,
+      phone: pidResult.phone,
     },
     DG1: {
-      primaryDiagnosis: primaryDiagnosis || "Unspecified",
-      icdCodes,
-      diagnosisDate: diagnosisDate || todayIso,
+      primaryDiagnosis: dg1Result.primaryDiagnosis || "Unspecified",
+      icdCodes: dg1Result.icdCodes,
+      diagnosisDate: dg1Result.diagnosisDate || todayIso,
     },
     IN1: {
-      payerName,
-      payerId,
-      memberId,
+      payerName: in1Result.payerName,
+      payerId: in1Result.payerId,
+      memberId: in1Result.memberId,
     },
     PV1: {
-      attendingPhysician: attendingPhysician || undefined,
-      referringPhysician,
-      facilityName,
+      attendingPhysician: pv1Result.attendingPhysician || undefined,
+      referringPhysician: pv1Result.referringPhysician,
+      facilityName: pv1Result.facilityName,
     },
   }
 
   const referral: Referral = {
     id: `ref-hl7-${Date.now().toString(36)}-${(ingestSequence++).toString(36)}`,
     receivedAt: now.toISOString(),
-    source: sendingFacility,
+    source: mshResult.sendingFacility,
     rawData,
     rawHL7: raw,
     status: "pending",
     patientName: rawData.PID.patientName,
-    dob,
-    referralSource: sendingFacility,
+    dob: pidResult.dob,
+    referralSource: mshResult.sendingFacility,
     riskScore,
     referralDate: todayIso,
     diagnosis: rawData.DG1.primaryDiagnosis,
-    healthPlan: payerName,
-    zipCode: address.zip,
-    language,
+    healthPlan: in1Result.payerName,
+    zipCode: pidResult.address.zip,
+    language: pidResult.language,
     requiredAcuity,
   }
 

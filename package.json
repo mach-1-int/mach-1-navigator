@@ -9,7 +9,8 @@
     "start": "next start",
     "verify:billing": "npx tsx scripts/verify-payer-billing.ts",
     "verify:safety-map": "npx tsx scripts/verify-safety-map.ts",
-    "verify:claims": "npx tsx scripts/verify-claims-lifecycle.ts"
+    "verify:claims": "npx tsx scripts/verify-claims-lifecycle.ts",
+    "verify:referral-ingestion": "npx tsx scripts/verify-referral-ingestion.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
