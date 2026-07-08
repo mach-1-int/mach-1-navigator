@@ -238,16 +238,16 @@ export function ChatInterface() {
     const contact = availableContacts.find((c) => c.id === selectedThread)
     if (!contact) return
 
-    sendMessage(
-      currentUser.id,
-      currentUser.name,
-      currentUser.role,
-      contact.id,
-      contact.name,
-      contact.role,
-      messageInput.trim(),
-      "direct"
-    )
+    sendMessage({
+      senderId: currentUser.id,
+      senderName: currentUser.name,
+      senderRole: currentUser.role,
+      receiverId: contact.id,
+      receiverName: contact.name,
+      receiverRole: contact.role,
+      content: messageInput.trim(),
+      type: "direct",
+    })
     setMessageInput("")
   }
 

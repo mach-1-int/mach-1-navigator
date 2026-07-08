@@ -39,6 +39,19 @@ export interface RemittanceApplication {
   unmatchedCount: number
 }
 
+export interface SendMessageInput {
+  senderId: string
+  senderName: string
+  senderRole: UserRole
+  receiverId: string
+  receiverName: string
+  receiverRole: UserRole
+  content: string
+  type?: Message["type"]
+  patientId?: string
+  patientName?: string
+}
+
 // ============================================================================
 // CONTEXT TYPE
 // ============================================================================
@@ -102,7 +115,7 @@ interface DemoDataContextType {
   ingestReferral: (referral: Referral) => void
 
   // Direct Messaging
-  sendMessage: (senderId: string, senderName: string, senderRole: UserRole, receiverId: string, receiverName: string, receiverRole: UserRole, content: string, type?: Message["type"], patientId?: string, patientName?: string) => void
+  sendMessage: (input: SendMessageInput) => void
   getMessagesForUser: (userId: string) => Message[]
   getThreadMessages: (userId1: string, userId2: string) => Message[]
   getUnreadCount: (userId: string) => number
@@ -662,18 +675,18 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
   // DIRECT MESSAGING OPERATIONS
   // ============================================================================
 
-  const sendMessage = useCallback((
-    senderId: string,
-    senderName: string,
-    senderRole: UserRole,
-    receiverId: string,
-    receiverName: string,
-    receiverRole: UserRole,
-    content: string,
-    type: Message["type"] = "direct",
-    patientId?: string,
-    patientName?: string
-  ) => {
+  const sendMessage = useCallback(({
+    senderId,
+    senderName,
+    senderRole,
+    receiverId,
+    receiverName,
+    receiverRole,
+    content,
+    type = "direct",
+    patientId,
+    patientName,
+  }: SendMessageInput) => {
     const newMessage: Message = {
       id: generateId(),
       senderId,
