@@ -103,6 +103,27 @@ export function calculateClaimValue(
 }
 
 /**
+ * Options for {@link validateClaimData}
+ *
+ * @param patient Patient record
+ * @param intakeRecord Intake record for the patient (consent/initiating visit)
+ * @param totalMinutes Total minutes of service
+ * @param payerConfig Payer configuration for threshold validation
+ * @param month Claim billing month ("YYYY-MM")
+ * @param serviceType Claim service type (PIN or CHI)
+ * @param diagnosisCodes Combined diagnosis set (patient ICD + intake Z-codes)
+ */
+interface ValidateClaimDataOptions {
+  patient: Patient | undefined
+  intakeRecord: IntakeRecord | undefined
+  totalMinutes: number
+  payerConfig: PayerConfig
+  month: string
+  serviceType: ServiceType
+  diagnosisCodes: string[]
+}
+
+/**
  * Validate claim data and return any errors
  *
  * Checks (in order):
@@ -114,24 +135,9 @@ export function calculateClaimValue(
  * - Initiating visit within 12 months of the claim month (re-initiation rule)
  * - CHI claims carry at least one SDOH Z-code in the combined diagnosis set
  * - Patient has an assigned payer (payerId FK)
- *
- * @param patient Patient record
- * @param intakeRecord Intake record for the patient (consent/initiating visit)
- * @param totalMinutes Total minutes of service
- * @param payerConfig Payer configuration for threshold validation
- * @param month Claim billing month ("YYYY-MM")
- * @param serviceType Claim service type (PIN or CHI)
- * @param diagnosisCodes Combined diagnosis set (patient ICD + intake Z-codes)
  */
-function validateClaimData(
-  patient: Patient | undefined,
-  intakeRecord: IntakeRecord | undefined,
-  totalMinutes: number,
-  payerConfig: PayerConfig,
-  month: string,
-  serviceType: ServiceType,
-  diagnosisCodes: string[]
-): string[] {
+function validateClaimData(options: ValidateClaimDataOptions): string[] {
+  const { patient, intakeRecord, totalMinutes, payerConfig, month, serviceType, diagnosisCodes } = options
   const errors: string[] = []
 
   if (!patient) {
@@ -293,15 +299,15 @@ export function generateMonthlyClaims(
     const uniqueDiagnosisCodes = [...new Set(diagnosisCodes)]
 
     // Validate the claim with payer-specific thresholds and intake guardrails
-    const validationErrors = validateClaimData(
+    const validationErrors = validateClaimData({
       patient,
       intakeRecord,
       totalMinutes,
       payerConfig,
       month,
       serviceType,
-      uniqueDiagnosisCodes
-    )
+      diagnosisCodes: uniqueDiagnosisCodes,
+    })
 
     // Supervisor-verification guardrail: unverified minutes are never exportable.
     // The claim still surfaces (in Needs Attention) so the pending time is
