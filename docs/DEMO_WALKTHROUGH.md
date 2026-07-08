@@ -3,8 +3,11 @@
 A single end-to-end script that exercises every feature of the platform in a
 logical order, with expected results as checkboxes. Use it three ways:
 
-- **Demo rehearsal** — follow Parts 1–9 in order; the Golden Thread (Part 2–4)
-  is the core sales narrative.
+- **Demo rehearsal** — follow Parts 1–9 in order for the platform tour; the
+  Golden Thread (Parts 2–4) is the core lifecycle. **Parts 10–15 are the six
+  Gellert beats** from the logic-transplant blitz ("you handed us your manual
+  and your workflow map; days later the system enforces your manual and runs
+  your workflow") — they can be run standalone after a reset.
 - **Manual QA pass** — tick every checkbox; any miss is a regression.
 - **Smoke test after changes** — run Part 0 (automated gates) plus whichever
   Part touches the code you changed.
@@ -38,30 +41,37 @@ npm run lint              # 0 errors (warnings OK)
 npm run verify:billing    # 21 blocks passed
 npm run verify:safety-map # 12 passed
 npm run verify:claims     # 43 passed
+npm run verify:journey    # 5 passed + 9 passed (runs two scripts)
+npm run verify:notes      # 7 passed
+npm run verify:gellert    # 12 passed
 npm run build             # compiles
 ```
 
-- [ ] All six commands green
+- [ ] All nine commands green
 
 ---
 
 ## Part 1 — Referral Arrives (Supervisor: HL7 ingestion)
 
-Log in as **Supervisor (Marcus Williams)** → sidebar **Referrals**.
+Log in as **Supervisor (Marcus Williams)** → sidebar **Referral CRM**.
 
-1. Note the pending referral count.
+1. Orientation: two tabs, **Pipeline** and **Funnel**. The pipeline list shows
+   every referral with a status chip (Received / Accepted — Contact Due /
+   Outreach / Agreed / Intake Scheduled / Converted / Ineligible /
+   Unreachable / Declined).
 2. Click **Simulate Incoming Referral** (⚡ toolbar button).
-   - [ ] Toast: "New referral received from …" and a new referral appears at
-         the top of the list
-   - [ ] Selecting it shows a **raw HL7 message** (monospace block) above the
-         structured PID/DG1/IN1/PV1 panels
+   - [ ] Toast: "New referral received from …" and a new referral appears
+         with a **Received** chip
+   - [ ] Selecting it shows a **raw HL7 message** (monospace block) with the
+         structured PID/DG1/IN1/PV1 panels, and the right pane is the
+         **Eligibility Review** decision tree (worked in Part 10)
 3. Click **Paste HL7…** and paste any HL7v2 ADT message (copy the raw text
    from step 2's card if you don't have one). Click **Parse**.
    - [ ] Preview shows patient name, DOB, diagnosis + ICD codes, payer +
          member ID, ZIP, language, and an acuity badge
    - [ ] Deliberately mangle a segment (delete the IN1 line) and re-parse:
          amber **warnings** appear instead of a failure
-   - [ ] Click **Ingest Referral** → it joins the pending list
+   - [ ] Click **Ingest Referral** → it joins the pipeline as **Received**
 4. Repeat "Simulate" a few times — the curated pool holds 12 personas
    including a Spanish speaker (Maria Garcia) and an L3 dialysis patient
    (Harold Simmons), and the feed **never re-produces anyone already in the
@@ -74,25 +84,39 @@ Log in as **Supervisor (Marcus Williams)** → sidebar **Referrals**.
 
 ---
 
-## Part 2 — Match & Assign (Supervisor: matching engine + intake)
+## Part 2 — Match & Assign (Supervisor: matching engine + conversion)
 
-Still on **Referrals**, select **Elena Rodriguez** (zip 85303, Spanish, L2).
+The pipeline gates assignment: **Match & Assign appears only once a referral
+reaches Agreed** — patients are created only when they accept services
+(Gellert's own rule). Part 10 walks the full Received→Agreed pipeline; for a
+quick assignment, use the seeded agreed referral.
 
-1. Click **Match & Assign**.
+Still on **Referral CRM**, select **David Jones** (Agreed chip — ESRD/CHF,
+L3, zip 85001).
+
+1. Click **Match & Assign** (button on the card).
    - [ ] All 11 navigators are ranked, not just 3
-   - [ ] **Maria Gonzalez is #1**: "~4 mi" distance (computed, not hardcoded),
-         "Spanish Speaker" credit, capacity headroom
-   - [ ] **John Mitchell fails on distance** (~30 mi > his 20 mi radius,
-         negative score) despite otherwise matching
-   - [ ] An English-only navigator (e.g. Sarah Thompson) shows a **language
-         hard-fail** for this Spanish-speaking patient
-2. Assign to Maria.
-   - [ ] Toast confirms; the referral leaves the pending queue; Maria's
-         caseload increments (visible if you re-open Match & Assign for
-         another referral)
+   - [ ] Distances read "~X mi" (computed from zip centroids, not hardcoded)
+   - [ ] Navigators who share the referral's coverage zone carry a **zone
+         chip** and a "Zone match: … +15 pts" reason; others show a
+         cross-zone note
+   - [ ] A **Spanish-speaking referral** (simulate Maria Garcia in Part 10)
+         shows Spanish-speaker credit for bilingual navigators and a
+         **language hard-fail** for English-only ones
+   - [ ] Sanity check the guard: select a Received/Outreach referral — no
+         Match & Assign button exists for it (the workspace itself also
+         carries an amber guard banner if reached with a non-agreed referral)
+2. Assign the top-ranked navigator.
+   - [ ] Toast confirms; the referral chip flips to **Converted**; the
+         right pane becomes a read-only "Converted to Patient" summary with a
+         link to the new chart
 3. Open the new patient's record (Supervisor → search the patient name in the
    **header search bar** → click the result).
    - [ ] Header search returns the patient; clicking navigates to their chart
+   - [ ] The chart header carries an **Intake** journey-phase chip; the
+         **Journey** tab shows the Intake 1 checklist and a **PCP due**
+         countdown (7 business days, stamped at conversion — worked in
+         Part 10)
 4. On the patient chart, open the **Intake** form (Overview tab → intake card
    → button) and complete all 3 steps:
    - Step 1: pick PIN or CHI, set an **initiating visit date** — try a date
@@ -174,7 +198,8 @@ Log in as **Revenue Cycle Manager** (Biller). Keep the payer selector on
 1. Orientation:
    - [ ] Six metric cards including **Outstanding A/R** and **Paid** (both $0
          on a fresh reset)
-   - [ ] Three tabs: **Ready to Bill / Needs Attention / Ledger**
+   - [ ] Four tabs: **Ready to Bill / Needs Attention / Denials / Ledger**
+         (the Denials work queue is exercised in Part 13)
 2. **Needs Attention** tab — the guardrails:
    - [ ] **Mary Jenkins**: "Patient consent not documented" + missing ICD
          codes (she has no intake record — intentional)
@@ -202,13 +227,16 @@ Log in as **Revenue Cycle Manager** (Biller). Keep the payer selector on
          **ACCEPTED** (a claim with a UNK-prefixed member ID would be
          REJECTED with a reason)
 6. **835 remittance round trip**:
-   - [ ] **Generate Sample 835** → file downloads → toast offers **Import
-         now** → import dialog opens pre-loaded → **Parse**
+   - [ ] **Generate Sample 835** is now a dropdown — pick **Standard remit
+         (mixed)** → file downloads → toast offers **Import now** → import
+         dialog opens pre-loaded → **Parse** (the **UHC DAP scenario** item
+         is the Part 13 beat)
    - [ ] Preview shows matched payments with PAID/DENIED chips and CARC codes
    - [ ] **Apply** → toast "N payments applied, 0 unmatched"; chips update;
          **Paid** metric rises; expanded rows show paid/charged amounts and
          CARC/RARC codes with dictionary tooltips
-7. **Honest duplicate handling**: Generate Sample 835 again → Import → Parse.
+7. **Honest duplicate handling**: generate the same mixed sample again →
+   Import → Parse.
    - [ ] Everything shows as **unmatched** (records are terminal); applying
          reports **0 applied** — never a false success
 8. **Denial → rebill**: find a DENIED row (the MIXED sample denies ~15%; rerun
@@ -311,10 +339,12 @@ Rodriguez) — it logs in as that specific patient.
    - [ ] "Est. Revenue (current month)" is a **computed** figure with a
          claims/visits breakdown — it moves after Part 4 (compare before and
          after an export/payment cycle if you want proof)
-   - [ ] Daily units chart, referral sources, health-plan revenue, and
-         performance tiers all derive from live data
-   - [ ] Known limitation: **Revenue / Performance / Patients** menu items
-         are "Coming Soon" placeholders
+   - [ ] Daily units chart, referral sources, health-plan revenue, a compact
+         **referral funnel** card, and performance tiers all derive from
+         live data
+   - [ ] **Revenue / Performance / Patients** menu items open real computed
+         views (they were placeholders before the Gellert blitz — exercised
+         in Part 14)
    - [ ] **Revenue Cycle Manager** is reachable from the executive sidebar
 2. **Admin (Alex Rivera)**:
    - [ ] Sidebar **Payer Rates** and **Audit Log** actually switch tabs
@@ -330,6 +360,275 @@ Rodriguez) — it logs in as that specific patient.
 
 ---
 
+## Part 10 — Gellert Beat 1: The Workflow Map, Running
+
+*The WorkFlow2025 page, live: referral → eligibility → outreach → agreement →
+zone-aware assignment → intake → active navigation.* Best on a fresh reset.
+
+Log in as **Supervisor (Marcus Williams)** → **Referral CRM**.
+
+1. Click **Simulate Incoming Referral**.
+   - [ ] On a fresh page load after a reset, the first simulated persona is
+         **Maria Garcia** (Spanish speaker, Mercy Care, zip 85031) — the
+         rotation is in-memory, so simulate earlier in the session and you'll
+         get the next persona instead; any of them works for this beat
+   - [ ] She lands in the pipeline as **Received**
+2. Select her — the right pane is the **Eligibility Review** (5-gate
+   short-circuit decision tree).
+   - Answer the first gate **No** (don't submit):
+     - [ ] "Ineligible at gate 1" banner names the mapped reason (Insurance
+           not verified); the button reads **Close as Ineligible & Notify
+           Referring Provider**; copy states no patient record is created
+     - Flip the answer back to **Yes**
+   - Answer all five gates **Yes**:
+     - [ ] Panel notes "Accepting starts the 24–48h first-contact SLA clock"
+     - [ ] Click **Accept — 48h Contact Clock Starts** → chip becomes
+           **Accepted — Contact Due** with a green SLA countdown chip
+3. The seeded pipeline shows both ends of the clock (dates rebase to "today"
+   on every load):
+   - [ ] **William Anderson**: red **"SLA breached"** chip (accepted 3 days
+         ago, zero contact)
+   - [ ] **George Taylor**: **Outreach** with a **3/7** attempts badge
+4. Back on Maria Garcia — the right pane is now the **Outreach Log** (7
+   attempt slots, auto-close at 7).
+   - Log an attempt with disposition "No answer":
+     - [ ] Attempt 1/7 records with channel + disposition; status flips to
+           **Outreach**
+   - Click **Patient Agreed**:
+     - [ ] Status flips to **Agreed**; a **Match & Assign** button appears
+5. **Match & Assign** → all 11 navigators ranked; zone chips + "Zone match …
+   +15 pts" reasons; with Maria Garcia, Spanish-speaker credit vs language
+   hard-fails → assign the top match.
+   - [ ] The patient record is created only NOW — at agreement + assignment,
+         never at referral receipt (Gellert's rule: no data on non-patients)
+6. Open the new patient (header search) → **Journey** tab.
+   - [ ] Header chip reads **Intake**; the **Intake 1 checklist** (8 items:
+         onboarding packet, ROI, med reconciliation, health history,
+         provider list, risk screening, photo, PCP scheduled) is empty
+   - [ ] A **PCP due** badge counts down 7 business days from conversion
+   - [ ] Check every Intake 1 item → **Complete Intake 1** activates
+   - [ ] Intake 2's button reads **Complete Intake 2 → Active Navigation** —
+         completing it flips the patient to Active
+7. The no-show protocol, on the seeded intake patients:
+   - [ ] **Walter Briggs** (Intake 2 scheduled) already carries **2
+         no-shows**; his checklist warns that one more triggers the closure
+         protocol
+   - [ ] Click **Record No-Show** → the **"Third no-show — closure
+         protocol"** confirmation dialog; confirming exits him **MIA**
+         (skip or confirm — reset restores him)
+   - [ ] **Rosa Delgado** shows a clean Intake 1 in progress
+8. Sidebar **Journey Board**.
+   - [ ] Kanban columns for the four phases — Intake / Active Navigation /
+         Telenavigation / Exited — with every patient as a card; open
+         adverse events badge their cards (derived overlay, never a stored
+         phase); clicking a card opens the chart
+9. **Referral CRM → Funnel** tab.
+   - [ ] Funnel bars across the pipeline; the source scorecard shows
+         **St. Joseph's as the dominant referrer**; conversion sits ~25%
+         (Gellert reality: 20–30% — verify:journey locks the seed to that
+         band)
+
+---
+
+## Part 11 — Gellert Beat 2: The Manual, Enforcing Itself
+
+*Appointment type is known at scheduling time, so the right template — and
+the right rules — are pre-selected.*
+
+Log in as **Navigator (Emily Rodriguez)** → **Schedule**.
+
+1. **New Appointment** for **James Thompson**: pick a time, and set
+   **Encounter Type = Medical Appointment**.
+   - [ ] The field's caption states it pre-selects the matching Gellert note
+         template
+2. Click the new appointment → detail dialog.
+   - [ ] Shows "Encounter: Medical Appointment" and a **Document Visit**
+         button
+3. Click **Document Visit**.
+   - [ ] The note builder opens with **Medical Appointment ± Transit**
+         already selected — no template hunting
+   - [ ] **Provider fields arrive pre-filled** with a sky-blue "Auto-filled
+         from chart — Provider directory" badge: Dr. Jane Smith, Desert
+         Family Medicine, 4045 W Main St (James's directory-linked PCP) —
+         the cut-and-paste killer
+   - [ ] Fields the manual forbids skipping carry a **Never skip** badge
+4. Start the **Encounter Timer**. Open the AI Recorder's **Load Sample**
+   (flask icon).
+   - [ ] The sample list is filtered to this template — pick **"PCP Visit
+         with Transit"**
+5. **Generate Structured Note**.
+   - [ ] Fields fill (violet **AI** badges with a key; labeled Demo Mode
+         without one); times land in the manual's **H:MMAM/PM** format
+         (10:05AM, not "10:05 am")
+6. The **Manual Compliance panel** (right side) renders the full rule
+   checklist with expandable citations from Gellert's own manual.
+   - [ ] "Patient involvement documented" cites **"NO PATIENT INVOLVEMENT =
+         NO BILLING"**
+   - Clear the patient-involvement field:
+     - [ ] The rule flips to a red **fail**; the footer reads "Resolve
+           manual-compliance failures to sign"; the save button disables —
+           the manual is the gate, not a suggestion
+     - Restore the field (re-generate or retype) → rule passes again
+   - [ ] "Closes with the day total" enforces a literal "Total = X minutes."
+         that must match the timer
+7. Stop the timer, confirm any flagged fields, review the third-person
+   narrative, and click **Save Note & Time Log**.
+   - [ ] The signed note creates a verified time log (billing sees it in
+         Part 12)
+8. Bonus checks (any patient chart → Notes):
+   - [ ] **Supervision notes** are pinned at the top of the record and the
+         clinical feed with amber badging — never buried
+   - [ ] A second billable note on the same patient-day shows a **same-day
+         continuation** banner: it links to the primary note and creates
+         **no** second time log (the day total lives once)
+
+---
+
+## Part 12 — Gellert Beat 3: Sonya's Day-Close
+
+*The face sheet you can't lose — miss printing nothing, ever.*
+
+Stay logged in as **Navigator (Emily Rodriguez)** → dashboard.
+
+1. Scroll to **Today's Charge Slips** (below the progress card).
+   - [ ] One row per patient with today's minutes and **per-day Rule of
+         Eights units** — derived from time logs, so it can't drift from
+         billing
+   - [ ] **Helen Garcia's row is amber**: "6 min — below the 8-minute
+         billable minimum. Stack activities for this patient into one visit
+         window…" — the coaching hint, 0 units (the seeded 6-minute
+         patient-day)
+   - [ ] The note signed in Part 11 appears in James Thompson's slip
+2. Click **Sign & Submit Day**.
+   - [ ] Per-slip toasts (patient — minutes = units + billing code), then a
+         "Day closed" toast: N charge slips signed — X daily units submitted
+   - [ ] The panel flips to its **Day closed** state; signing is idempotent
+         (verify:gellert locks this)
+3. Honest math note (a demo talking point, not a bug): daily charge-slip
+   units and monthly claim units legitimately diverge under per-day vs
+   per-month Rule of Eights — UI copy always says **"daily units (charge
+   slips)"** vs **"claim units"**.
+   - [ ] Biller → Ready to Bill rows show an informational "N unsigned
+         slip-days" badge — never a validation block
+
+---
+
+## Part 13 — Gellert Beat 4: The DAP Remit (UHC's False Denial, Fixed)
+
+*Sonya's exact pain: UHC changed the remark code identifying the 1% DAP
+incentive, and AMD posts the payments as denials. Here it pends, classifies,
+and reprocesses in about 60 seconds.*
+
+Prerequisite: claims exist in the Ledger — run Part 4 steps 3 and 5 first
+(Export 837P → Simulate Clearinghouse to ACCEPTED).
+
+Log in as **Revenue Cycle Manager** → **Ledger** tab.
+
+1. **Generate Sample 835** dropdown → **UHC DAP scenario (unknown incentive
+   code)**.
+   - [ ] Toast: "UHC DAP sample 835 generated for N claims" → **Import now**
+   - [ ] The generated 835 pays every claim at **101% of billed** with a
+         negative CO-144 adjustment and remark N807 — codes the seed
+         dictionary deliberately does NOT contain
+2. Import dialog → **Parse**.
+   - [ ] Matched rows highlight amber: "Unknown remark codes: 144, N807 —
+         will pend for review"
+3. **Apply**.
+   - [ ] Toast: "0 payments applied, N pended for review, 0 unmatched" —
+         nothing misposts as a denial
+   - [ ] Ledger shows amber **Needs Review** badges and a "N pended for
+         review" chip; the status filter gains a **Needs Review** option
+4. Expand a pended row → **"Remittance pended for review"** block.
+   - [ ] Shows the held resolution (PAID at $X vs billed $Y) and each
+         unknown code with an **Add code to dictionary** button
+   - Click it for **144** → the inline **Add Code to Dictionary** dialog →
+     set classification **Adjustment** → **Add to Dictionary**. Repeat for
+     **N807** (classification Informational fits) — the biller never leaves
+     the ledger
+5. Click **Reprocess pended remits**.
+   - [ ] Toast: "N pended remittances posted"
+   - [ ] Rows go **PAID** with a green **+1% DAP** badge next to the paid
+         amount (101% of billed)
+6. Downstream proof:
+   - [ ] Executive → **Revenue** view: the **"DAP Incentive Recovered
+         (CARC 144)"** callout totals the recovered increment
+   - [ ] Admin → Remark Codes: 144/N807 now sit in the dictionary with their
+         classification (one-click maintenance, Sonya's manual-dictionary
+         pain reduced to a single dialog)
+   - [ ] Regression: a **Standard remit (mixed)** import never pends —
+         verify:gellert locks it
+
+---
+
+## Part 14 — Gellert Beat 5: One NPI, Eleven Navigators
+
+*AMD reports by provider; Gellert has one NPI. These three views are the
+per-navigator reporting that single-NPI billing can't produce today.*
+
+Log in as **Executive (Dr. Sarah Chen)**.
+
+1. Sidebar **Performance**.
+   - [ ] Per-navigator productivity table: **avg units/day vs level targets
+         (L1 16 · L2 18 · L3 20)** with attainment, trend sparklines, and
+         day-close rate — computed from the same charge-slip derivation the
+         navigators sign, so productivity and billing can never disagree
+   - [ ] A **"Windshield time (unbillable)"** column — Mitch's named margin
+         lever, computed from consecutive same-day stops
+   - [ ] The Playbook KPI list: 48h referral acceptance, units/day
+         attainment, daily-billing-by-EOD, PCP compliance, post-discharge
+         follow-up, no-show rate, ED trend — all computed; **"Patient Guide
+         by Friday 4pm"** renders as an honest labeled placeholder ("signal
+         not yet captured") because that module doesn't exist yet
+2. Sidebar **Revenue**.
+   - [ ] Collections vs billed, denial rate, Outstanding A/R with aging
+         buckets, payer mix, caseload distribution, referrals by acuity —
+         and the DAP callout from Part 13
+3. Sidebar **Patients** (Vivi's minable-data ask).
+   - [ ] **Condition click-boxes** (ICD-prefix cohorts — diabetes, heart
+         failure, CKD, behavioral health…), risk-tier distribution, and
+         SDOH barrier prevalence from documented Z-codes
+   - [ ] Clicking any cohort filters an inline patient list — structured
+         answers to "how many diabetic patients, how many visits", not
+         prose
+
+---
+
+## Part 15 — Gellert Beat 6: Graduation, Telenavigation, Exit
+
+*WorkFlow2025 phases 5–6: graduate, keep a monthly line in, re-engage or
+exit through the five documented pathways.*
+
+1. **Flag readiness** — as **Navigator (Emily Rodriguez)**, open **James
+   Thompson** → **Journey** tab → Graduation & Program Status card.
+   - [ ] Click **Flag Graduation Readiness**, add a note → amber "awaiting
+         supervisor confirmation" banner; the navigator role sees "Only a
+         supervisor can confirm graduation"
+2. **Confirm** — as **Supervisor**, open the same patient → Journey tab.
+   - [ ] **Confirm Graduation → Telenavigation** → the header phase chip
+         flips to **Telenavigation**; the Journey Board card moves columns;
+         a monthly check-in cadence starts
+3. **The overdue check-in** — log in as **Navigator David Chen** (use the
+   navigator picker on the role selector; Helen Garcia is his patient).
+   - [ ] Dashboard banner: "1 telenavigation check-in overdue" naming
+         **Helen Garcia** with "Check-in ~5d overdue" (seeded 35 days since
+         last check-in; rebased live)
+4. Open Helen → **Journey** tab.
+   - [ ] **Record Monthly Check-in** → dialog documents the call and writes
+         a phone note; the cadence clock resets (banner clears)
+   - [ ] **Re-engage Patient** (alternate path) → documented reason returns
+         her to **Active Navigation**
+5. **Exit pathways** — on any non-exited patient's Journey tab, click
+   **Exit Program…**.
+   - [ ] The dialog offers the **five documented pathways**:
+         patient-initiated, ineligibility, MIA, deceased, safety
+   - [ ] **Patient-initiated requires supervisor confirmation** (a navigator
+         cannot complete it alone)
+   - [ ] The seeded exited patient **Gloria Sandoval** shows the read-only
+         terminal state: "Exited — Patient-initiated", with her journey
+         history in the timeline
+
+---
+
 ## Appendix — Known Demo Constraints
 
 - No backend: state is one browser's localStorage. Two tabs share it (that's
@@ -339,4 +638,12 @@ Rodriguez) — it logs in as that specific patient.
 - The scribe needs Chrome/Edge for live dictation; Load Sample covers other
   browsers.
 - Seed dates rebase to "today" on each fresh load, so the demo never looks
-  stale; DOBs and enrollment dates stay fixed.
+  stale (that's how the SLA-breached referral, the overdue telenavigation
+  check-in, and today's unsigned charge slips are live on every reset); DOBs
+  and enrollment dates stay fixed.
+- Outreach attempts are manual attestations (no telephony/SMS integration),
+  and "Notify Referring Provider" is an audit event + toast — there is no
+  fax/Direct-messaging transport.
+- The UHC DAP 835 is simulator-generated (no live UHC remit), and zone map
+  shapes are circle approximations — real polygons come with a real geo
+  provider.

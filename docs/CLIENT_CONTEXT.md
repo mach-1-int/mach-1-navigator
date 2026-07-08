@@ -185,22 +185,30 @@ These constrain any notes/AI-scribe feature — the manual is effectively the sp
 
 ---
 
-## 9. Demo ↔ Gellert Gap Notes (for future gap-analysis sessions)
+## 9. Demo ↔ Gellert Gap Notes (updated 2026-07-08, after the Gellert logic transplant)
 
-The Mach 1 demo (`docs/CURRENT_STATE_OVERVIEW.md`) is already directionally aligned in striking ways — referral ingestion with matching/assignment (incl. distance/geography), AI scribe with template-driven notes and honest failure modes, EVV, verified time logs → claims, 837P/835 lifecycle **with a denial/rebill queue** (the exact thing Sonya lacks), per-navigator operational visibility, and role dashboards.
+The 2026-07-08 blitz ("Gellert logic transplant" — see `docs/CURRENT_STATE_OVERVIEW.md` for the code-verified detail and `docs/DEMO_WALKTHROUGH.md` Parts 10–15 for the demo beats) closed most of the divergences identified on 2026-07-07. Status per original gap row:
 
-Known divergences to reconcile when tailoring to Gellert:
-
-| Demo today | Gellert reality |
+| Gap identified 2026-07-07 | Status after the blitz |
 |---|---|
-| CMS CHI/PIN program framing (G-codes) alongside AHCCCS H-codes | Single code: **H0038** peer support, 15-min units, one NPI, billed daily; charge-slip-per-patient-per-day concept |
-| HL7v2 ADT ingest feed | Referrals arrive as PDFs/forms into Optimum, hand-keyed; ADT feed is an *aspiration* (St. Joe's) — the demo's HL7 path is the future-state story, not current state |
-| Acuity/risk tiers exist | Also needed: **telenavigation/graduation phase** and program-exit pathways (workflow map phases 5–6) — no demo concept yet |
-| Generic encounter note templates | **~30 Gellert note types** with the manual's hard compliance rules (patient involvement, third person, total minutes, med no-touch language) as the AI-scribe output spec |
-| No supervision-note concept | Supervision notes must exist and surface at the top of the patient record |
-| Match & Assign scores distance from zip centroids | Institutionalize **zone-based assignment** (Mitch's 11 zones) and unbillable-travel reduction reporting |
-| Executive dashboards computed from demo data | Vivi's ask: minable clinical/SDOH structured data (condition counts, visit counts, improvement trends); payer-facing value story (referral-source ROI) |
-| Remark codes admin table exists | Add the auto-update story (code sets tracking CMS releases) and the UHC-DAP-style "payment misclassified as denial" handling as a demo beat |
+| Referral→intake is the most disconnected part of the stack (Mitch's end-to-end correction) | **Built.** Full referral CRM: 9-state pipeline, 5-gate eligibility decision tree, 7-attempt outreach log with the 24–48h SLA clock, agreed-before-assignment guard, funnel + per-source conversion scorecard (St. Joe's story), and conversion that creates the patient only at agreement — Gellert's own "no data on non-patients" rule, encoded. Outreach attempts are manual attestations (no telephony/SMS yet); provider "notification" is an audit event + toast (no fax/Direct transport). |
+| Single-code daily billing (H0038, 15-min units, one NPI); charge-slip-per-patient-per-day; day-close "face sheet" | **Built.** Derived daily charge slips with per-day Rule of Eights units, sub-8-minute stacking hints, Sign & Submit day-close, same-day-signing KPI. Per-navigator productivity vs 16/18/20 level targets reuses the same slip math — per-user reporting under one NPI. The demo still carries CMS CHI/PIN (G-code) framing alongside AHCCCS H-codes; daily-vs-monthly Rule of Eights divergence is labeled and verify-locked, with a reconciliation report as future work. |
+| HL7v2 ADT ingest vs PDFs hand-keyed into Optimum | **Unchanged by design.** The HL7 path remains the future-state story (St. Joe's ADT aspiration); the CRM pipeline works the same regardless of how the referral arrives. A PDF/manual-entry intake path for current-state parity is not built. |
+| Telenavigation/graduation phases + program-exit pathways (workflow map phases 5–6) | **Built.** Stored journey phases with a transition matrix, graduation flag→supervisor-confirm, monthly telenavigation cadence with due/overdue surfacing and re-engagement, the five documented exit pathways (patient-initiated requires supervisor confirmation), 3-no-show MIA closure, and a kanban Journey Board of the WorkFlow2025 phases. Telenavigation *billing* rules remain ⚑ TBD with Gellert leadership — the app models the cadence but takes no position on billability. |
+| ~30 Gellert note types with the manual's hard compliance rules as the AI-scribe output spec | **Engine built; catalog partial.** Eight templates cover the manual's core families (phone, medical±transit, BH±transit with SI/HI/AH/VH, lab/imaging, med-assistance with verbatim no-touch attestation, SDOH, multidisciplinary continuation, supervision). A nine-rule compliance engine cites the manual and blocks signing on hard failures (patient involvement, total-minutes match, no-touch language, BH screen); the scribe prompt enforces third person and H:MMAM/PM. Expanding 8 → ~30 types is authored content on an existing engine, not new architecture. |
+| Supervision notes must surface at the top of the record | **Built.** Supervision note type (non-billable, no time log), pinned atop the patient record and the clinical feed. |
+| Zone-based assignment (Mitch's 11 zones) + unbillable-travel reduction | **Built.** Zone entity (6 Phoenix-metro zones seeded; Gellert runs 11 — adding the rest is data entry), +15 same-zone matching credit, zone chips at assignment, Zone Coverage card (the institutionalized weekly manual join), zone overlays on the safety map, and windshield-time (unbillable) reporting in the executive Performance view. Zone shapes are circle approximations until a real geo provider lands. |
+| Vivi's minable clinical/SDOH dashboards; payer-facing value story | **Largely built.** Patient-insights view with ICD-prefix condition click-boxes, risk-tier distribution, SDOH Z-code barrier prevalence, click-to-filter cohorts; referral-source scorecard covers the referrer side. Improvement *trends over time* and a payer-facing outcome-score package (Mercy Care/UHC ask) remain future work. |
+| Remark-code auto-update story + UHC-DAP "payment misclassified as denial" handling | **DAP handling built; auto-update not.** Unknown remit codes now pend for review instead of misposting, get classified (informational/adjustment/denial) via an inline dictionary dialog, and reprocess to PAID at 101% with the incentive annotated — Sonya's exact UHC pain as a 60-second demo beat. Code sets still do not auto-sync with CMS releases (dictionary maintenance is one click, but manual). |
+| (Also from §5) No collections/denial queue | **Built.** A Denials work queue tab: CARC/RARC + classification, aging buckets (0–7/8–30/31+), per-claim work status, one-click reopen-for-rebill. |
+| (Also from §5–6) Duplicative provider/standing-fact entry | **Built.** Provider directory + standing patient facts auto-fill note fields (badged "Auto-filled from chart"), with previous-note recall for repeat visits — the cut-and-paste killer, including Mitch's diabetic/colonoscopy-due anecdote as seed data. |
+
+**Honest remaining divergences (the current gap list):**
+- **Patient Guide module** (playbook must-have #2, Friday-4pm weekly cadence) — not built; its KPI renders as a labeled "signal not yet captured" placeholder rather than a fake number.
+- **Telenavigation billing rules, caseload tiers, graduation criteria, adverse-event and exit protocols** — modeled with sensible defaults but ⚑ TBD with Gellert leadership (playbook open items).
+- **Referral-team scripts/process revamp** — a playbook improvement target that lives outside the app's scope.
+- **Code-set auto-update with CMS releases**; **real outreach channels** (telephony/SMS) and **provider-notification transport** (fax/Direct); **routing-grade geo** (zone polygons, road distances); **backend** (auth/RBAC, multi-user, HIPAA hardening) — all named in `CURRENT_STATE_OVERVIEW.md` §7.
+- CHI/PIN (G-code) framing still coexists with the H0038 world; a Gellert-only configuration pass would strip it.
 
 ---
 
