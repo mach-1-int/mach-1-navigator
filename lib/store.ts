@@ -181,6 +181,98 @@ export const createInitialState = (): StoreState => ({
 // PERSISTENCE HELPERS
 // ============================================================================
 
+/** value ?? fallback, but falsy-value-permissive (matches the pre-refactor `||` merges below). */
+function orFallback<T>(value: T | undefined, fallback: T): T {
+  return (value || fallback) as T
+}
+
+function mergeCoreState(parsed: Partial<StoreState>, initial: StoreState) {
+  return {
+    patients: orFallback(parsed.patients, initial.patients),
+    navigators: orFallback(parsed.navigators, initial.navigators),
+    users: orFallback(parsed.users, initial.users),
+    supervisors: orFallback(parsed.supervisors, initial.supervisors),
+    appointments: orFallback(parsed.appointments, initial.appointments),
+    notes: orFallback(parsed.notes, initial.notes),
+    adverseEvents: orFallback(parsed.adverseEvents, initial.adverseEvents),
+    referrals: orFallback(parsed.referrals, initial.referrals),
+    directMessages: orFallback(parsed.directMessages, initial.directMessages),
+    careTemplates: orFallback(parsed.careTemplates, initial.careTemplates),
+    carePlans: orFallback(parsed.carePlans, initial.carePlans),
+    payers: orFallback(parsed.payers, initial.payers),
+    remarkCodes: orFallback(parsed.remarkCodes, initial.remarkCodes),
+    organizationSettings: orFallback(parsed.organizationSettings, initial.organizationSettings),
+    auditLogs: orFallback(parsed.auditLogs, initial.auditLogs),
+    noteTemplates: orFallback(parsed.noteTemplates, initial.noteTemplates),
+    noteDrafts: orFallback(parsed.noteDrafts, initial.noteDrafts),
+  }
+}
+
+function mergeBillingState(parsed: Partial<StoreState>, initial: StoreState) {
+  return {
+    cptCodes: orFallback(parsed.cptCodes, initial.cptCodes),
+    zCodes: orFallback(parsed.zCodes, initial.zCodes),
+    intakeRecords: orFallback(parsed.intakeRecords, initial.intakeRecords),
+    timeLogs: orFallback(parsed.timeLogs, initial.timeLogs),
+    monthlyTimeSummaries: orFallback(parsed.monthlyTimeSummaries, initial.monthlyTimeSummaries),
+    billingEncounters: orFallback(parsed.billingEncounters, initial.billingEncounters),
+    claimRecords: orFallback(parsed.claimRecords, initial.claimRecords),
+    activePayerConfigId: orFallback(parsed.activePayerConfigId, initial.activePayerConfigId),
+  }
+}
+
+function mergeSchedulingAndSafetyState(parsed: Partial<StoreState>, initial: StoreState) {
+  return {
+    scheduleEvents: orFallback(parsed.scheduleEvents, initial.scheduleEvents),
+    navigatorShifts: orFallback(parsed.navigatorShifts, initial.navigatorShifts),
+    timeOffRequests: orFallback(parsed.timeOffRequests, initial.timeOffRequests),
+    // Navigator Safety Map: locations are LIVE TELEMETRY, not durable data —
+    // persisted lastCheckIn timestamps go stale (a day-old store would derive
+    // RISK_ALERT for the whole fleet, and the simulator never touches
+    // alerted navigators, so it could never recover). Always start from
+    // fresh relative seeds. SOS events ARE durable user actions and persist
+    // normally.
+    navigatorLocations: initial.navigatorLocations,
+    sosEvents: orFallback(parsed.sosEvents, initial.sosEvents),
+  }
+}
+
+/** Merge with initial state to ensure new fields are always present. */
+function mergeParsedState(parsed: Partial<StoreState>, initial: StoreState): StoreState {
+  return {
+    ...initial,
+    ...parsed,
+    ...mergeCoreState(parsed, initial),
+    ...mergeBillingState(parsed, initial),
+    ...mergeSchedulingAndSafetyState(parsed, initial),
+    _version: CURRENT_VERSION,
+  }
+}
+
+/**
+ * Read + validate the persisted store from localStorage.
+ * Returns null when there's nothing to merge (no saved state, or the saved
+ * structure is missing required fields) — the caller falls back to
+ * `initialState` in that case. Forces a refresh when the version is
+ * outdated so users get updated seed data.
+ */
+function tryLoadPersistedState(initialState: StoreState): StoreState | null {
+  const saved = localStorage.getItem(STORAGE_KEY)
+  if (!saved) return null
+
+  const parsed = JSON.parse(saved) as Partial<StoreState>
+
+  if (!parsed._version || parsed._version < CURRENT_VERSION) {
+    console.log(`[Store] Version mismatch (${parsed._version || 0} < ${CURRENT_VERSION}), resetting to fresh seed data`)
+    localStorage.removeItem(STORAGE_KEY)
+    return initialState
+  }
+
+  if (!parsed.patients || !parsed.navigators || !parsed.appointments) return null
+
+  return mergeParsedState(parsed, initialState)
+}
+
 /**
  * Load state from localStorage, falling back to initial state if not found
  * Merges with initial state to ensure new fields are always present
@@ -194,72 +286,11 @@ export function loadState(): StoreState {
   const initialState = createInitialState()
 
   try {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      const parsed = JSON.parse(saved) as Partial<StoreState>
-
-      // Force refresh if version is outdated - ensures users get new seed data
-      if (!parsed._version || parsed._version < CURRENT_VERSION) {
-        console.log(`[Store] Version mismatch (${parsed._version || 0} < ${CURRENT_VERSION}), resetting to fresh seed data`)
-        localStorage.removeItem(STORAGE_KEY)
-        return initialState
-      }
-
-      // Validate the structure has required fields
-      if (parsed.patients && parsed.navigators && parsed.appointments) {
-        // Merge with initial state to ensure new fields are present
-        return {
-          ...initialState,
-          ...parsed,
-          // Ensure arrays are never undefined
-          patients: parsed.patients || initialState.patients,
-          navigators: parsed.navigators || initialState.navigators,
-          users: parsed.users || initialState.users,
-          supervisors: parsed.supervisors || initialState.supervisors,
-          appointments: parsed.appointments || initialState.appointments,
-          notes: parsed.notes || initialState.notes,
-          adverseEvents: parsed.adverseEvents || initialState.adverseEvents,
-          referrals: parsed.referrals || initialState.referrals,
-          directMessages: parsed.directMessages || initialState.directMessages,
-          careTemplates: parsed.careTemplates || initialState.careTemplates,
-          carePlans: parsed.carePlans || initialState.carePlans,
-          payers: parsed.payers || initialState.payers,
-          remarkCodes: parsed.remarkCodes || initialState.remarkCodes,
-          organizationSettings: parsed.organizationSettings || initialState.organizationSettings,
-          auditLogs: parsed.auditLogs || initialState.auditLogs,
-          noteTemplates: parsed.noteTemplates || initialState.noteTemplates,
-          noteDrafts: parsed.noteDrafts || initialState.noteDrafts,
-          // CMS Billing (Phase 2.1)
-          cptCodes: parsed.cptCodes || initialState.cptCodes,
-          zCodes: parsed.zCodes || initialState.zCodes,
-          intakeRecords: parsed.intakeRecords || initialState.intakeRecords,
-          timeLogs: parsed.timeLogs || initialState.timeLogs,
-          monthlyTimeSummaries: parsed.monthlyTimeSummaries || initialState.monthlyTimeSummaries,
-          billingEncounters: parsed.billingEncounters || initialState.billingEncounters,
-          claimRecords: parsed.claimRecords || initialState.claimRecords,
-          // Payer-Agnostic Billing (Phase 2.2)
-          activePayerConfigId: parsed.activePayerConfigId || initialState.activePayerConfigId,
-          // Scheduling (Phase 4)
-          scheduleEvents: parsed.scheduleEvents || initialState.scheduleEvents,
-          navigatorShifts: parsed.navigatorShifts || initialState.navigatorShifts,
-          timeOffRequests: parsed.timeOffRequests || initialState.timeOffRequests,
-          // Navigator Safety Map: locations are LIVE TELEMETRY, not durable
-          // data — persisted lastCheckIn timestamps go stale (a day-old store
-          // would derive RISK_ALERT for the whole fleet, and the simulator
-          // never touches alerted navigators, so it could never recover).
-          // Always start from fresh relative seeds. SOS events ARE durable
-          // user actions and persist normally.
-          navigatorLocations: initialState.navigatorLocations,
-          sosEvents: parsed.sosEvents || initialState.sosEvents,
-          _version: CURRENT_VERSION,
-        }
-      }
-    }
+    return tryLoadPersistedState(initialState) ?? initialState
   } catch (error) {
     console.warn("Failed to load state from localStorage:", error)
+    return initialState
   }
-
-  return initialState
 }
 
 /**
