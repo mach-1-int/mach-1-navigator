@@ -16,7 +16,7 @@
  */
 
 import { parseX12, fromCCYYMMDD, X12ParseError } from "./x12"
-import type { X12Segment } from "./x12"
+import type { X12Segment, X12Separators } from "./x12"
 
 export { X12ParseError }
 
@@ -90,6 +90,113 @@ function el(seg: X12Segment, position: number): string | undefined {
   return v === "" ? undefined : v
 }
 
+/** BPR: total payment amount, method, and (optional) payment date. */
+function applyBpr(seg: X12Segment, remit: Remittance835, warnings: string[]): void {
+  remit.paymentAmount = parseAmount(el(seg, 2), "BPR02", warnings)
+  remit.paymentMethod = el(seg, 4)
+  const bpr16 = el(seg, 16)
+  if (!bpr16) return
+  if (/^\d{8}$/.test(bpr16)) {
+    remit.paymentDate = fromCCYYMMDD(bpr16)
+  } else {
+    warnings.push(`BPR16 "${bpr16}" is not CCYYMMDD; payment date omitted`)
+  }
+}
+
+/** N1: payer (PR) or payee (PE) name. */
+function applyN1(seg: X12Segment, remit: Remittance835): void {
+  const qualifier = el(seg, 1)
+  if (qualifier === "PR") remit.payerName = el(seg, 2)
+  else if (qualifier === "PE") remit.payeeName = el(seg, 2)
+}
+
+/** CLP: opens a new claim payment loop (or null if CLP01 is missing). */
+function buildClaimFromClp(seg: X12Segment, warnings: string[]): RemitClaimPayment | null {
+  const patientControlNumber = el(seg, 1)
+  if (!patientControlNumber) {
+    warnings.push("CLP segment missing CLP01 patient control number; skipped")
+    return null
+  }
+  if (!el(seg, 2)) {
+    warnings.push(`CLP for ${patientControlNumber} missing CLP02 status code`)
+  }
+  return {
+    patientControlNumber,
+    statusCode: el(seg, 2) ?? "",
+    chargedAmount: parseAmount(el(seg, 3), `CLP03 (${patientControlNumber})`, warnings),
+    paidAmount: parseAmount(el(seg, 4), `CLP04 (${patientControlNumber})`, warnings),
+    patientResponsibility: parseAmount(el(seg, 5), `CLP05 (${patientControlNumber})`, warnings),
+    payerClaimControlNumber: el(seg, 7),
+    adjustments: [],
+    rarcCodes: [],
+    serviceLines: [],
+  }
+}
+
+/** CAS: repeats reason/amount/quantity triples (CAS02-04, CAS05-07, ...) onto the current claim. */
+function applyCas(seg: X12Segment, current: RemitClaimPayment | null, warnings: string[]): void {
+  if (!current) {
+    warnings.push("CAS segment outside a claim loop; ignored")
+    return
+  }
+  const groupCode = el(seg, 1) ?? ""
+  for (let pos = 2; pos <= seg.elements.length; pos += 3) {
+    const reasonCode = el(seg, pos)
+    if (!reasonCode) continue
+    current.adjustments.push({
+      groupCode,
+      reasonCode,
+      amount: parseAmount(el(seg, pos + 1), `CAS ${groupCode}*${reasonCode}`, warnings),
+    })
+  }
+}
+
+/** NM1*QC: patient name onto the current claim. */
+function applyNm1(seg: X12Segment, current: RemitClaimPayment | null): void {
+  if (!current || el(seg, 1) !== "QC") return
+  const last = el(seg, 3) ?? ""
+  const first = el(seg, 4) ?? ""
+  current.patientName = [last, first].filter(Boolean).join(", ")
+}
+
+/** SVC: an optional service line onto the current claim (SVC01 composite qualifier is stripped). */
+function applySvc(
+  seg: X12Segment,
+  current: RemitClaimPayment | null,
+  separators: X12Separators,
+  warnings: string[]
+): void {
+  if (!current) {
+    warnings.push("SVC segment outside a claim loop; ignored")
+    return
+  }
+  const composite = el(seg, 1) ?? ""
+  const parts = composite.split(separators.component)
+  const procedureCode = parts.length > 1 ? parts[1] : parts[0]
+  const line: RemitServiceLine = {
+    procedureCode,
+    chargedAmount: parseAmount(el(seg, 2), `SVC02 (${procedureCode})`, warnings),
+    paidAmount: parseAmount(el(seg, 3), `SVC03 (${procedureCode})`, warnings),
+  }
+  const units = el(seg, 5)
+  if (units !== undefined) {
+    const n = Number(units)
+    if (!Number.isNaN(n)) line.units = n
+  }
+  current.serviceLines.push(line)
+}
+
+/** LQ*HE: a deduplicated remark (RARC) code onto the current claim. */
+function applyLq(seg: X12Segment, current: RemitClaimPayment | null, warnings: string[]): void {
+  if (!current) {
+    warnings.push("LQ segment outside a claim loop; ignored")
+    return
+  }
+  if (el(seg, 1) !== "HE") return
+  const rarc = el(seg, 2)
+  if (rarc && !current.rarcCodes.includes(rarc)) current.rarcCodes.push(rarc)
+}
+
 /**
  * Parse a 5010 X221 835 remittance advice.
  *
@@ -114,120 +221,31 @@ export function parse835(text: string): Remittance835 {
 
   for (const seg of segments) {
     switch (seg.id) {
-      case "BPR": {
-        remit.paymentAmount = parseAmount(el(seg, 2), "BPR02", warnings)
-        remit.paymentMethod = el(seg, 4)
-        const bpr16 = el(seg, 16)
-        if (bpr16) {
-          if (/^\d{8}$/.test(bpr16)) {
-            remit.paymentDate = fromCCYYMMDD(bpr16)
-          } else {
-            warnings.push(`BPR16 "${bpr16}" is not CCYYMMDD; payment date omitted`)
-          }
-        }
+      case "BPR":
+        applyBpr(seg, remit, warnings)
         break
-      }
-
-      case "TRN": {
+      case "TRN":
         remit.traceNumber = el(seg, 2)
         break
-      }
-
-      case "N1": {
-        const qualifier = el(seg, 1)
-        if (qualifier === "PR") remit.payerName = el(seg, 2)
-        else if (qualifier === "PE") remit.payeeName = el(seg, 2)
+      case "N1":
+        applyN1(seg, remit)
         break
-      }
-
-      case "CLP": {
-        const patientControlNumber = el(seg, 1)
-        if (!patientControlNumber) {
-          warnings.push("CLP segment missing CLP01 patient control number; skipped")
-          current = null
-          break
-        }
-        current = {
-          patientControlNumber,
-          statusCode: el(seg, 2) ?? "",
-          chargedAmount: parseAmount(el(seg, 3), `CLP03 (${patientControlNumber})`, warnings),
-          paidAmount: parseAmount(el(seg, 4), `CLP04 (${patientControlNumber})`, warnings),
-          patientResponsibility: parseAmount(el(seg, 5), `CLP05 (${patientControlNumber})`, warnings),
-          payerClaimControlNumber: el(seg, 7),
-          adjustments: [],
-          rarcCodes: [],
-          serviceLines: [],
-        }
-        if (!el(seg, 2)) {
-          warnings.push(`CLP for ${patientControlNumber} missing CLP02 status code`)
-        }
-        remit.claims.push(current)
+      case "CLP":
+        current = buildClaimFromClp(seg, warnings)
+        if (current) remit.claims.push(current)
         break
-      }
-
-      case "CAS": {
-        if (!current) {
-          warnings.push("CAS segment outside a claim loop; ignored")
-          break
-        }
-        const groupCode = el(seg, 1) ?? ""
-        // CAS repeats reason/amount/quantity triples: CAS02-04, CAS05-07, ...
-        for (let pos = 2; pos <= seg.elements.length; pos += 3) {
-          const reasonCode = el(seg, pos)
-          if (!reasonCode) continue
-          current.adjustments.push({
-            groupCode,
-            reasonCode,
-            amount: parseAmount(el(seg, pos + 1), `CAS ${groupCode}*${reasonCode}`, warnings),
-          })
-        }
+      case "CAS":
+        applyCas(seg, current, warnings)
         break
-      }
-
-      case "NM1": {
-        if (current && el(seg, 1) === "QC") {
-          const last = el(seg, 3) ?? ""
-          const first = el(seg, 4) ?? ""
-          current.patientName = [last, first].filter(Boolean).join(", ")
-        }
+      case "NM1":
+        applyNm1(seg, current)
         break
-      }
-
-      case "SVC": {
-        if (!current) {
-          warnings.push("SVC segment outside a claim loop; ignored")
-          break
-        }
-        // SVC01 is a composite like "HC:G0023" — strip the qualifier
-        const composite = el(seg, 1) ?? ""
-        const parts = composite.split(separators.component)
-        const procedureCode = parts.length > 1 ? parts[1] : parts[0]
-        const line: RemitServiceLine = {
-          procedureCode,
-          chargedAmount: parseAmount(el(seg, 2), `SVC02 (${procedureCode})`, warnings),
-          paidAmount: parseAmount(el(seg, 3), `SVC03 (${procedureCode})`, warnings),
-        }
-        const units = el(seg, 5)
-        if (units !== undefined) {
-          const n = Number(units)
-          if (!Number.isNaN(n)) line.units = n
-        }
-        current.serviceLines.push(line)
+      case "SVC":
+        applySvc(seg, current, separators, warnings)
         break
-      }
-
-      case "LQ": {
-        if (!current) {
-          warnings.push("LQ segment outside a claim loop; ignored")
-          break
-        }
-        if (el(seg, 1) === "HE") {
-          const rarc = el(seg, 2)
-          if (rarc && !current.rarcCodes.includes(rarc)) current.rarcCodes.push(rarc)
-        }
+      case "LQ":
+        applyLq(seg, current, warnings)
         break
-      }
-
       default:
         // ISA/GS/ST/SE/GE/IEA envelope, LX headers, REF, DTM, PER etc. — not needed
         break
