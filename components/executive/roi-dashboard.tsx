@@ -55,14 +55,14 @@ export function ROIDashboard() {
   // in the app-wide context.
   const summary = useMemo(
     () =>
-      getDashboardSummary(
+      getDashboardSummary({
         navigators,
         patients,
         timeLogs,
         intakeRecords,
-        activePayerConfig,
-        navigatorsWithAttributes
-      ),
+        payerConfig: activePayerConfig,
+        navigatorUsers: navigatorsWithAttributes,
+      }),
     [navigators, patients, timeLogs, intakeRecords, activePayerConfig, navigatorsWithAttributes]
   )
   const operationalMetrics = useMemo(
