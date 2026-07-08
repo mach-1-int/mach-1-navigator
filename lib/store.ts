@@ -43,6 +43,12 @@ import type {
   // Navigator Safety Map
   NavigatorLocation,
   SOSEvent,
+  // Gellert blitz (journey / notes / billing)
+  JourneyEvent,
+  Provider,
+  StandingPatientFacts,
+  ChargeSlip,
+  Zone,
 } from "./types"
 import {
   initialPatients,
@@ -72,6 +78,12 @@ import {
   initialDirectMessages,
   // Navigator Safety Map
   initialNavigatorLocations,
+  // Gellert blitz (journey / notes / billing)
+  initialJourneyEvents,
+  initialProviders,
+  initialStandingFacts,
+  initialChargeSlips,
+  initialZones,
 } from "./initial-data"
 import { rebaseToToday } from "./date-rebase"
 
@@ -120,6 +132,14 @@ export interface StoreState {
   // Navigator Safety Map
   navigatorLocations: NavigatorLocation[]
   sosEvents: SOSEvent[]
+  // Journey engine (Gellert WorkFlow2025)
+  journeyEvents: JourneyEvent[]
+  // Gellert note system
+  providers: Provider[]
+  standingFacts: StandingPatientFacts[]
+  // Gellert billing mode
+  chargeSlips: ChargeSlip[]
+  zones: Zone[]
   lastAssignedPatientId: string | null
   _version: number // For future migrations
 }
@@ -131,7 +151,7 @@ export interface StoreState {
 // Current schema version - bump this when seed data changes to force refresh.
 // MUST be defined above createInitialState so fresh state is stamped with it;
 // a stale literal here once caused every reload to wipe localStorage.
-const CURRENT_VERSION = 12 // Production-hardening blitz: payers/claims/SOS/identity slices + enriched time logs
+const CURRENT_VERSION = 13 // Gellert blitz: journey pipeline, providers/standing facts, charge slips, zones
 
 // ============================================================================
 // INITIAL STATE
@@ -174,6 +194,14 @@ export const createInitialState = (): StoreState => ({
   // Navigator Safety Map
   navigatorLocations: initialNavigatorLocations,
   sosEvents: [],
+  // Journey engine (Gellert WorkFlow2025)
+  journeyEvents: rebaseToToday(initialJourneyEvents),
+  // Gellert note system (static reference data - no rebasing)
+  providers: initialProviders,
+  standingFacts: initialStandingFacts,
+  // Gellert billing mode (slips rebase with their time logs; zones are static)
+  chargeSlips: rebaseToToday(initialChargeSlips),
+  zones: initialZones,
   lastAssignedPatientId: null,
   _version: CURRENT_VERSION,
 })
@@ -252,6 +280,12 @@ export function loadState(): StoreState {
           // user actions and persist normally.
           navigatorLocations: initialState.navigatorLocations,
           sosEvents: parsed.sosEvents || initialState.sosEvents,
+          // Gellert blitz slices
+          journeyEvents: parsed.journeyEvents || initialState.journeyEvents,
+          providers: parsed.providers || initialState.providers,
+          standingFacts: parsed.standingFacts || initialState.standingFacts,
+          chargeSlips: parsed.chargeSlips || initialState.chargeSlips,
+          zones: parsed.zones || initialState.zones,
           _version: CURRENT_VERSION,
         }
       }
@@ -414,11 +448,17 @@ export function getRecentNotes(notes: PatientNote[], limit: number = 20): Patien
 // REFERRAL HELPERS
 // ============================================================================
 
+/** Non-terminal referral pipeline statuses (still being worked) */
+const TERMINAL_REFERRAL_STATUSES = ["converted", "ineligible", "unreachable", "declined"] as const
+
 /**
- * Get pending referrals
+ * Get in-pipeline (non-terminal) referrals. Name kept from the legacy 3-state
+ * model for a smaller blast radius; "pending" now means any working status.
  */
 export function getPendingReferrals(referrals: Referral[]): Referral[] {
-  return referrals.filter((ref) => ref.status === "pending")
+  return referrals.filter(
+    (ref) => !(TERMINAL_REFERRAL_STATUSES as readonly string[]).includes(ref.status)
+  )
 }
 
 // ============================================================================
@@ -643,6 +683,7 @@ export function createPatientFromReferral(
     chartNumber: `GH-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000) + 1000}`,
     riskLevel: referral.riskScore,
     survivalStatus: "active",
+    journeyPhase: "intake",
     assignedNavigator: navigatorId,
     assignedSupervisor: supervisorId,
     healthPlan: rawData.IN1.payerName,

@@ -23,6 +23,10 @@ import { ClinicalFeed } from "@/components/navigator/clinical-feed"
 import { AssessmentWizard } from "@/components/navigator/assessment-wizard"
 import { ReferralReviewView } from "@/components/supervisor/referral-review-view"
 import { IntakeWorkspace } from "@/components/supervisor/intake-workspace"
+import { JourneyBoard } from "@/components/supervisor/journey-board"
+import { PerformanceView } from "@/components/executive/performance-view"
+import { RevenueAnalyticsView } from "@/components/executive/revenue-analytics-view"
+import { PatientInsightsView } from "@/components/executive/patient-insights-view"
 import { ChatInterface } from "@/components/messaging/chat-interface"
 import { AdminDashboard } from "@/components/dashboards/admin-dashboard"
 import { ClaimsManager } from "@/components/billing/claims-manager"
@@ -33,8 +37,8 @@ import { Toaster } from "@/components/ui/sonner"
 
 // Define which views are implemented for each role
 const implementedViews: Record<string, ViewType[]> = {
-  executive: ["dashboard", "revenue-cycle"],
-  supervisor: ["dashboard", "safety-map", "referrals", "navigators", "navigator-detail", "team-schedule", "compliance", "events", "patient-detail", "messages", "intake-workspace"],
+  executive: ["dashboard", "revenue-cycle", "revenue", "performance", "patients"],
+  supervisor: ["dashboard", "safety-map", "referrals", "journey-board", "navigators", "navigator-detail", "team-schedule", "compliance", "events", "patient-detail", "messages", "intake-workspace"],
   navigator: ["dashboard", "patients", "patient-detail", "schedule", "notes", "messages", "assessment-wizard"],
   patient: ["dashboard", "appointments", "medications", "profile", "messages"],
   admin: ["dashboard", "admin-payer-rates", "admin-audit-log", "revenue-cycle"],
@@ -60,7 +64,8 @@ const viewTitles: Record<ViewType, { title: string; subtitle: string }> = {
   profile: { title: "My Profile", subtitle: "Personal information and preferences" },
   settings: { title: "Settings", subtitle: "Application preferences" },
   messages: { title: "Messages", subtitle: "Communicate with your care team" },
-  referrals: { title: "Pending Referrals", subtitle: "Review and process incoming patient referrals" },
+  referrals: { title: "Referral CRM", subtitle: "Eligibility, outreach, and conversion — the full referral pipeline" },
+  "journey-board": { title: "Journey Board", subtitle: "Every patient across the WorkFlow2025 phases" },
   "intake-workspace": { title: "Match & Assign", subtitle: "Ranked navigator matching by distance, language, and load" },
   "assessment-wizard": { title: "Risk Assessment", subtitle: "Initial home visit assessment" },
   "admin-payer-rates": { title: "Payer Rates", subtitle: "Configure revenue rates by payer" },
@@ -138,6 +143,19 @@ function DashboardContent() {
       return <ClaimsManager />
     }
 
+    // Handle executive analytics views (Gellert blitz - B-B fills these)
+    if (currentUser.role === "executive") {
+      if (navigation.view === "revenue") {
+        return <RevenueAnalyticsView />
+      }
+      if (navigation.view === "performance") {
+        return <PerformanceView />
+      }
+      if (navigation.view === "patients") {
+        return <PatientInsightsView />
+      }
+    }
+
     // Handle patient detail view
     if (navigation.view === "patient-detail" && navigation.params?.patientId) {
       return <PatientProfile patientId={navigation.params.patientId} />
@@ -168,6 +186,9 @@ function DashboardContent() {
       }
       if (navigation.view === "referrals") {
         return <ReferralReviewView />
+      }
+      if (navigation.view === "journey-board") {
+        return <JourneyBoard />
       }
       if (navigation.view === "navigators") {
         return <NavigatorDirectory />

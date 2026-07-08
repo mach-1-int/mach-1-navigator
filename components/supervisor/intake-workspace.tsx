@@ -46,7 +46,7 @@ interface IntakeWorkspaceProps {
 
 export function IntakeWorkspace({ referralId }: IntakeWorkspaceProps) {
   const { goBack } = useRole()
-  const { referrals, assignReferral, getNavigatorsWithAttributes } = useDemoData()
+  const { referrals, acceptReferral, getNavigatorsWithAttributes } = useDemoData()
   const [isAssigning, setIsAssigning] = useState(false)
   // Language override for QA Test B (toggle to es to see Sarah drop)
   const [languageOverride, setLanguageOverride] = useState<string | null>(null)
@@ -85,11 +85,19 @@ export function IntakeWorkspace({ referralId }: IntakeWorkspaceProps) {
     await new Promise(resolve => setTimeout(resolve, 500))
 
     try {
-      assignReferral(referral.id, navigatorId)
-      toast.success(`${referral.patientName} assigned to ${navigatorName}`, {
-        description: "Referral has been processed successfully.",
-      })
-      goBack()
+      // Conversion: patient record is created only for agreed/intake_scheduled
+      // referrals (Gellert's own rule) — acceptReferral guards this.
+      const newPatient = acceptReferral(referral.id, {}, navigatorId)
+      if (newPatient) {
+        toast.success(`${referral.patientName} assigned to ${navigatorName}`, {
+          description: "Patient created in Intake — Intake 1 scheduled.",
+        })
+        goBack()
+      } else {
+        toast.error("Patient has not agreed to services yet", {
+          description: "Complete eligibility and outreach before Match & Assign.",
+        })
+      }
     } catch (error) {
       toast.error("Failed to assign referral")
     } finally {

@@ -86,8 +86,10 @@ export function ExecutiveDashboard() {
   const assignedNavigator = lastAssignedPatient
     ? navigators.find(n => n.id === lastAssignedPatient.assignedNavigator)
     : null
-  const pendingReferrals = referrals.filter(r => r.status === "pending").length
-  const acceptedReferrals = referrals.filter(r => r.status === "accepted").length
+  const pendingReferrals = referrals.filter(
+    r => !["converted", "ineligible", "unreachable", "declined"].includes(r.status)
+  ).length
+  const acceptedReferrals = referrals.filter(r => r.status === "converted").length
 
   const completedAppointments = appointments.filter(apt => apt.status === "completed").length
 

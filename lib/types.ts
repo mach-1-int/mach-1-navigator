@@ -12,6 +12,7 @@ export interface NavigatorAttributes {
   currentCaseload: number
   maxCaseload: number
   acuityCapabilities: ('L1' | 'L2' | 'L3')[] // L3 = High Risk
+  zoneId?: string // Assigned coverage zone (Gellert zones) - FK to Zone.id
 }
 
 export interface User {
@@ -33,6 +34,41 @@ export interface GeoPoint {
   lng: number
 }
 
+// ============================================================================
+// PATIENT JOURNEY (Gellert WorkFlow2025)
+// ============================================================================
+
+/**
+ * Stored journey phase. Referral & Eligibility live on the Referral pipeline;
+ * Adverse Event Response is a DERIVED overlay (lib/journey.ts), never stored.
+ */
+export type JourneyPhase = "intake" | "active" | "telenavigation" | "exited"
+
+/** The five documented program-exit pathways */
+export type ExitPathway = "patient_initiated" | "ineligible" | "mia" | "deceased" | "safety"
+
+/** Program exit documentation (patient_initiated requires supervisorConfirmedBy) */
+export interface ProgramExit {
+  pathway: ExitPathway
+  exitedAt: string
+  documentedBy: string
+  supervisorConfirmedBy?: string
+  providerNotifiedAt?: string
+  notes: string
+}
+
+/** One phase transition in a patient's journey (powers the timeline UI) */
+export interface JourneyEvent {
+  id: string
+  patientId: string
+  at: string // ISO timestamp
+  fromPhase: JourneyPhase | "referral"
+  toPhase: JourneyPhase
+  actorId: string
+  actorName: string
+  reason?: string
+}
+
 export interface Patient {
   id: string
   name: string
@@ -41,6 +77,21 @@ export interface Patient {
   riskLevel: 1 | 2 | 3
   riskScore?: number // 0-100 calculated risk score from assessment
   survivalStatus: "active" | "inactive"
+  // Journey engine (Gellert WorkFlow2025) - required; all seeds set it
+  journeyPhase: JourneyPhase
+  graduation?: {
+    readinessFlaggedAt: string
+    readinessFlaggedBy: string
+    readinessNote?: string
+    confirmedAt?: string
+    confirmedBy?: string
+  }
+  telenavigation?: {
+    startedAt: string
+    cadenceDays: number // 30 = monthly check-in cadence
+    lastCheckInAt?: string
+  }
+  exit?: ProgramExit
   assignedNavigator: string
   assignedSupervisor: string
   healthPlan: string
@@ -75,12 +126,18 @@ export interface Patient {
   payerId?: string
   // Real insurance member ID (replaces synthesized <PLAN>-<PATIENTID> fallback)
   memberId?: string
+  // Gellert zone assignment (explicit wins over zip lookup) - FK to Zone.id
+  zoneId?: string
+  // Provider directory links (PCP, BH, specialists) - FKs to Provider.id
+  providerIds?: string[]
 }
 
 export interface Navigator {
   id: string
   name: string
   supervisorId: string
+  /** Gellert navigator level; drives units/day target (16/18/20) */
+  level: 1 | 2 | 3
   monthlyUnits: number
   mtdUnits: number
   adverseEventCount: number
@@ -120,6 +177,9 @@ export interface Appointment {
   time: string
   type: "home_visit" | "phone_call" | "video_call" | "clinic"
   status: "scheduled" | "in_progress" | "completed" | "cancelled" | "no_show"
+  // Gellert encounter taxonomy (pre-selects the matching note template).
+  // Legacy appointments without it fall back via lib/note-taxonomy.ts.
+  encounterType?: EncounterType
   notes?: string
   // EVV (Electronic Visit Verification) fields - Phase 4
   checkInTime?: string // ISO timestamp when visit started
@@ -146,7 +206,7 @@ export interface PatientNote {
   authorName: string
   authorRole: UserRole
   content: string
-  type: "clinical" | "follow-up" | "general" | "phone" | "visit"
+  type: "clinical" | "follow-up" | "general" | "phone" | "visit" | "supervision"
   createdAt: string
   // Dynamic Narrative Engine fields (Phase 6)
   templateId?: string
@@ -158,6 +218,12 @@ export interface PatientNote {
   endTime?: string // ISO timestamp - when visit ended
   timeLogId?: string // Link to TimeLog for billing
   timeSource?: "timer" | "manual" | "edited" // How time was captured (audit trail)
+  // Gellert note system (same-day multi-note model + supervision notes)
+  linkedNoteId?: string // Same-day continuation -> primary note
+  carriesDayTotal?: boolean // The ONE note per patient-day carrying the charge-slip total
+  billable?: boolean // false for continuations/supervision (no TimeLog created)
+  appointmentId?: string // Appointment this note documents
+  subjectNavigatorId?: string // Supervision notes: navigator discussed
 }
 
 // ============================================================================
@@ -165,9 +231,35 @@ export interface PatientNote {
 // ============================================================================
 
 /**
- * Field types supported in note templates
+ * Field types supported in note templates.
+ * Gellert additions: "time" (canonical "3:03PM" clock string), "provider"
+ * (stores a providerId, options resolved from the directory), "attestation"
+ * (must-be-true checkbox emitting fixed manual language verbatim).
  */
-export type NoteFieldType = "select" | "multi-select" | "text" | "boolean" | "time-duration" | "textarea"
+export type NoteFieldType =
+  | "select"
+  | "multi-select"
+  | "text"
+  | "boolean"
+  | "time-duration"
+  | "textarea"
+  | "time"
+  | "provider"
+  | "attestation"
+
+/**
+ * Encounter taxonomy from the Gellert Note-Taking Manual.
+ * Maps appointments -> note templates (lib/note-taxonomy.ts).
+ */
+export type EncounterType =
+  | "phone_call"
+  | "medical_appointment"
+  | "behavioral_health"
+  | "lab_imaging"
+  | "medication_assistance"
+  | "sdoh"
+  | "multidisciplinary"
+  | "supervision"
 
 /**
  * A single field within a note template
@@ -183,6 +275,13 @@ export interface TemplateField {
   narrativeSuffix?: string // e.g., "."
   narrativeJoiner?: string // For multi-select: ", " or " and "
   defaultValue?: unknown
+  // Gellert manual encoding (all optional/additive)
+  attestationText?: string // Exact manual language inserted verbatim when checked
+  section?: string // Visual grouping: "Transit" | "Encounter" | "Wrap-Up"
+  showIf?: { fieldId: string; equals: unknown } // Gates ±transit fields
+  optionsSource?: "providers" | "navigators" // Dynamic options from the directory
+  autoFill?: { source: "provider" | "patientFact" | "appointment" | "previousNote"; key?: string }
+  neverSkip?: boolean // Manual's "never skip" elements - badged + compliance-cited
 }
 
 /**
@@ -195,6 +294,37 @@ export interface NoteTemplate {
   noteType: PatientNote["type"] // Maps to existing note types
   fields: TemplateField[]
   narrativeTemplate?: string // Optional overall template with {fieldId} placeholders
+  // Gellert manual encoding (all optional/additive)
+  encounterTypes?: EncounterType[] // Appointment encounter types that pre-select this template
+  billable?: boolean // Default true; false for supervision + multidisciplinary continuation
+  manualSection?: string // e.g., "Manual §4 — Behavioral Health Appointments"
+}
+
+// ============================================================================
+// PROVIDER DIRECTORY & STANDING PATIENT FACTS (Gellert note system)
+// ============================================================================
+
+/** External provider directory entry (the cut-and-paste killer) */
+export interface Provider {
+  id: string
+  name: string // e.g., "Dr. Jane Smith"
+  credential?: string // e.g., "MD"
+  specialty: string
+  practiceName: string
+  address: { street: string; city: string; state: string; zip: string }
+  phone: string
+  type: "pcp" | "behavioral_health" | "specialist" | "lab_imaging" | "pharmacy"
+}
+
+/** Durable per-patient facts the auto-fill layer recalls across notes */
+export interface StandingPatientFacts {
+  patientId: string
+  diabetic?: boolean
+  colonoscopy?: { status: "up_to_date" | "due" | "declined" | "never"; note?: string }
+  mammogram?: { status: "up_to_date" | "due" | "declined" | "not_applicable"; note?: string }
+  preferredPharmacyProviderId?: string
+  updatedAt: string
+  updatedBy: string
 }
 
 /**
@@ -257,14 +387,73 @@ export interface ReferralRawData {
   }
 }
 
+// ============================================================================
+// REFERRAL PIPELINE (Gellert WorkFlow2025 - replaces the legacy 3-state status)
+// Legacy mapping: pending -> received, accepted -> converted, rejected -> ineligible
+// ============================================================================
+
+export type ReferralStatus =
+  | "received" // Ingested; awaiting eligibility review
+  | "ineligible" // Closed at eligibility, one of 5 reasons (terminal)
+  | "accepted" // Eligible; awaiting first contact (24-48h SLA clock runs)
+  | "outreach" // >=1 attempt logged, not yet resolved (max 7)
+  | "unreachable" // Closed after 7 attempts; provider informed (terminal)
+  | "declined" // Patient declined during outreach (terminal)
+  | "agreed" // Patient agreed; ready for Match & Assign / intake scheduling
+  | "intake_scheduled" // Intake 1 on the books
+  | "converted" // Patient record created (terminal success)
+
+/** The five documented ineligibility reasons (eligibility decision tree) */
+export type IneligibilityReason =
+  | "insurance"
+  | "out_of_service_area"
+  | "no_medical_need"
+  | "level_of_care"
+  | "age"
+
+/** Five-gate eligibility check (short-circuit decision tree) */
+export interface EligibilityCheck {
+  checkedAt: string
+  checkedBy: string
+  insuranceVerified: boolean
+  inServiceArea: boolean
+  medicalNeedConfirmed: boolean
+  levelOfCareAppropriate: boolean
+  ageEligible: boolean
+  outcome: "eligible" | "ineligible"
+  ineligibilityReason?: IneligibilityReason
+  notes?: string
+}
+
+/** One outreach attempt (max 7 before auto-close to unreachable) */
+export interface OutreachAttempt {
+  id: string
+  attemptNumber: number // 1-7
+  at: string // ISO timestamp
+  by: string
+  byName: string
+  channel: "phone" | "text" | "in_person"
+  disposition: "no_answer" | "voicemail" | "wrong_number" | "callback_requested" | "declined" | "agreed"
+  notes?: string
+}
+
 export interface Referral {
   id: string
   receivedAt: string
-  acceptedAt?: string // ISO timestamp when accepted/assigned (drives turnaround metrics)
+  acceptedAt?: string // ISO timestamp of eligibility acceptance (starts the 24-48h contact SLA clock)
   source: string // e.g., "Dignity Health", "Banner Health"
   rawData: ReferralRawData
   rawHL7?: string // Original HL7v2 message text when ingested via the HL7 adapter
-  status: "pending" | "accepted" | "rejected"
+  status: ReferralStatus
+  // Pipeline records
+  eligibility?: EligibilityCheck
+  outreachAttempts: OutreachAttempt[]
+  agreedAt?: string // Patient agreed to services
+  closedAt?: string // Terminal close timestamp (ineligible/unreachable/declined)
+  closeReason?: "ineligible" | "unreachable" | "declined"
+  providerNotifiedAt?: string // Referring provider informed (any close AND post-intake)
+  intakeAppointmentId?: string // Intake 1 appointment when intake_scheduled
+  patientId?: string // Set at conversion (FK to Patient.id)
   // Denormalized fields for quick access (derived from rawData)
   patientName: string
   dob: string
@@ -456,11 +645,15 @@ export interface Payer {
  * CARC/RARC remark code dictionary entry (remittance adjudication).
  * Admin-editable so billing managers can add payer-specific codes without code changes.
  */
+/** How a remark code should be treated when posting remittances */
+export type RemarkClassification = "informational" | "adjustment" | "denial"
+
 export interface RemarkCode {
   id: string // e.g., "carc-45", "rarc-n30"
   type: "CARC" | "RARC"
   code: string // e.g., "45", "N30"
   description: string
+  classification?: RemarkClassification
   lastUpdated: string
   updatedBy?: string
 }
@@ -525,6 +718,23 @@ export type AuditAction =
   | "sos_triggered"
   | "sos_acknowledged"
   | "sos_resolved"
+  // Journey engine (Gellert WorkFlow2025)
+  | "eligibility_completed"
+  | "outreach_attempt_logged"
+  | "referral_closed"
+  | "intake_visit_completed"
+  | "intake_no_show"
+  | "provider_notified"
+  | "graduation_flagged"
+  | "graduation_confirmed"
+  | "telenav_check_in"
+  | "patient_reengaged"
+  | "program_exited"
+  // Gellert billing mode
+  | "charge_slip_signed"
+  | "remittance_pended"
+  | "remittance_reprocessed"
+  | "denial_work_status_changed"
 
 // ============================================================================
 // CMS BILLING & CODING STANDARDS (Phase 2.1 - Documentation Engine)
@@ -632,6 +842,42 @@ export interface AcuityScore {
   level: "Low" | "Moderate" | "High" // Derived from totalScore
 }
 
+// ============================================================================
+// INTAKE 1 & 2 (Gellert two-visit intake protocol; extends IntakeRecord)
+// ============================================================================
+
+/** Intake 1 checklist keys (onboarding visit) */
+export type Intake1ChecklistKey =
+  | "onboarding_packet"
+  | "roi_signed"
+  | "med_reconciliation"
+  | "health_history"
+  | "provider_list"
+  | "risk_screening"
+  | "patient_photo"
+  | "pcp_scheduled"
+
+/** Intake 2 checklist keys (contract + survey visit) */
+export type Intake2ChecklistKey = "intake_survey" | "navigation_contract_signed" | "risk_tier_confirmed"
+
+export type IntakeChecklistKey = Intake1ChecklistKey | Intake2ChecklistKey
+
+export interface IntakeChecklistItem {
+  key: IntakeChecklistKey
+  label: string
+  done: boolean
+  doneAt?: string
+  doneBy?: string
+}
+
+export interface IntakeVisit {
+  scheduledDate?: string
+  completedDate?: string
+  status: "not_scheduled" | "scheduled" | "completed"
+  noShowCount: number
+  checklist: IntakeChecklistItem[]
+}
+
 /**
  * Initial intake record capturing critical billing prerequisites
  */
@@ -648,6 +894,13 @@ export interface IntakeRecord {
   primaryNavigatorId: string
   referralSourceId?: string
   notes?: string
+  // Gellert Intake 1 & 2 protocol (all optional/additive)
+  intake1?: IntakeVisit
+  intake2?: IntakeVisit
+  pcpApptDate?: string // Scheduled PCP appointment date
+  pcpDueBy?: string // Conversion + 7 BUSINESS days (lib/business-days.ts)
+  providerNotifiedAt?: string // 24h post-intake referring-provider notification
+  totalNoShows?: number // Across both intake visits; 3 = closure protocol (MIA exit)
 }
 
 // ============================================================================
@@ -816,6 +1069,51 @@ export interface ClaimRecord {
   clearinghouseBatchId?: string
   remittance?: RemittanceInfo
   voided?: boolean // Superseded by a rebill; stays in ledger, greyed out
+  // DAP review queue: remittance held (NOT posted) because it carried remark
+  // codes missing from the dictionary. Record advances only to ACCEPTED;
+  // reprocessPendedRemittances resolves it once codes are classified.
+  pendedRemittance?: {
+    remittance: RemittanceInfo
+    resolvedStatus: "PAID" | "DENIED"
+    unknownCodes: string[]
+    pendedAt: string
+  }
+  // Denial work queue status (biller-managed, informational)
+  workStatus?: ClaimWorkStatus
+}
+
+/** Denial-work-queue status ("the queue Sonya doesn't have in AMD") */
+export type ClaimWorkStatus = "new" | "in_review" | "corrected" | "resubmitted"
+
+// ============================================================================
+// CHARGE SLIPS & ZONES (Gellert billing mode)
+// ============================================================================
+
+/**
+ * Daily charge slip: a navigator's signed attestation over a derived
+ * patient-day grouping of TimeLogs. TimeLogs remain the single source of
+ * billing truth; only SIGNED slips are persisted (unsigned derived on the fly).
+ */
+export interface ChargeSlip {
+  id: string // `slip-{navigatorId}-{patientId}-{date}`
+  navigatorId: string
+  patientId: string
+  date: string // YYYY-MM-DD service date
+  timeLogIds: string[] // Frozen at signing
+  totalMinutes: number
+  units: number // Per-day Rule of Eights units
+  code: string // e.g., "H0038"
+  signedAt?: string // ISO timestamp; presence = signed
+  signedBy?: string
+}
+
+/** Geographic coverage zone (Gellert runs 11; demo seeds 6 Phoenix-metro) */
+export interface Zone {
+  id: string
+  name: string
+  color: string // Hex or CSS color for map overlays / chips
+  zipCodes: string[] // Member zips (must exist in AZ_ZIP_CENTROIDS)
+  description?: string
 }
 
 // ============================================================================

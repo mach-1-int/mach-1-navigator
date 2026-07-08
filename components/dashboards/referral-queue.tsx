@@ -89,7 +89,7 @@ export function ReferralQueue() {
                         <p className="font-medium text-card-foreground">{referral.patientName}</p>
                         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                           {referral.diagnosis}
-                          <AMDSourceIndicator source="Epic EHR" />
+                          <AMDSourceIndicator source={referral.source} />
                         </span>
                       </div>
                     </TableCell>

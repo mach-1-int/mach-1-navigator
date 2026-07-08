@@ -36,6 +36,7 @@ const NOTE_TYPE_CONFIG = {
   phone: { label: "Phone", className: "bg-purple-100 text-purple-700 border-purple-200", icon: Phone },
   "follow-up": { label: "Follow-up", className: "bg-amber-100 text-amber-700 border-amber-200", icon: Calendar },
   general: { label: "General", className: "bg-gray-100 text-gray-700 border-gray-200", icon: FileText },
+  supervision: { label: "Supervision", className: "bg-amber-100 text-amber-700 border-amber-200", icon: FileText },
 }
 
 const MODALITY_ICONS = {

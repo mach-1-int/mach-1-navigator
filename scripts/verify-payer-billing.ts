@@ -154,8 +154,8 @@ run("Step 6: CSV Billing_Model column (MEDICAID BH, MEDICARE PIN)", () => {
 run("Step 7 & 10: Initial state default payer and reset", () => {
   const state = createInitialState()
   assert(state.activePayerConfigId === "medicaid-bh", "createInitialState has activePayerConfigId medicaid-bh")
-  // CURRENT_VERSION is not exported from store; 11 is the payer-unification version
-  assert(state._version >= 11, `createInitialState _version is ${state._version} (expected >= 11)`)
+  // CURRENT_VERSION is not exported from store; 13 is the Gellert-blitz version
+  assert(state._version >= 13, `createInitialState _version is ${state._version} (expected >= 13)`)
 })
 
 // Biller role and Revenue Cycle Manager

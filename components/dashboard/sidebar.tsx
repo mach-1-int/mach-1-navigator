@@ -24,6 +24,7 @@ import {
   History,
   UserPlus,
   Map,
+  Route,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -39,7 +40,8 @@ const roleNavItems: Record<string, { name: string; view: ViewType; icon: typeof 
   supervisor: [
     { name: "Overview", view: "dashboard", icon: LayoutDashboard },
     { name: "Safety Map", view: "safety-map", icon: Map },
-    { name: "Referrals", view: "referrals", icon: UserPlus },
+    { name: "Referral CRM", view: "referrals", icon: UserPlus },
+    { name: "Journey Board", view: "journey-board", icon: Route },
     { name: "Navigators", view: "navigators", icon: Users },
     { name: "Team Schedule", view: "team-schedule", icon: CalendarDays },
     { name: "Compliance", view: "compliance", icon: ClipboardList },

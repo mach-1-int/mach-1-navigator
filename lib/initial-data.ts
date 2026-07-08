@@ -10,6 +10,8 @@ import type {
   AdverseEvent,
   PatientNote,
   Referral,
+  ReferralRawData,
+  OutreachAttempt,
   Appointment,
   User,
   Message,
@@ -26,7 +28,14 @@ import type {
   IntakeRecord,
   // Navigator Safety Map
   NavigatorLocation,
+  // Gellert blitz (journey / notes / billing)
+  JourneyEvent,
+  Provider,
+  StandingPatientFacts,
+  ChargeSlip,
+  Zone,
 } from "./types"
+import { gellertNoteTemplates } from "./gellert-templates"
 
 // ============================================================================
 // USERS
@@ -49,6 +58,7 @@ export const initialUsers: User[] = [
     phone: "(602) 555-0111",
     attributes: {
       homeZipCode: "85008", // East Phoenix
+      zoneId: "zone-tempe-scottsdale",
       homeLat: 33.4655,
       homeLng: -111.9963,
       serviceAreaRadius: 20,
@@ -66,6 +76,7 @@ export const initialUsers: User[] = [
     phone: "(480) 555-0112",
     attributes: {
       homeZipCode: "85281", // Tempe
+      zoneId: "zone-tempe-scottsdale",
       homeLat: 33.4255,
       homeLng: -111.94,
       serviceAreaRadius: 20,
@@ -83,6 +94,7 @@ export const initialUsers: User[] = [
     phone: "(602) 555-0113",
     attributes: {
       homeZipCode: "85021", // North Phoenix
+      zoneId: "zone-north-phoenix",
       homeLat: 33.5595,
       homeLng: -112.0937,
       serviceAreaRadius: 15,
@@ -101,6 +113,7 @@ export const initialUsers: User[] = [
     phone: "(623) 555-0114",
     attributes: {
       homeZipCode: "85301", // Glendale - West Valley
+      zoneId: "zone-west-valley",
       homeLat: 33.5387,
       homeLng: -112.1859,
       serviceAreaRadius: 15,
@@ -118,6 +131,7 @@ export const initialUsers: User[] = [
     phone: "(480) 555-0115",
     attributes: {
       homeZipCode: "85201", // Mesa - East Valley
+      zoneId: "zone-east-valley",
       homeLat: 33.4152,
       homeLng: -111.8315,
       serviceAreaRadius: 20,
@@ -135,6 +149,7 @@ export const initialUsers: User[] = [
     phone: "(602) 555-0116",
     attributes: {
       homeZipCode: "85001", // Central Phoenix
+      zoneId: "zone-central-phoenix",
       homeLat: 33.4484,
       homeLng: -112.074,
       serviceAreaRadius: 25,
@@ -186,6 +201,7 @@ export const initialUsers: User[] = [
     phone: "(480) 555-0119",
     attributes: {
       homeZipCode: "85204", // Mesa
+      zoneId: "zone-east-valley",
       homeLat: 33.3942,
       homeLng: -111.7893,
       serviceAreaRadius: 20,
@@ -203,6 +219,7 @@ export const initialUsers: User[] = [
     phone: "(480) 555-0120",
     attributes: {
       homeZipCode: "85296", // Gilbert
+      zoneId: "zone-east-valley",
       homeLat: 33.3103,
       homeLng: -111.7431,
       serviceAreaRadius: 15,
@@ -220,6 +237,7 @@ export const initialUsers: User[] = [
     phone: "(480) 555-0121",
     attributes: {
       homeZipCode: "85044", // Ahwatukee
+      zoneId: "zone-south-phoenix",
       homeLat: 33.3062,
       homeLng: -112.0119,
       serviceAreaRadius: 20,
@@ -246,18 +264,18 @@ export const initialSupervisors: Supervisor[] = [
 // ============================================================================
 
 export const initialNavigators: Navigator[] = [
-  { id: "nav1", name: "Emily Rodriguez", supervisorId: "sup1", monthlyUnits: 285, mtdUnits: 142, adverseEventCount: 2, cancellations: 3, medicationCompliance: 96, pcpCompliance: 94, highFivePercentage: 92, engagementScore: 88, lengthOfService: 24, patientCount: 45 },
-  { id: "nav2", name: "David Chen", supervisorId: "sup1", monthlyUnits: 312, mtdUnits: 156, adverseEventCount: 1, cancellations: 1, medicationCompliance: 98, pcpCompliance: 97, highFivePercentage: 95, engagementScore: 91, lengthOfService: 36, patientCount: 52 },
-  { id: "nav3", name: "Maria Santos", supervisorId: "sup1", monthlyUnits: 198, mtdUnits: 99, adverseEventCount: 4, cancellations: 6, medicationCompliance: 89, pcpCompliance: 85, highFivePercentage: 78, engagementScore: 72, lengthOfService: 8, patientCount: 38 },
+  { id: "nav1", name: "Emily Rodriguez", level: 3, supervisorId: "sup1", monthlyUnits: 285, mtdUnits: 142, adverseEventCount: 2, cancellations: 3, medicationCompliance: 96, pcpCompliance: 94, highFivePercentage: 92, engagementScore: 88, lengthOfService: 24, patientCount: 45 },
+  { id: "nav2", name: "David Chen", level: 3, supervisorId: "sup1", monthlyUnits: 312, mtdUnits: 156, adverseEventCount: 1, cancellations: 1, medicationCompliance: 98, pcpCompliance: 97, highFivePercentage: 95, engagementScore: 91, lengthOfService: 36, patientCount: 52 },
+  { id: "nav3", name: "Maria Santos", level: 1, supervisorId: "sup1", monthlyUnits: 198, mtdUnits: 99, adverseEventCount: 4, cancellations: 6, medicationCompliance: 89, pcpCompliance: 85, highFivePercentage: 78, engagementScore: 72, lengthOfService: 8, patientCount: 38 },
   // Matching-engine test navigators (Geography, Language, Load QA)
-  { id: "nav-maria", name: "Maria Gonzalez", supervisorId: "sup1", monthlyUnits: 198, mtdUnits: 99, adverseEventCount: 2, cancellations: 4, medicationCompliance: 90, pcpCompliance: 86, highFivePercentage: 80, engagementScore: 75, lengthOfService: 8, patientCount: 35 },
-  { id: "nav-john", name: "John Mitchell", supervisorId: "sup1", monthlyUnits: 260, mtdUnits: 130, adverseEventCount: 1, cancellations: 2, medicationCompliance: 94, pcpCompliance: 92, highFivePercentage: 86, engagementScore: 82, lengthOfService: 14, patientCount: 48 },
-  { id: "nav-sarah", name: "Sarah Thompson", supervisorId: "sup1", monthlyUnits: 120, mtdUnits: 60, adverseEventCount: 0, cancellations: 1, medicationCompliance: 96, pcpCompliance: 94, highFivePercentage: 90, engagementScore: 88, lengthOfService: 4, patientCount: 10 },
-  { id: "nav4", name: "John Park", supervisorId: "sup2", monthlyUnits: 267, mtdUnits: 133, adverseEventCount: 2, cancellations: 2, medicationCompliance: 94, pcpCompliance: 92, highFivePercentage: 88, engagementScore: 85, lengthOfService: 18, patientCount: 42 },
-  { id: "nav5", name: "Lisa Brown", supervisorId: "sup2", monthlyUnits: 245, mtdUnits: 122, adverseEventCount: 3, cancellations: 4, medicationCompliance: 91, pcpCompliance: 89, highFivePercentage: 84, engagementScore: 80, lengthOfService: 12, patientCount: 40 },
-  { id: "nav6", name: "Michael Lee", supervisorId: "sup3", monthlyUnits: 298, mtdUnits: 149, adverseEventCount: 1, cancellations: 2, medicationCompliance: 97, pcpCompliance: 95, highFivePercentage: 93, engagementScore: 89, lengthOfService: 30, patientCount: 48 },
-  { id: "nav7", name: "Sarah Johnson", supervisorId: "sup3", monthlyUnits: 178, mtdUnits: 89, adverseEventCount: 5, cancellations: 7, medicationCompliance: 86, pcpCompliance: 82, highFivePercentage: 74, engagementScore: 68, lengthOfService: 6, patientCount: 35 },
-  { id: "nav8", name: "Kevin Martinez", supervisorId: "sup3", monthlyUnits: 256, mtdUnits: 128, adverseEventCount: 2, cancellations: 3, medicationCompliance: 93, pcpCompliance: 91, highFivePercentage: 86, engagementScore: 82, lengthOfService: 15, patientCount: 41 },
+  { id: "nav-maria", name: "Maria Gonzalez", level: 1, supervisorId: "sup1", monthlyUnits: 198, mtdUnits: 99, adverseEventCount: 2, cancellations: 4, medicationCompliance: 90, pcpCompliance: 86, highFivePercentage: 80, engagementScore: 75, lengthOfService: 8, patientCount: 35 },
+  { id: "nav-john", name: "John Mitchell", level: 2, supervisorId: "sup1", monthlyUnits: 260, mtdUnits: 130, adverseEventCount: 1, cancellations: 2, medicationCompliance: 94, pcpCompliance: 92, highFivePercentage: 86, engagementScore: 82, lengthOfService: 14, patientCount: 48 },
+  { id: "nav-sarah", name: "Sarah Thompson", level: 1, supervisorId: "sup1", monthlyUnits: 120, mtdUnits: 60, adverseEventCount: 0, cancellations: 1, medicationCompliance: 96, pcpCompliance: 94, highFivePercentage: 90, engagementScore: 88, lengthOfService: 4, patientCount: 10 },
+  { id: "nav4", name: "John Park", level: 2, supervisorId: "sup2", monthlyUnits: 267, mtdUnits: 133, adverseEventCount: 2, cancellations: 2, medicationCompliance: 94, pcpCompliance: 92, highFivePercentage: 88, engagementScore: 85, lengthOfService: 18, patientCount: 42 },
+  { id: "nav5", name: "Lisa Brown", level: 2, supervisorId: "sup2", monthlyUnits: 245, mtdUnits: 122, adverseEventCount: 3, cancellations: 4, medicationCompliance: 91, pcpCompliance: 89, highFivePercentage: 84, engagementScore: 80, lengthOfService: 12, patientCount: 40 },
+  { id: "nav6", name: "Michael Lee", level: 3, supervisorId: "sup3", monthlyUnits: 298, mtdUnits: 149, adverseEventCount: 1, cancellations: 2, medicationCompliance: 97, pcpCompliance: 95, highFivePercentage: 93, engagementScore: 89, lengthOfService: 30, patientCount: 48 },
+  { id: "nav7", name: "Sarah Johnson", level: 1, supervisorId: "sup3", monthlyUnits: 178, mtdUnits: 89, adverseEventCount: 5, cancellations: 7, medicationCompliance: 86, pcpCompliance: 82, highFivePercentage: 74, engagementScore: 68, lengthOfService: 6, patientCount: 35 },
+  { id: "nav8", name: "Kevin Martinez", level: 2, supervisorId: "sup3", monthlyUnits: 256, mtdUnits: 128, adverseEventCount: 2, cancellations: 3, medicationCompliance: 93, pcpCompliance: 91, highFivePercentage: 86, engagementScore: 82, lengthOfService: 15, patientCount: 41 },
 ]
 
 // ============================================================================
@@ -267,6 +285,7 @@ export const initialNavigators: Navigator[] = [
 export const initialPatients: Patient[] = [
   {
     id: "pt1", name: "James Thompson", dob: "1952-03-15", chartNumber: "GH-2024-001", riskLevel: 3, survivalStatus: "active",
+    journeyPhase: "active", zoneId: "zone-central-phoenix",
     assignedNavigator: "nav1", assignedSupervisor: "sup1", healthPlan: "United Healthcare", enrollmentDate: "2024-06-01",
     lastContactDate: "2026-01-24", medicationCompliance: 85, pcpCompliance: true,
     upcomingAppointments: [{ id: "apt1", patientId: "pt1", navigatorId: "nav1", date: "2026-01-30", time: "10:00", type: "home_visit", status: "scheduled" }],
@@ -286,6 +305,7 @@ export const initialPatients: Patient[] = [
   },
   {
     id: "pt2", name: "Dorothy Martinez", dob: "1948-07-22", chartNumber: "GH-2024-002", riskLevel: 2, survivalStatus: "active",
+    journeyPhase: "active", zoneId: "zone-west-valley",
     assignedNavigator: "nav1", assignedSupervisor: "sup1", healthPlan: "Mercy Care", enrollmentDate: "2024-08-15",
     lastContactDate: "2026-01-22", medicationCompliance: 92, pcpCompliance: true,
     upcomingAppointments: [{ id: "apt2", patientId: "pt2", navigatorId: "nav1", date: "2026-01-29", time: "14:00", type: "phone_call", status: "scheduled" }],
@@ -303,6 +323,7 @@ export const initialPatients: Patient[] = [
   },
   {
     id: "pt3", name: "Robert Wilson", dob: "1945-11-08", chartNumber: "GH-2024-003", riskLevel: 3, survivalStatus: "active",
+    journeyPhase: "active", zoneId: "zone-tempe-scottsdale",
     assignedNavigator: "nav2", assignedSupervisor: "sup1", healthPlan: "United Healthcare", enrollmentDate: "2024-05-20",
     lastContactDate: "2026-01-20", medicationCompliance: 78, pcpCompliance: false,
     upcomingAppointments: [],
@@ -320,6 +341,9 @@ export const initialPatients: Patient[] = [
   },
   {
     id: "pt4", name: "Helen Garcia", dob: "1950-04-30", chartNumber: "GH-2024-004", riskLevel: 1, survivalStatus: "active",
+    // Graduated to telenavigation; lastCheckInAt 35 days before anchor -> OVERDUE on load
+    journeyPhase: "telenavigation", zoneId: "zone-tempe-scottsdale",
+    telenavigation: { startedAt: "2025-12-24", cadenceDays: 30, lastCheckInAt: "2025-12-26" },
     assignedNavigator: "nav2", assignedSupervisor: "sup1", healthPlan: "Molina", enrollmentDate: "2024-09-01",
     lastContactDate: "2026-01-25", medicationCompliance: 98, pcpCompliance: true,
     upcomingAppointments: [{ id: "apt3", patientId: "pt4", navigatorId: "nav2", date: "2026-02-01", time: "09:00", type: "video_call", status: "scheduled" }],
@@ -336,6 +360,7 @@ export const initialPatients: Patient[] = [
   },
   {
     id: "pt5", name: "Frank Anderson", dob: "1943-09-12", chartNumber: "GH-2024-005", riskLevel: 3, survivalStatus: "active",
+    journeyPhase: "active", zoneId: "zone-east-valley",
     assignedNavigator: "nav3", assignedSupervisor: "sup1", healthPlan: "United Healthcare", enrollmentDate: "2024-04-10",
     lastContactDate: "2026-01-18", medicationCompliance: 72, pcpCompliance: false,
     upcomingAppointments: [],
@@ -360,6 +385,8 @@ export const initialPatients: Patient[] = [
     chartNumber: "GH-2026-BILL",
     riskLevel: 2,
     survivalStatus: "active",
+    journeyPhase: "active",
+    zoneId: "zone-east-valley",
     assignedNavigator: "nav-john",
     assignedSupervisor: "sup1",
     healthPlan: "Mercy Care",
@@ -384,6 +411,8 @@ export const initialPatients: Patient[] = [
     chartNumber: "GH-2026-VAL",
     riskLevel: 2,
     survivalStatus: "active",
+    journeyPhase: "active",
+    zoneId: "zone-west-valley",
     assignedNavigator: "nav-maria",
     assignedSupervisor: "sup1",
     healthPlan: "United Healthcare",
@@ -410,6 +439,8 @@ export const initialPatients: Patient[] = [
     chartNumber: "GH-2026-ELENA",
     riskLevel: 2,
     survivalStatus: "active",
+    journeyPhase: "active",
+    zoneId: "zone-west-valley",
     assignedNavigator: "nav-maria", // Maria Gonzalez - Spanish-speaking navigator
     assignedSupervisor: "sup1",
     healthPlan: "Mercy Care",
@@ -450,6 +481,117 @@ export const initialPatients: Patient[] = [
     payerId: "payer-mercy",
     memberId: "MC789456123", // Matches referral IN1 member ID
   },
+  // ============================================================================
+  // JOURNEY ENGINE DEMO PATIENTS (Gellert WorkFlow2025)
+  // CRITICAL: these three patients have NO time logs so verify:billing /
+  // verify:claims seed integrity is untouched.
+  // ============================================================================
+  // Intake 1 scheduled in 2 days, checklist empty, PCP due-by countdown visible
+  {
+    id: "pt-journey-intake1",
+    name: "Rosa Delgado",
+    dob: "1954-02-09",
+    chartNumber: "GH-2026-J001",
+    riskLevel: 2,
+    survivalStatus: "active",
+    journeyPhase: "intake",
+    zoneId: "zone-central-phoenix",
+    assignedNavigator: "nav-sarah",
+    assignedSupervisor: "sup1",
+    healthPlan: "Mercy Care",
+    enrollmentDate: "2026-01-28",
+    lastContactDate: "2026-01-28",
+    medicationCompliance: 0,
+    pcpCompliance: false,
+    upcomingAppointments: [
+      { id: "apt-journey-intake1", patientId: "pt-journey-intake1", navigatorId: "nav-sarah", date: "2026-02-01", time: "10:00", type: "home_visit", status: "scheduled", notes: "Intake 1 — onboarding visit" },
+    ],
+    medications: [],
+    adverseEvents: [],
+    address: { street: "812 N 3rd Ave", city: "Phoenix", state: "AZ", zip: "85001" },
+    phone: "(602) 555-0311",
+    lat: 33.4531,
+    lng: -112.0782,
+    billingTrack: "CHI",
+    primaryDiagnosis: "Essential Hypertension (I10)",
+    icdCodes: ["I10"],
+    referralSource: "St. Joseph's Hospital",
+    payerId: "payer-mercy",
+    memberId: "MC311244780",
+  },
+  // Intake 1 complete, Intake 2 scheduled with TWO no-shows already (live tension:
+  // one more no-show triggers the 3-no-show MIA closure protocol)
+  {
+    id: "pt-journey-intake2",
+    name: "Walter Briggs",
+    dob: "1949-08-17",
+    chartNumber: "GH-2026-J002",
+    riskLevel: 2,
+    survivalStatus: "active",
+    journeyPhase: "intake",
+    zoneId: "zone-north-phoenix",
+    assignedNavigator: "nav3",
+    assignedSupervisor: "sup1",
+    healthPlan: "AHCCCS",
+    enrollmentDate: "2026-01-15",
+    lastContactDate: "2026-01-20",
+    medicationCompliance: 0,
+    pcpCompliance: false,
+    upcomingAppointments: [
+      { id: "apt-journey-intake2", patientId: "pt-journey-intake2", navigatorId: "nav3", date: "2026-02-02", time: "13:30", type: "home_visit", status: "scheduled", notes: "Intake 2 — survey + navigation contract (third scheduling attempt)" },
+    ],
+    medications: [],
+    adverseEvents: [],
+    address: { street: "9235 N 7th St", city: "Phoenix", state: "AZ", zip: "85021" },
+    phone: "(602) 555-0322",
+    lat: 33.5701,
+    lng: -112.0653,
+    billingTrack: "CHI",
+    primaryDiagnosis: "COPD (J44.9)",
+    icdCodes: ["J44.9", "F17.210"],
+    referralSource: "St. Joseph's Hospital",
+    payerId: "payer-ahcccs",
+    memberId: "AHC220987465",
+  },
+  // Exited via the patient-initiated pathway with supervisor confirmation recorded
+  {
+    id: "pt-journey-exited",
+    name: "Gloria Sandoval",
+    dob: "1957-12-03",
+    chartNumber: "GH-2026-J003",
+    riskLevel: 1,
+    survivalStatus: "inactive",
+    journeyPhase: "exited",
+    zoneId: "zone-south-phoenix",
+    exit: {
+      pathway: "patient_initiated",
+      exitedAt: "2026-01-18T16:00:00Z",
+      documentedBy: "nav8",
+      supervisorConfirmedBy: "sup1",
+      providerNotifiedAt: "2026-01-19T09:00:00Z",
+      notes: "Patient stated she is relocating to Albuquerque to live with her daughter and no longer wishes to receive navigation services. Supervisor confirmed the patient-initiated exit per protocol; referring provider notified.",
+    },
+    assignedNavigator: "nav8",
+    assignedSupervisor: "sup1",
+    healthPlan: "Mercy Care",
+    enrollmentDate: "2025-12-10",
+    lastContactDate: "2026-01-18",
+    medicationCompliance: 74,
+    pcpCompliance: true,
+    upcomingAppointments: [],
+    medications: [],
+    adverseEvents: [],
+    address: { street: "4419 S 12th St", city: "Phoenix", state: "AZ", zip: "85044" },
+    phone: "(602) 555-0333",
+    lat: 33.3089,
+    lng: -112.0154,
+    billingTrack: "CHI",
+    primaryDiagnosis: "Type 2 Diabetes (E11.9)",
+    icdCodes: ["E11.9"],
+    referralSource: "Mercy Care",
+    payerId: "payer-mercy",
+    memberId: "MC556711098",
+  },
 ]
 
 // ============================================================================
@@ -462,6 +604,9 @@ export const initialAppointments: Appointment[] = [
   { id: "apt3", patientId: "pt4", navigatorId: "nav2", date: "2026-02-01", time: "09:00", type: "video_call", status: "scheduled" },
   // Elena's pharmacy pickup for Patient Portal demo
   { id: "apt-elena-pharmacy", patientId: "pt-elena", navigatorId: "nav-maria", date: "2026-02-02", time: "14:00", type: "clinic", status: "scheduled", notes: "Pharmacy Pickup - CVS on Glendale Ave" },
+  // Journey engine demo: intake visits for the two in-intake patients
+  { id: "apt-journey-intake1", patientId: "pt-journey-intake1", navigatorId: "nav-sarah", date: "2026-02-01", time: "10:00", type: "home_visit", status: "scheduled", notes: "Intake 1 — onboarding visit" },
+  { id: "apt-journey-intake2", patientId: "pt-journey-intake2", navigatorId: "nav3", date: "2026-02-02", time: "13:30", type: "home_visit", status: "scheduled", notes: "Intake 2 — survey + navigation contract (third scheduling attempt)" },
 ]
 
 // ============================================================================
@@ -479,45 +624,82 @@ export const initialAdverseEvents: AdverseEvent[] = [
 // REFERRALS (Pending assignment) - With AMD Integration Raw Data
 // ============================================================================
 
+// Compact builders so the 20-referral pipeline seed stays readable.
+// Plain data comes out; rebaseToToday deep-clones and shifts every date.
+function refRawData(o: {
+  name: string; dob: string; gender: "M" | "F"; street: string; city: string; zip: string
+  phone: string; dx: string; icd: string[]; dxDate: string
+  payerName: string; payerId: string; memberId: string
+  physician: string; facility: string
+}): ReferralRawData {
+  return {
+    PID: {
+      patientName: o.name,
+      dob: o.dob,
+      gender: o.gender,
+      address: { street: o.street, city: o.city, state: "AZ", zip: o.zip },
+      phone: o.phone,
+    },
+    DG1: { primaryDiagnosis: o.dx, icdCodes: o.icd, diagnosisDate: o.dxDate },
+    IN1: { payerName: o.payerName, payerId: o.payerId, memberId: o.memberId },
+    PV1: { referringPhysician: o.physician, facilityName: o.facility },
+  }
+}
+
+/** n outreach attempts spaced 2 days apart from startIso, last disposition wins */
+function mkAttempts(
+  refId: string,
+  startIso: string,
+  dispositions: OutreachAttempt["disposition"][],
+  channels?: OutreachAttempt["channel"][]
+): OutreachAttempt[] {
+  return dispositions.map((disposition, i) => {
+    const at = new Date(`${startIso}T10:00:00Z`)
+    at.setUTCDate(at.getUTCDate() + i * 2)
+    return {
+      id: `${refId}-att-${i + 1}`,
+      attemptNumber: i + 1,
+      at: at.toISOString().replace(/\.\d{3}Z$/, "Z"),
+      by: "sup1",
+      byName: "Marcus Williams",
+      channel: channels?.[i] ?? "phone",
+      disposition,
+    }
+  })
+}
+
+const ELIGIBLE_CHECK = {
+  insuranceVerified: true,
+  inServiceArea: true,
+  medicalNeedConfirmed: true,
+  levelOfCareAppropriate: true,
+  ageEligible: true,
+  outcome: "eligible" as const,
+}
+
 export const initialReferrals: Referral[] = [
-  // ============================================================================
-  // MATCHING ENGINE TEST REFERRALS
-  // ============================================================================
-  // Elena Rodriguez - Should match Maria (Spanish speaker in West Valley)
+  // ==========================================================================
+  // ACTIVE PIPELINE (every working state demoable on load)
+  // ==========================================================================
+  // CONVERTED - Elena Rodriguez (golden-thread history; patient pt-elena)
   {
     id: "ref-elena",
     receivedAt: "2026-01-28T09:00:00Z",
     source: "Banner Health",
-    rawData: {
-      PID: {
-        patientName: "Elena Rodriguez",
-        dob: "1958-06-12",
-        gender: "F",
-        address: {
-          street: "2145 W Glendale Ave",
-          city: "Phoenix",
-          state: "AZ",
-          zip: "85303" // West Valley Patient
-        },
-        phone: "(623) 555-0189",
-        email: "elena.rodriguez@email.com"
-      },
-      DG1: {
-        primaryDiagnosis: "Type 2 Diabetes with peripheral neuropathy",
-        icdCodes: ["E11.42", "G63.2"],
-        diagnosisDate: "2026-01-25"
-      },
-      IN1: {
-        payerName: "Mercy Care",
-        payerId: "MC-AZ",
-        memberId: "MC789456123"
-      },
-      PV1: {
-        referringPhysician: "Dr. Ana Martinez",
-        facilityName: "Banner Estrella Medical Center"
-      }
-    },
-    status: "pending",
+    rawData: refRawData({
+      name: "Elena Rodriguez", dob: "1958-06-12", gender: "F",
+      street: "2145 W Glendale Ave", city: "Phoenix", zip: "85303",
+      phone: "(623) 555-0189", dx: "Type 2 Diabetes with peripheral neuropathy",
+      icd: ["E11.42", "G63.2"], dxDate: "2026-01-25",
+      payerName: "Mercy Care", payerId: "MC-AZ", memberId: "MC789456123",
+      physician: "Dr. Ana Martinez", facility: "Banner Estrella Medical Center",
+    }),
+    status: "converted",
+    eligibility: { ...ELIGIBLE_CHECK, checkedAt: "2026-01-28T10:00:00Z", checkedBy: "sup1" },
+    acceptedAt: "2026-01-28T10:30:00Z",
+    outreachAttempts: mkAttempts("ref-elena", "2026-01-28", ["agreed"]),
+    agreedAt: "2026-01-28T14:30:00Z",
+    patientId: "pt-elena",
     patientName: "Elena Rodriguez",
     dob: "1958-06-12",
     referralSource: "Banner Health",
@@ -525,96 +707,54 @@ export const initialReferrals: Referral[] = [
     referralDate: "2026-01-28",
     diagnosis: "Type 2 Diabetes with neuropathy",
     healthPlan: "Mercy Care",
-    // Matching engine fields
     zipCode: "85303",
-    language: "es", // Spanish speaker - critical match factor
+    language: "es",
     requiredAcuity: "L2",
   },
-  // Mike Smith - Should match John (East Valley, but warn about capacity)
+  // RECEIVED (fresh today) - Mike Smith, awaiting eligibility review
   {
     id: "ref-mike",
-    receivedAt: "2026-01-28T10:30:00Z",
+    receivedAt: "2026-01-30T08:10:00Z",
     source: "HonorHealth",
-    rawData: {
-      PID: {
-        patientName: "Mike Smith",
-        dob: "1962-09-23",
-        gender: "M",
-        address: {
-          street: "4567 E Main St",
-          city: "Mesa",
-          state: "AZ",
-          zip: "85201" // East Valley - Mesa
-        },
-        phone: "(480) 555-0234",
-        email: "mike.smith62@email.com"
-      },
-      DG1: {
-        primaryDiagnosis: "Essential Hypertension",
-        icdCodes: ["I10"],
-        diagnosisDate: "2026-01-26"
-      },
-      IN1: {
-        payerName: "United Healthcare",
-        payerId: "UHC-AZ",
-        memberId: "UHC456789123"
-      },
-      PV1: {
-        referringPhysician: "Dr. Robert Chen",
-        facilityName: "HonorHealth Scottsdale"
-      }
-    },
-    status: "pending",
+    rawData: refRawData({
+      name: "Mike Smith", dob: "1962-09-23", gender: "M",
+      street: "4567 E Main St", city: "Mesa", zip: "85201",
+      phone: "(480) 555-0234", dx: "Essential Hypertension",
+      icd: ["I10"], dxDate: "2026-01-26",
+      payerName: "United Healthcare", payerId: "UHC-AZ", memberId: "UHC456789123",
+      physician: "Dr. Robert Chen", facility: "HonorHealth Scottsdale",
+    }),
+    status: "received",
+    outreachAttempts: [],
     patientName: "Mike Smith",
     dob: "1962-09-23",
     referralSource: "HonorHealth",
     riskScore: 1,
-    referralDate: "2026-01-28",
+    referralDate: "2026-01-30",
     diagnosis: "Essential Hypertension",
     healthPlan: "United Healthcare",
-    // Matching engine fields
     zipCode: "85201",
     language: "en",
     requiredAcuity: "L1",
   },
-  // David Jones - Should strictly match Sarah (L3 requirement)
+  // AGREED - David Jones (Match & Assign golden-thread entry, L3 -> Sarah)
   {
     id: "ref-david",
     receivedAt: "2026-01-28T11:45:00Z",
     source: "Valleywise Health",
-    rawData: {
-      PID: {
-        patientName: "David Jones",
-        dob: "1945-02-14",
-        gender: "M",
-        address: {
-          street: "789 N Central Ave",
-          city: "Phoenix",
-          state: "AZ",
-          zip: "85001" // Central Phoenix
-        },
-        phone: "(602) 555-0345",
-        email: "d.jones45@email.com"
-      },
-      DG1: {
-        primaryDiagnosis: "End Stage Renal Disease on Hemodialysis with CHF",
-        icdCodes: ["N18.6", "I50.9", "Z99.2"],
-        diagnosisDate: "2026-01-20"
-      },
-      IN1: {
-        payerName: "AHCCCS",
-        payerId: "AHCCCS-AZ",
-        memberId: "AHC987654321"
-      },
-      PV1: {
-        admitDate: "2026-01-15",
-        dischargeDate: "2026-01-27",
-        attendingPhysician: "Dr. Lisa Wong",
-        referringPhysician: "Dr. James Park",
-        facilityName: "Valleywise Medical Center"
-      }
-    },
-    status: "pending",
+    rawData: refRawData({
+      name: "David Jones", dob: "1945-02-14", gender: "M",
+      street: "789 N Central Ave", city: "Phoenix", zip: "85001",
+      phone: "(602) 555-0345", dx: "End Stage Renal Disease on Hemodialysis with CHF",
+      icd: ["N18.6", "I50.9", "Z99.2"], dxDate: "2026-01-20",
+      payerName: "AHCCCS", payerId: "AHCCCS-AZ", memberId: "AHC987654321",
+      physician: "Dr. James Park", facility: "Valleywise Medical Center",
+    }),
+    status: "agreed",
+    eligibility: { ...ELIGIBLE_CHECK, checkedAt: "2026-01-28T13:00:00Z", checkedBy: "sup1" },
+    acceptedAt: "2026-01-28T13:05:00Z",
+    outreachAttempts: mkAttempts("ref-david", "2026-01-29", ["agreed"]),
+    agreedAt: "2026-01-29T10:00:00Z",
     patientName: "David Jones",
     dob: "1945-02-14",
     referralSource: "Valleywise Health",
@@ -622,148 +762,81 @@ export const initialReferrals: Referral[] = [
     referralDate: "2026-01-28",
     diagnosis: "ESRD on Dialysis, CHF",
     healthPlan: "AHCCCS",
-    // Matching engine fields
     zipCode: "85001",
     language: "en",
-    requiredAcuity: "L3", // High risk - only Sarah can handle
+    requiredAcuity: "L3",
   },
-  // ============================================================================
-  // ORIGINAL REFERRALS (updated with matching fields)
-  // ============================================================================
+  // ACCEPTED + SLA BREACHED - William Anderson (accepted 3 days ago, no contact yet)
   {
     id: "ref1",
     receivedAt: "2026-01-25T14:32:00Z",
-    source: "Dignity Health",
-    rawData: {
-      PID: {
-        patientName: "William Anderson",
-        dob: "1948-03-15",
-        gender: "M",
-        ssn: "***-**-4521",
-        address: {
-          street: "4521 W Camelback Rd",
-          city: "Phoenix",
-          state: "AZ",
-          zip: "85031"
-        },
-        phone: "(602) 555-0147",
-        email: "w.anderson48@email.com"
-      },
-      DG1: {
-        primaryDiagnosis: "Congestive Heart Failure with COPD and Type 2 Diabetes",
-        icdCodes: ["I50.9", "J44.9", "E11.9"],
-        diagnosisDate: "2026-01-20"
-      },
-      IN1: {
-        payerName: "United Healthcare",
-        payerId: "UHC-AZ",
-        memberId: "UHC987654321",
-        groupNumber: "GRP-001"
-      },
-      PV1: {
-        admitDate: "2026-01-18",
-        dischargeDate: "2026-01-24",
-        attendingPhysician: "Dr. Michael Torres",
-        referringPhysician: "Dr. Sarah Kim",
-        facilityName: "Dignity Health St. Joseph's"
-      }
-    },
-    status: "pending",
-    // Denormalized fields
+    source: "St. Joseph's Hospital",
+    rawData: refRawData({
+      name: "William Anderson", dob: "1948-03-15", gender: "M",
+      street: "4521 W Camelback Rd", city: "Phoenix", zip: "85031",
+      phone: "(602) 555-0147", dx: "Congestive Heart Failure with COPD and Type 2 Diabetes",
+      icd: ["I50.9", "J44.9", "E11.9"], dxDate: "2026-01-20",
+      payerName: "United Healthcare", payerId: "UHC-AZ", memberId: "UHC987654321",
+      physician: "Dr. Sarah Kim", facility: "Dignity Health St. Joseph's",
+    }),
+    status: "accepted",
+    eligibility: { ...ELIGIBLE_CHECK, checkedAt: "2026-01-27T09:00:00Z", checkedBy: "sup1" },
+    acceptedAt: "2026-01-27T09:00:00Z", // 3 days before anchor -> 48h SLA BREACHED on load
+    outreachAttempts: [],
     patientName: "William Anderson",
     dob: "1948-03-15",
-    referralSource: "Dignity Health",
+    referralSource: "St. Joseph's Hospital",
     riskScore: 3,
     referralDate: "2026-01-25",
     diagnosis: "CHF, COPD, Type 2 Diabetes",
     healthPlan: "United Healthcare",
-    // Matching engine fields
     zipCode: "85031",
     language: "en",
     requiredAcuity: "L3",
   },
+  // RECEIVED (yesterday) - Patricia Moore
   {
     id: "ref2",
-    receivedAt: "2026-01-24T09:15:00Z",
+    receivedAt: "2026-01-29T16:45:00Z",
     source: "Banner Health",
-    rawData: {
-      PID: {
-        patientName: "Patricia Moore",
-        dob: "1955-08-22",
-        gender: "F",
-        address: {
-          street: "789 E Indian School Rd",
-          city: "Scottsdale",
-          state: "AZ",
-          zip: "85251"
-        },
-        phone: "(480) 555-0198"
-      },
-      DG1: {
-        primaryDiagnosis: "Essential Hypertension with Chronic Kidney Disease Stage 3",
-        icdCodes: ["I10", "N18.3"],
-        diagnosisDate: "2026-01-22"
-      },
-      IN1: {
-        payerName: "Mercy Care",
-        payerId: "MC-AZ",
-        memberId: "MC123456789"
-      },
-      PV1: {
-        referringPhysician: "Dr. James Chen",
-        facilityName: "Banner Desert Medical Center"
-      }
-    },
-    status: "pending",
+    rawData: refRawData({
+      name: "Patricia Moore", dob: "1955-08-22", gender: "F",
+      street: "789 E Indian School Rd", city: "Scottsdale", zip: "85251",
+      phone: "(480) 555-0198", dx: "Essential Hypertension with Chronic Kidney Disease Stage 3",
+      icd: ["I10", "N18.3"], dxDate: "2026-01-22",
+      payerName: "Mercy Care", payerId: "MC-AZ", memberId: "MC123456789",
+      physician: "Dr. James Chen", facility: "Banner Desert Medical Center",
+    }),
+    status: "received",
+    outreachAttempts: [],
     patientName: "Patricia Moore",
     dob: "1955-08-22",
     referralSource: "Banner Health",
     riskScore: 2,
-    referralDate: "2026-01-24",
+    referralDate: "2026-01-29",
     diagnosis: "Hypertension, CKD Stage 3",
     healthPlan: "Mercy Care",
-    // Matching engine fields
     zipCode: "85251",
     language: "en",
     requiredAcuity: "L2",
   },
+  // OUTREACH IN PROGRESS - George Taylor (3 of 7 attempts logged)
   {
     id: "ref3",
     receivedAt: "2026-01-23T16:45:00Z",
     source: "Valleywise Health",
-    rawData: {
-      PID: {
-        patientName: "George Taylor",
-        dob: "1942-11-08",
-        gender: "M",
-        address: {
-          street: "2340 S 24th St",
-          city: "Phoenix",
-          state: "AZ",
-          zip: "85034"
-        },
-        phone: "(602) 555-0234",
-        email: "g.taylor42@email.com"
-      },
-      DG1: {
-        primaryDiagnosis: "End Stage Renal Disease on Hemodialysis with Coronary Artery Disease",
-        icdCodes: ["N18.6", "I25.10", "Z99.2"],
-        diagnosisDate: "2026-01-15"
-      },
-      IN1: {
-        payerName: "AHCCCS",
-        payerId: "AHCCCS-AZ",
-        memberId: "AHC567891234"
-      },
-      PV1: {
-        admitDate: "2026-01-12",
-        dischargeDate: "2026-01-22",
-        attendingPhysician: "Dr. Robert Martinez",
-        referringPhysician: "Dr. Lisa Wong",
-        facilityName: "Valleywise Medical Center"
-      }
-    },
-    status: "pending",
+    rawData: refRawData({
+      name: "George Taylor", dob: "1942-11-08", gender: "M",
+      street: "2340 S 24th St", city: "Phoenix", zip: "85034",
+      phone: "(602) 555-0234", dx: "End Stage Renal Disease on Hemodialysis with Coronary Artery Disease",
+      icd: ["N18.6", "I25.10", "Z99.2"], dxDate: "2026-01-15",
+      payerName: "AHCCCS", payerId: "AHCCCS-AZ", memberId: "AHC567891234",
+      physician: "Dr. Lisa Wong", facility: "Valleywise Medical Center",
+    }),
+    status: "outreach",
+    eligibility: { ...ELIGIBLE_CHECK, checkedAt: "2026-01-26T10:00:00Z", checkedBy: "sup1" },
+    acceptedAt: "2026-01-26T10:00:00Z",
+    outreachAttempts: mkAttempts("ref3", "2026-01-27", ["no_answer", "voicemail", "no_answer"], ["phone", "phone", "text"]),
     patientName: "George Taylor",
     dob: "1942-11-08",
     referralSource: "Valleywise Health",
@@ -771,10 +844,468 @@ export const initialReferrals: Referral[] = [
     referralDate: "2026-01-23",
     diagnosis: "ESRD on Dialysis, CAD",
     healthPlan: "AHCCCS",
-    // Matching engine fields
     zipCode: "85034",
     language: "en",
     requiredAcuity: "L3",
+  },
+  // INTAKE SCHEDULED - Teresa Nguyen (agreed; Intake 1 on the books)
+  {
+    id: "ref-sjh-intake-sched",
+    receivedAt: "2026-01-24T09:20:00Z",
+    source: "St. Joseph's Hospital",
+    rawData: refRawData({
+      name: "Teresa Nguyen", dob: "1959-04-11", gender: "F",
+      street: "1730 W Thomas Rd", city: "Phoenix", zip: "85012",
+      phone: "(602) 555-0402", dx: "Congestive Heart Failure",
+      icd: ["I50.9"], dxDate: "2026-01-21",
+      payerName: "Mercy Care", payerId: "MC-AZ", memberId: "MC445120993",
+      physician: "Dr. Priya Raman", facility: "Dignity Health St. Joseph's",
+    }),
+    status: "intake_scheduled",
+    eligibility: { ...ELIGIBLE_CHECK, checkedAt: "2026-01-25T09:00:00Z", checkedBy: "sup1" },
+    acceptedAt: "2026-01-25T09:00:00Z",
+    outreachAttempts: mkAttempts("ref-sjh-intake-sched", "2026-01-26", ["voicemail", "agreed"]),
+    agreedAt: "2026-01-28T10:00:00Z",
+    patientName: "Teresa Nguyen",
+    dob: "1959-04-11",
+    referralSource: "St. Joseph's Hospital",
+    riskScore: 2,
+    referralDate: "2026-01-24",
+    diagnosis: "Congestive Heart Failure",
+    healthPlan: "Mercy Care",
+    zipCode: "85012",
+    language: "en",
+    requiredAcuity: "L2",
+  },
+  // ==========================================================================
+  // HISTORICAL - CONVERTED (4 more; conversion = 5/20 = 25%)
+  // ==========================================================================
+  {
+    id: "ref-sjh-conv1",
+    receivedAt: "2025-12-26T10:15:00Z",
+    source: "St. Joseph's Hospital",
+    rawData: refRawData({
+      name: "Sam Underwood", dob: "1960-05-14", gender: "M",
+      street: "4567 E University Dr", city: "Mesa", zip: "85201",
+      phone: "(480) 555-0451", dx: "Type 2 diabetes",
+      icd: ["E11.9", "Z79.4"], dxDate: "2025-12-22",
+      payerName: "Mercy Care", payerId: "MC-AZ", memberId: "MC998812345",
+      physician: "Dr. Owen Blake", facility: "Dignity Health St. Joseph's",
+    }),
+    status: "converted",
+    eligibility: { ...ELIGIBLE_CHECK, checkedAt: "2025-12-27T09:00:00Z", checkedBy: "sup1" },
+    acceptedAt: "2025-12-27T09:00:00Z",
+    outreachAttempts: mkAttempts("ref-sjh-conv1", "2025-12-28", ["voicemail", "agreed"]),
+    agreedAt: "2025-12-30T11:00:00Z",
+    patientId: "pt-billing",
+    patientName: "Sam Underwood",
+    dob: "1960-05-14",
+    referralSource: "St. Joseph's Hospital",
+    riskScore: 2,
+    referralDate: "2025-12-26",
+    diagnosis: "Type 2 diabetes",
+    healthPlan: "Mercy Care",
+    zipCode: "85201",
+    language: "en",
+    requiredAcuity: "L2",
+  },
+  {
+    id: "ref-sjh-conv2",
+    receivedAt: "2026-01-22T13:40:00Z",
+    source: "St. Joseph's Hospital",
+    rawData: refRawData({
+      name: "Rosa Delgado", dob: "1954-02-09", gender: "F",
+      street: "812 N 3rd Ave", city: "Phoenix", zip: "85001",
+      phone: "(602) 555-0311", dx: "Essential Hypertension",
+      icd: ["I10"], dxDate: "2026-01-19",
+      payerName: "Mercy Care", payerId: "MC-AZ", memberId: "MC311244780",
+      physician: "Dr. Sarah Kim", facility: "Dignity Health St. Joseph's",
+    }),
+    status: "converted",
+    eligibility: { ...ELIGIBLE_CHECK, checkedAt: "2026-01-23T09:30:00Z", checkedBy: "sup1" },
+    acceptedAt: "2026-01-23T09:30:00Z",
+    outreachAttempts: mkAttempts("ref-sjh-conv2", "2026-01-24", ["no_answer", "agreed"]),
+    agreedAt: "2026-01-26T10:00:00Z",
+    patientId: "pt-journey-intake1",
+    patientName: "Rosa Delgado",
+    dob: "1954-02-09",
+    referralSource: "St. Joseph's Hospital",
+    riskScore: 2,
+    referralDate: "2026-01-22",
+    diagnosis: "Essential Hypertension",
+    healthPlan: "Mercy Care",
+    zipCode: "85001",
+    language: "es",
+    requiredAcuity: "L2",
+  },
+  {
+    id: "ref-sjh-conv3",
+    receivedAt: "2026-01-09T08:55:00Z",
+    source: "St. Joseph's Hospital",
+    rawData: refRawData({
+      name: "Walter Briggs", dob: "1949-08-17", gender: "M",
+      street: "9235 N 7th St", city: "Phoenix", zip: "85021",
+      phone: "(602) 555-0322", dx: "COPD",
+      icd: ["J44.9", "F17.210"], dxDate: "2026-01-06",
+      payerName: "AHCCCS", payerId: "AHCCCS-AZ", memberId: "AHC220987465",
+      physician: "Dr. Owen Blake", facility: "Dignity Health St. Joseph's",
+    }),
+    status: "converted",
+    eligibility: { ...ELIGIBLE_CHECK, checkedAt: "2026-01-10T10:00:00Z", checkedBy: "sup1" },
+    acceptedAt: "2026-01-10T10:00:00Z",
+    outreachAttempts: mkAttempts("ref-sjh-conv3", "2026-01-11", ["voicemail", "agreed"]),
+    agreedAt: "2026-01-13T15:00:00Z",
+    patientId: "pt-journey-intake2",
+    patientName: "Walter Briggs",
+    dob: "1949-08-17",
+    referralSource: "St. Joseph's Hospital",
+    riskScore: 2,
+    referralDate: "2026-01-09",
+    diagnosis: "COPD",
+    healthPlan: "AHCCCS",
+    zipCode: "85021",
+    language: "en",
+    requiredAcuity: "L2",
+  },
+  {
+    id: "ref-mercy-conv",
+    receivedAt: "2025-12-05T11:25:00Z",
+    source: "Mercy Care",
+    rawData: refRawData({
+      name: "Gloria Sandoval", dob: "1957-12-03", gender: "F",
+      street: "4419 S 12th St", city: "Phoenix", zip: "85044",
+      phone: "(602) 555-0333", dx: "Type 2 Diabetes",
+      icd: ["E11.9"], dxDate: "2025-12-01",
+      payerName: "Mercy Care", payerId: "MC-AZ", memberId: "MC556711098",
+      physician: "Dr. Hannah Ortiz", facility: "Mercy Care Plan",
+    }),
+    status: "converted",
+    eligibility: { ...ELIGIBLE_CHECK, checkedAt: "2025-12-06T09:00:00Z", checkedBy: "sup1" },
+    acceptedAt: "2025-12-06T09:00:00Z",
+    outreachAttempts: mkAttempts("ref-mercy-conv", "2025-12-07", ["agreed"]),
+    agreedAt: "2025-12-07T10:00:00Z",
+    patientId: "pt-journey-exited",
+    patientName: "Gloria Sandoval",
+    dob: "1957-12-03",
+    referralSource: "Mercy Care",
+    riskScore: 1,
+    referralDate: "2025-12-05",
+    diagnosis: "Type 2 Diabetes",
+    healthPlan: "Mercy Care",
+    zipCode: "85044",
+    language: "en",
+    requiredAcuity: "L1",
+  },
+  // ==========================================================================
+  // HISTORICAL - INELIGIBLE (4 of the 5 documented reasons)
+  // ==========================================================================
+  {
+    id: "ref-sjh-inelig",
+    receivedAt: "2026-01-12T10:05:00Z",
+    source: "St. Joseph's Hospital",
+    rawData: refRawData({
+      name: "Harold Finch", dob: "1951-07-30", gender: "M",
+      street: "2201 W Bethany Home Rd", city: "Phoenix", zip: "85021",
+      phone: "(602) 555-0361", dx: "Chronic Kidney Disease Stage 2",
+      icd: ["N18.2"], dxDate: "2026-01-08",
+      payerName: "Aetna PPO", payerId: "AETNA", memberId: "AET99120034",
+      physician: "Dr. Sarah Kim", facility: "Dignity Health St. Joseph's",
+    }),
+    status: "ineligible",
+    eligibility: {
+      checkedAt: "2026-01-13T09:00:00Z", checkedBy: "sup1",
+      insuranceVerified: false, inServiceArea: true, medicalNeedConfirmed: true,
+      levelOfCareAppropriate: true, ageEligible: true,
+      outcome: "ineligible", ineligibilityReason: "insurance",
+      notes: "Commercial PPO not contracted; no Medicaid/Medicare coverage on file.",
+    },
+    outreachAttempts: [],
+    closedAt: "2026-01-13T09:10:00Z",
+    closeReason: "ineligible",
+    providerNotifiedAt: "2026-01-13T09:30:00Z",
+    patientName: "Harold Finch",
+    dob: "1951-07-30",
+    referralSource: "St. Joseph's Hospital",
+    riskScore: 1,
+    referralDate: "2026-01-12",
+    diagnosis: "CKD Stage 2",
+    healthPlan: "Aetna PPO",
+    zipCode: "85021",
+    language: "en",
+    requiredAcuity: "L1",
+  },
+  {
+    id: "ref-vw-inelig",
+    receivedAt: "2026-01-06T14:50:00Z",
+    source: "Valleywise Health",
+    rawData: refRawData({
+      name: "Doris Whitfield", dob: "1946-10-18", gender: "F",
+      street: "355 N San Francisco St", city: "Flagstaff", zip: "86001",
+      phone: "(928) 555-0142", dx: "Congestive Heart Failure",
+      icd: ["I50.9"], dxDate: "2026-01-03",
+      payerName: "AHCCCS", payerId: "AHCCCS-AZ", memberId: "AHC334561278",
+      physician: "Dr. Lisa Wong", facility: "Valleywise Medical Center",
+    }),
+    status: "ineligible",
+    eligibility: {
+      checkedAt: "2026-01-07T09:00:00Z", checkedBy: "sup1",
+      insuranceVerified: true, inServiceArea: false, medicalNeedConfirmed: true,
+      levelOfCareAppropriate: true, ageEligible: true,
+      outcome: "ineligible", ineligibilityReason: "out_of_service_area",
+      notes: "Patient resides in Flagstaff — outside the Phoenix-metro service area.",
+    },
+    outreachAttempts: [],
+    closedAt: "2026-01-07T09:15:00Z",
+    closeReason: "ineligible",
+    providerNotifiedAt: "2026-01-07T10:00:00Z",
+    patientName: "Doris Whitfield",
+    dob: "1946-10-18",
+    referralSource: "Valleywise Health",
+    riskScore: 2,
+    referralDate: "2026-01-06",
+    diagnosis: "Congestive Heart Failure",
+    healthPlan: "AHCCCS",
+    zipCode: "86001",
+    language: "en",
+    requiredAcuity: "L2",
+  },
+  {
+    id: "ref-mercy-inelig",
+    receivedAt: "2025-12-18T09:35:00Z",
+    source: "Mercy Care",
+    rawData: refRawData({
+      name: "Kyle Beaumont", dob: "1971-03-27", gender: "M",
+      street: "1509 E Osborn Rd", city: "Phoenix", zip: "85012",
+      phone: "(602) 555-0374", dx: "Seasonal allergic rhinitis",
+      icd: ["J30.2"], dxDate: "2025-12-15",
+      payerName: "Mercy Care", payerId: "MC-AZ", memberId: "MC220419865",
+      physician: "Dr. Hannah Ortiz", facility: "Mercy Care Plan",
+    }),
+    status: "ineligible",
+    eligibility: {
+      checkedAt: "2025-12-19T09:00:00Z", checkedBy: "sup1",
+      insuranceVerified: true, inServiceArea: true, medicalNeedConfirmed: false,
+      levelOfCareAppropriate: true, ageEligible: true,
+      outcome: "ineligible", ineligibilityReason: "no_medical_need",
+      notes: "No qualifying chronic condition or navigation need documented.",
+    },
+    outreachAttempts: [],
+    closedAt: "2025-12-19T09:05:00Z",
+    closeReason: "ineligible",
+    providerNotifiedAt: "2025-12-19T09:45:00Z",
+    patientName: "Kyle Beaumont",
+    dob: "1971-03-27",
+    referralSource: "Mercy Care",
+    riskScore: 1,
+    referralDate: "2025-12-18",
+    diagnosis: "Seasonal allergic rhinitis",
+    healthPlan: "Mercy Care",
+    zipCode: "85012",
+    language: "en",
+    requiredAcuity: "L1",
+  },
+  {
+    id: "ref-uhc-inelig",
+    receivedAt: "2026-01-15T15:20:00Z",
+    source: "United Healthcare",
+    rawData: refRawData({
+      name: "Marcus Tillman", dob: "1958-06-02", gender: "M",
+      street: "740 E Broadway Rd", city: "Mesa", zip: "85204",
+      phone: "(480) 555-0388", dx: "Schizoaffective disorder, acute inpatient level of care",
+      icd: ["F25.9"], dxDate: "2026-01-10",
+      payerName: "United Healthcare", payerId: "UHC-AZ", memberId: "UHC10088452",
+      physician: "Dr. Neil Vaswani", facility: "UHC Care Coordination",
+    }),
+    status: "ineligible",
+    eligibility: {
+      checkedAt: "2026-01-16T09:00:00Z", checkedBy: "sup1",
+      insuranceVerified: true, inServiceArea: true, medicalNeedConfirmed: true,
+      levelOfCareAppropriate: false, ageEligible: true,
+      outcome: "ineligible", ineligibilityReason: "level_of_care",
+      notes: "Requires acute inpatient behavioral health — above community-navigation level of care.",
+    },
+    outreachAttempts: [],
+    closedAt: "2026-01-16T09:10:00Z",
+    closeReason: "ineligible",
+    providerNotifiedAt: "2026-01-16T09:40:00Z",
+    patientName: "Marcus Tillman",
+    dob: "1958-06-02",
+    referralSource: "United Healthcare",
+    riskScore: 3,
+    referralDate: "2026-01-15",
+    diagnosis: "Schizoaffective disorder",
+    healthPlan: "United Healthcare",
+    zipCode: "85204",
+    language: "en",
+    requiredAcuity: "L3",
+  },
+  // ==========================================================================
+  // HISTORICAL - UNREACHABLE (exactly 7 attempts each; provider informed)
+  // ==========================================================================
+  {
+    id: "ref-sjh-unreach",
+    receivedAt: "2025-12-15T10:45:00Z",
+    source: "St. Joseph's Hospital",
+    rawData: refRawData({
+      name: "Angela Torres", dob: "1963-01-22", gender: "F",
+      street: "3018 W McDowell Rd", city: "Phoenix", zip: "85031",
+      phone: "(602) 555-0395", dx: "Type 2 Diabetes with CKD",
+      icd: ["E11.22", "N18.3"], dxDate: "2025-12-10",
+      payerName: "Mercy Care", payerId: "MC-AZ", memberId: "MC661200457",
+      physician: "Dr. Sarah Kim", facility: "Dignity Health St. Joseph's",
+    }),
+    status: "unreachable",
+    eligibility: { ...ELIGIBLE_CHECK, checkedAt: "2025-12-16T09:00:00Z", checkedBy: "sup1" },
+    acceptedAt: "2025-12-16T09:00:00Z",
+    outreachAttempts: mkAttempts(
+      "ref-sjh-unreach", "2025-12-17",
+      ["no_answer", "voicemail", "no_answer", "wrong_number", "voicemail", "no_answer", "no_answer"],
+      ["phone", "phone", "text", "phone", "phone", "text", "in_person"]
+    ),
+    closedAt: "2025-12-30T09:00:00Z",
+    closeReason: "unreachable",
+    providerNotifiedAt: "2025-12-30T10:00:00Z",
+    patientName: "Angela Torres",
+    dob: "1963-01-22",
+    referralSource: "St. Joseph's Hospital",
+    riskScore: 2,
+    referralDate: "2025-12-15",
+    diagnosis: "Type 2 Diabetes with CKD",
+    healthPlan: "Mercy Care",
+    zipCode: "85031",
+    language: "es",
+    requiredAcuity: "L2",
+  },
+  {
+    id: "ref-vw-unreach",
+    receivedAt: "2026-01-02T09:15:00Z",
+    source: "Valleywise Health",
+    rawData: refRawData({
+      name: "Dennis Kowalski", dob: "1950-09-05", gender: "M",
+      street: "6210 S Central Ave", city: "Phoenix", zip: "85339",
+      phone: "(602) 555-0407", dx: "COPD with recent exacerbation",
+      icd: ["J44.1"], dxDate: "2025-12-29",
+      payerName: "AHCCCS", payerId: "AHCCCS-AZ", memberId: "AHC778102934",
+      physician: "Dr. Lisa Wong", facility: "Valleywise Medical Center",
+    }),
+    status: "unreachable",
+    eligibility: { ...ELIGIBLE_CHECK, checkedAt: "2026-01-03T09:00:00Z", checkedBy: "sup1" },
+    acceptedAt: "2026-01-03T09:00:00Z",
+    outreachAttempts: mkAttempts(
+      "ref-vw-unreach", "2026-01-04",
+      ["no_answer", "no_answer", "voicemail", "no_answer", "voicemail", "no_answer", "no_answer"],
+      ["phone", "text", "phone", "phone", "phone", "text", "phone"]
+    ),
+    closedAt: "2026-01-16T09:00:00Z",
+    closeReason: "unreachable",
+    providerNotifiedAt: "2026-01-16T09:30:00Z",
+    patientName: "Dennis Kowalski",
+    dob: "1950-09-05",
+    referralSource: "Valleywise Health",
+    riskScore: 2,
+    referralDate: "2026-01-02",
+    diagnosis: "COPD with recent exacerbation",
+    healthPlan: "AHCCCS",
+    zipCode: "85339",
+    language: "en",
+    requiredAcuity: "L2",
+  },
+  {
+    id: "ref-mercy-unreach",
+    receivedAt: "2025-12-08T13:05:00Z",
+    source: "Mercy Care",
+    rawData: refRawData({
+      name: "Yolanda Reyes", dob: "1966-05-19", gender: "F",
+      street: "8402 N 61st Ave", city: "Glendale", zip: "85301",
+      phone: "(623) 555-0418", dx: "Uncontrolled hypertension",
+      icd: ["I10"], dxDate: "2025-12-04",
+      payerName: "Mercy Care", payerId: "MC-AZ", memberId: "MC190087236",
+      physician: "Dr. Hannah Ortiz", facility: "Mercy Care Plan",
+    }),
+    status: "unreachable",
+    eligibility: { ...ELIGIBLE_CHECK, checkedAt: "2025-12-09T09:00:00Z", checkedBy: "sup1" },
+    acceptedAt: "2025-12-09T09:00:00Z",
+    outreachAttempts: mkAttempts(
+      "ref-mercy-unreach", "2025-12-10",
+      ["no_answer", "voicemail", "wrong_number", "no_answer", "no_answer", "voicemail", "no_answer"],
+      ["phone", "phone", "phone", "text", "phone", "phone", "in_person"]
+    ),
+    closedAt: "2025-12-22T09:00:00Z",
+    closeReason: "unreachable",
+    providerNotifiedAt: "2025-12-22T10:15:00Z",
+    patientName: "Yolanda Reyes",
+    dob: "1966-05-19",
+    referralSource: "Mercy Care",
+    riskScore: 1,
+    referralDate: "2025-12-08",
+    diagnosis: "Uncontrolled hypertension",
+    healthPlan: "Mercy Care",
+    zipCode: "85301",
+    language: "es",
+    requiredAcuity: "L1",
+  },
+  // ==========================================================================
+  // HISTORICAL - DECLINED (2)
+  // ==========================================================================
+  {
+    id: "ref-sjh-decl",
+    receivedAt: "2026-01-05T11:30:00Z",
+    source: "St. Joseph's Hospital",
+    rawData: refRawData({
+      name: "Raymond Holt", dob: "1953-11-14", gender: "M",
+      street: "5045 N 19th Ave", city: "Phoenix", zip: "85021",
+      phone: "(602) 555-0429", dx: "Coronary artery disease",
+      icd: ["I25.10"], dxDate: "2026-01-02",
+      payerName: "United Healthcare", payerId: "UHC-AZ", memberId: "UHC10066120",
+      physician: "Dr. Owen Blake", facility: "Dignity Health St. Joseph's",
+    }),
+    status: "declined",
+    eligibility: { ...ELIGIBLE_CHECK, checkedAt: "2026-01-06T09:00:00Z", checkedBy: "sup1" },
+    acceptedAt: "2026-01-06T09:00:00Z",
+    outreachAttempts: mkAttempts("ref-sjh-decl", "2026-01-07", ["callback_requested", "declined"]),
+    closedAt: "2026-01-09T10:00:00Z",
+    closeReason: "declined",
+    providerNotifiedAt: "2026-01-09T10:30:00Z",
+    patientName: "Raymond Holt",
+    dob: "1953-11-14",
+    referralSource: "St. Joseph's Hospital",
+    riskScore: 2,
+    referralDate: "2026-01-05",
+    diagnosis: "Coronary artery disease",
+    healthPlan: "United Healthcare",
+    zipCode: "85021",
+    language: "en",
+    requiredAcuity: "L2",
+  },
+  {
+    id: "ref-uhc-decl",
+    receivedAt: "2025-12-18T16:10:00Z",
+    source: "United Healthcare",
+    rawData: refRawData({
+      name: "Beverly Chandler", dob: "1949-02-28", gender: "F",
+      street: "1120 E Southern Ave", city: "Tempe", zip: "85281",
+      phone: "(480) 555-0436", dx: "Osteoarthritis with mobility limitation",
+      icd: ["M19.90"], dxDate: "2025-12-12",
+      payerName: "United Healthcare", payerId: "UHC-AZ", memberId: "UHC10071583",
+      physician: "Dr. Neil Vaswani", facility: "UHC Care Coordination",
+    }),
+    status: "declined",
+    eligibility: { ...ELIGIBLE_CHECK, checkedAt: "2025-12-19T10:00:00Z", checkedBy: "sup1" },
+    acceptedAt: "2025-12-19T10:00:00Z",
+    outreachAttempts: mkAttempts("ref-uhc-decl", "2025-12-20", ["no_answer", "voicemail", "declined"]),
+    closedAt: "2025-12-24T11:00:00Z",
+    closeReason: "declined",
+    providerNotifiedAt: "2025-12-24T11:30:00Z",
+    patientName: "Beverly Chandler",
+    dob: "1949-02-28",
+    referralSource: "United Healthcare",
+    riskScore: 1,
+    referralDate: "2025-12-18",
+    diagnosis: "Osteoarthritis",
+    healthPlan: "United Healthcare",
+    zipCode: "85281",
+    language: "en",
+    requiredAcuity: "L1",
   },
 ]
 
@@ -1149,23 +1680,25 @@ export const initialPayers: Payer[] = [
 // REMARK CODE DICTIONARY (CARC/RARC) - remittance adjudication reference
 // ============================================================================
 
+// NOTE: deliberately NO CARC 144 / RARC N807 — their absence drives the DAP
+// pend-and-review demo beat (unknown incentive codes pend instead of misposting).
 export const initialRemarkCodes: RemarkCode[] = [
-  { id: "carc-1", type: "CARC", code: "1", description: "Deductible amount", lastUpdated: "2026-01-15T10:00:00Z" },
-  { id: "carc-16", type: "CARC", code: "16", description: "Claim/service lacks information or has submission/billing error(s)", lastUpdated: "2026-01-15T10:00:00Z" },
-  { id: "carc-18", type: "CARC", code: "18", description: "Exact duplicate claim/service", lastUpdated: "2026-01-15T10:00:00Z" },
-  { id: "carc-29", type: "CARC", code: "29", description: "The time limit for filing has expired", lastUpdated: "2026-01-15T10:00:00Z" },
-  { id: "carc-45", type: "CARC", code: "45", description: "Charge exceeds fee schedule/maximum allowable or contracted fee arrangement", lastUpdated: "2026-01-15T10:00:00Z" },
-  { id: "carc-50", type: "CARC", code: "50", description: "Non-covered services: not deemed a medical necessity by the payer", lastUpdated: "2026-01-15T10:00:00Z" },
-  { id: "carc-96", type: "CARC", code: "96", description: "Non-covered charge(s)", lastUpdated: "2026-01-15T10:00:00Z" },
-  { id: "carc-97", type: "CARC", code: "97", description: "Benefit included in payment/allowance for another adjudicated service", lastUpdated: "2026-01-15T10:00:00Z" },
-  { id: "carc-109", type: "CARC", code: "109", description: "Claim/service not covered by this payer/contractor", lastUpdated: "2026-01-15T10:00:00Z" },
-  { id: "carc-197", type: "CARC", code: "197", description: "Precertification/authorization/notification absent", lastUpdated: "2026-01-15T10:00:00Z" },
-  { id: "rarc-n30", type: "RARC", code: "N30", description: "Patient ineligible for this service", lastUpdated: "2026-01-15T10:00:00Z" },
-  { id: "rarc-n56", type: "RARC", code: "N56", description: "Procedure code billed is not correct/valid for the services billed or date of service", lastUpdated: "2026-01-15T10:00:00Z" },
-  { id: "rarc-m15", type: "RARC", code: "M15", description: "Separately billed services have been bundled as components of the same procedure", lastUpdated: "2026-01-15T10:00:00Z" },
-  { id: "rarc-m25", type: "RARC", code: "M25", description: "Information furnished does not substantiate the need for this level of service", lastUpdated: "2026-01-15T10:00:00Z" },
-  { id: "rarc-ma04", type: "RARC", code: "MA04", description: "Secondary payment cannot be considered without primary payer information", lastUpdated: "2026-01-15T10:00:00Z" },
-  { id: "rarc-n130", type: "RARC", code: "N130", description: "Consult plan benefit documents for restrictions for this service", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-1", type: "CARC", code: "1", description: "Deductible amount", classification: "adjustment", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-16", type: "CARC", code: "16", description: "Claim/service lacks information or has submission/billing error(s)", classification: "informational", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-18", type: "CARC", code: "18", description: "Exact duplicate claim/service", classification: "denial", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-29", type: "CARC", code: "29", description: "The time limit for filing has expired", classification: "denial", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-45", type: "CARC", code: "45", description: "Charge exceeds fee schedule/maximum allowable or contracted fee arrangement", classification: "adjustment", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-50", type: "CARC", code: "50", description: "Non-covered services: not deemed a medical necessity by the payer", classification: "denial", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-96", type: "CARC", code: "96", description: "Non-covered charge(s)", classification: "denial", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-97", type: "CARC", code: "97", description: "Benefit included in payment/allowance for another adjudicated service", classification: "adjustment", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-109", type: "CARC", code: "109", description: "Claim/service not covered by this payer/contractor", classification: "denial", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "carc-197", type: "CARC", code: "197", description: "Precertification/authorization/notification absent", classification: "denial", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "rarc-n30", type: "RARC", code: "N30", description: "Patient ineligible for this service", classification: "denial", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "rarc-n56", type: "RARC", code: "N56", description: "Procedure code billed is not correct/valid for the services billed or date of service", classification: "denial", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "rarc-m15", type: "RARC", code: "M15", description: "Separately billed services have been bundled as components of the same procedure", classification: "informational", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "rarc-m25", type: "RARC", code: "M25", description: "Information furnished does not substantiate the need for this level of service", classification: "denial", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "rarc-ma04", type: "RARC", code: "MA04", description: "Secondary payment cannot be considered without primary payer information", classification: "informational", lastUpdated: "2026-01-15T10:00:00Z" },
+  { id: "rarc-n130", type: "RARC", code: "N130", description: "Consult plan benefit documents for restrictions for this service", classification: "informational", lastUpdated: "2026-01-15T10:00:00Z" },
 ]
 
 // ============================================================================
@@ -1230,6 +1763,8 @@ export const initialAuditLogs: AuditLog[] = [
 // ============================================================================
 
 export const initialNoteTemplates: NoteTemplate[] = [
+  // Gellert Note-Taking Manual templates (lib/gellert-templates.ts)
+  ...gellertNoteTemplates,
   // Primary compliance-focused template for standard patient navigation
   {
     id: "template-standard-navigation",
@@ -1869,6 +2404,90 @@ export const initialIntakeRecords: IntakeRecord[] = [
       { code: "Z59.82", description: "Transportation insecurity", category: "Transport" },
     ],
     primaryNavigatorId: "nav-maria",
+  },
+  // ==========================================================================
+  // JOURNEY ENGINE: Gellert Intake 1 & 2 protocol records (no time logs)
+  // ==========================================================================
+  {
+    id: "intake-pt-journey-intake1",
+    patientId: "pt-journey-intake1",
+    date: "2026-01-28",
+    initiatingVisitDate: "2026-01-28",
+    consentObtained: true,
+    consentDate: "2026-01-28",
+    serviceType: "CHI",
+    acuity: { clinical: 1, psychosocial: 1, barriers: 2, literacy: 1, totalScore: 5, level: "Moderate" },
+    identifiedBarriers: [
+      { code: "Z59.82", description: "Transportation insecurity", category: "Transport" },
+    ],
+    primaryNavigatorId: "nav-sarah",
+    // Intake 1 scheduled 2 days out; checklist untouched; PCP due-by counting down
+    intake1: {
+      scheduledDate: "2026-02-01",
+      status: "scheduled",
+      noShowCount: 0,
+      checklist: [
+        { key: "onboarding_packet", label: "Onboarding packet completed", done: false },
+        { key: "roi_signed", label: "Release of Information signed", done: false },
+        { key: "med_reconciliation", label: "Medication reconciliation", done: false },
+        { key: "health_history", label: "Health history collected", done: false },
+        { key: "provider_list", label: "Provider list compiled", done: false },
+        { key: "risk_screening", label: "Risk screening completed", done: false },
+        { key: "patient_photo", label: "Patient photo on file", done: false },
+        { key: "pcp_scheduled", label: "PCP appointment scheduled", done: false },
+      ],
+    },
+    intake2: { status: "not_scheduled", noShowCount: 0, checklist: [
+      { key: "intake_survey", label: "Intake survey administered", done: false },
+      { key: "navigation_contract_signed", label: "Navigation contract signed", done: false },
+      { key: "risk_tier_confirmed", label: "Risk tier confirmed", done: false },
+    ] },
+    pcpDueBy: "2026-02-06", // conversion 2026-01-28 + 7 business days
+    totalNoShows: 0,
+  },
+  {
+    id: "intake-pt-journey-intake2",
+    patientId: "pt-journey-intake2",
+    date: "2026-01-15",
+    initiatingVisitDate: "2026-01-15",
+    consentObtained: true,
+    consentDate: "2026-01-15",
+    serviceType: "CHI",
+    acuity: { clinical: 2, psychosocial: 2, barriers: 1, literacy: 2, totalScore: 7, level: "Moderate" },
+    identifiedBarriers: [
+      { code: "Z60.2", description: "Problems related to living alone", category: "Social" },
+    ],
+    primaryNavigatorId: "nav3",
+    // Intake 1 complete; Intake 2 has TWO no-shows — one more triggers MIA closure
+    intake1: {
+      scheduledDate: "2026-01-17",
+      completedDate: "2026-01-17",
+      status: "completed",
+      noShowCount: 0,
+      checklist: [
+        { key: "onboarding_packet", label: "Onboarding packet completed", done: true, doneAt: "2026-01-17", doneBy: "nav3" },
+        { key: "roi_signed", label: "Release of Information signed", done: true, doneAt: "2026-01-17", doneBy: "nav3" },
+        { key: "med_reconciliation", label: "Medication reconciliation", done: true, doneAt: "2026-01-17", doneBy: "nav3" },
+        { key: "health_history", label: "Health history collected", done: true, doneAt: "2026-01-17", doneBy: "nav3" },
+        { key: "provider_list", label: "Provider list compiled", done: true, doneAt: "2026-01-17", doneBy: "nav3" },
+        { key: "risk_screening", label: "Risk screening completed", done: true, doneAt: "2026-01-17", doneBy: "nav3" },
+        { key: "patient_photo", label: "Patient photo on file", done: true, doneAt: "2026-01-17", doneBy: "nav3" },
+        { key: "pcp_scheduled", label: "PCP appointment scheduled", done: true, doneAt: "2026-01-17", doneBy: "nav3" },
+      ],
+    },
+    intake2: {
+      scheduledDate: "2026-02-02",
+      status: "scheduled",
+      noShowCount: 2, // 2026-01-22 and 2026-01-27 both missed
+      checklist: [
+        { key: "intake_survey", label: "Intake survey administered", done: false },
+        { key: "navigation_contract_signed", label: "Navigation contract signed", done: false },
+        { key: "risk_tier_confirmed", label: "Risk tier confirmed", done: false },
+      ],
+    },
+    pcpApptDate: "2026-01-23",
+    pcpDueBy: "2026-01-26", // conversion 2026-01-15 + 7 business days
+    totalNoShows: 2,
   },
 ]
 
@@ -2673,6 +3292,315 @@ export const initialTimeLogs: TimeLog[] = [
     billingPeriod: "2026-01",
     activityType: "TRANSPORT", // -> H2015 (Community Support)
   },
+  // ==========================================================================
+  // GELLERT DAY-CLOSE DEMO: nav1's current week (charge-slip history + today)
+  // Today's logs (anchor 2026-01-30) have NO signed slips -> live day-close.
+  // tl-g18 is the 6-minute patient-day (sub-8-minute stacking coaching hint).
+  // ==========================================================================
+  {
+    id: "tl-g01",
+    patientId: "pt1",
+    date: "2026-01-21",
+    startTime: "2026-01-21T09:00:00-07:00",
+    endTime: "2026-01-21T09:45:00-07:00",
+    durationMinutes: 45,
+    modality: "In-Person",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-21T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g02",
+    patientId: "pt2",
+    date: "2026-01-21",
+    startTime: "2026-01-21T13:00:00-07:00",
+    endTime: "2026-01-21T13:30:00-07:00",
+    durationMinutes: 30,
+    modality: "Phone",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-21T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g03",
+    patientId: "pt1",
+    date: "2026-01-22",
+    startTime: "2026-01-22T09:00:00-07:00",
+    endTime: "2026-01-22T09:25:00-07:00",
+    durationMinutes: 25,
+    modality: "In-Person",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-22T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g04",
+    patientId: "pt2",
+    date: "2026-01-22",
+    startTime: "2026-01-22T13:00:00-07:00",
+    endTime: "2026-01-22T13:40:00-07:00",
+    durationMinutes: 40,
+    modality: "Phone",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-22T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g05",
+    patientId: "pt1",
+    date: "2026-01-23",
+    startTime: "2026-01-23T09:00:00-07:00",
+    endTime: "2026-01-23T09:30:00-07:00",
+    durationMinutes: 30,
+    modality: "In-Person",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-23T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g06",
+    patientId: "pt2",
+    date: "2026-01-23",
+    startTime: "2026-01-23T13:00:00-07:00",
+    endTime: "2026-01-23T13:20:00-07:00",
+    durationMinutes: 20,
+    modality: "Phone",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-23T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g07",
+    patientId: "pt1",
+    date: "2026-01-26",
+    startTime: "2026-01-26T09:00:00-07:00",
+    endTime: "2026-01-26T09:50:00-07:00",
+    durationMinutes: 50,
+    modality: "In-Person",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-26T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g08",
+    patientId: "pt2",
+    date: "2026-01-26",
+    startTime: "2026-01-26T13:00:00-07:00",
+    endTime: "2026-01-26T13:35:00-07:00",
+    durationMinutes: 35,
+    modality: "Phone",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-26T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g09",
+    patientId: "pt1",
+    date: "2026-01-27",
+    startTime: "2026-01-27T09:00:00-07:00",
+    endTime: "2026-01-27T09:40:00-07:00",
+    durationMinutes: 40,
+    modality: "In-Person",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-27T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g10",
+    patientId: "pt2",
+    date: "2026-01-27",
+    startTime: "2026-01-27T13:00:00-07:00",
+    endTime: "2026-01-27T13:25:00-07:00",
+    durationMinutes: 25,
+    modality: "Phone",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-27T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g11",
+    patientId: "pt1",
+    date: "2026-01-28",
+    startTime: "2026-01-28T09:00:00-07:00",
+    endTime: "2026-01-28T09:30:00-07:00",
+    durationMinutes: 30,
+    modality: "In-Person",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-28T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g12",
+    patientId: "pt2",
+    date: "2026-01-28",
+    startTime: "2026-01-28T13:00:00-07:00",
+    endTime: "2026-01-28T13:45:00-07:00",
+    durationMinutes: 45,
+    modality: "Phone",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-28T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g13",
+    patientId: "pt1",
+    date: "2026-01-29",
+    startTime: "2026-01-29T09:00:00-07:00",
+    endTime: "2026-01-29T09:35:00-07:00",
+    durationMinutes: 35,
+    modality: "In-Person",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-29T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g14",
+    patientId: "pt2",
+    date: "2026-01-29",
+    startTime: "2026-01-29T13:00:00-07:00",
+    endTime: "2026-01-29T13:30:00-07:00",
+    durationMinutes: 30,
+    modality: "Phone",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-29T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g15",
+    patientId: "pt1",
+    date: "2026-01-30",
+    startTime: "2026-01-30T09:00:00-07:00",
+    endTime: "2026-01-30T09:45:00-07:00",
+    durationMinutes: 45,
+    modality: "In-Person",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-30T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g16",
+    patientId: "pt1",
+    date: "2026-01-30",
+    startTime: "2026-01-30T11:30:00-07:00",
+    endTime: "2026-01-30T12:00:00-07:00",
+    durationMinutes: 30,
+    modality: "Phone",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-30T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g17",
+    patientId: "pt2",
+    date: "2026-01-30",
+    startTime: "2026-01-30T13:00:00-07:00",
+    endTime: "2026-01-30T13:55:00-07:00",
+    durationMinutes: 55,
+    modality: "In-Person",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-30T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g18",
+    patientId: "pt4",
+    date: "2026-01-30",
+    startTime: "2026-01-30T15:00:00-07:00",
+    endTime: "2026-01-30T15:06:00-07:00",
+    durationMinutes: 6,
+    modality: "Phone",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-30T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
+  {
+    id: "tl-g19",
+    patientId: "pt5",
+    date: "2026-01-30",
+    startTime: "2026-01-30T15:30:00-07:00",
+    endTime: "2026-01-30T16:05:00-07:00",
+    durationMinutes: 35,
+    modality: "Phone",
+    serviceType: "CHI",
+    navigatorId: "nav1",
+    verified: true,
+    verifiedBy: "sup1",
+    verifiedAt: "2026-01-30T17:00:00-07:00",
+    billingPeriod: "2026-01",
+    activityType: "PEER_SUPPORT", // -> H0038
+  },
 ]
 
 // ============================================================================
@@ -2778,3 +3706,91 @@ export const initialDirectMessages: Message[] = [
     patientName: "James Thompson",
   },
 ]
+
+// ============================================================================
+// GELLERT ZONES (billing/geo) — Gellert runs 11 zones; 6 seeded for the
+// Phoenix-metro demo. Every zip exists in AZ_ZIP_CENTROIDS; no zip in 2 zones.
+// ============================================================================
+
+export const initialZones: Zone[] = [
+  { id: "zone-central-phoenix", name: "Central Phoenix", color: "#0ea5e9", zipCodes: ["85001", "85012", "85034"], description: "Downtown core and central corridor" },
+  { id: "zone-north-phoenix", name: "North Phoenix", color: "#8b5cf6", zipCodes: ["85021", "85032"], description: "North Phoenix and Paradise Valley Village" },
+  { id: "zone-west-valley", name: "West Valley", color: "#f59e0b", zipCodes: ["85031", "85301", "85303", "85308", "85351", "85383"], description: "Maryvale, Glendale, Sun City, Peoria" },
+  { id: "zone-east-valley", name: "East Valley", color: "#10b981", zipCodes: ["85201", "85204", "85296"], description: "Mesa and Gilbert" },
+  { id: "zone-tempe-scottsdale", name: "Tempe / Scottsdale", color: "#ec4899", zipCodes: ["85008", "85251", "85281"], description: "Tempe, Scottsdale, East Phoenix" },
+  { id: "zone-south-phoenix", name: "South Phoenix", color: "#ef4444", zipCodes: ["85044", "85339"], description: "Ahwatukee and Laveen" },
+]
+
+// ============================================================================
+// JOURNEY EVENTS (Gellert WorkFlow2025) — full transition history for every
+// seed patient, chronological; last toPhase always equals the stored phase.
+// ============================================================================
+
+export const initialJourneyEvents: JourneyEvent[] = [
+  { id: "je-pt1-1", patientId: "pt1", at: "2025-12-01T10:00:00Z", fromPhase: "referral", toPhase: "intake", actorId: "sup1", actorName: "Marcus Williams", reason: "Referral converted; Intake 1 scheduled" },
+  { id: "je-pt1-2", patientId: "pt1", at: "2025-12-12T15:00:00Z", fromPhase: "intake", toPhase: "active", actorId: "nav1", actorName: "Emily Rodriguez", reason: "Intake 2 complete; graduated to active navigation" },
+  { id: "je-pt2-1", patientId: "pt2", at: "2025-12-05T10:00:00Z", fromPhase: "referral", toPhase: "intake", actorId: "sup1", actorName: "Marcus Williams", reason: "Referral converted; Intake 1 scheduled" },
+  { id: "je-pt2-2", patientId: "pt2", at: "2025-12-16T14:00:00Z", fromPhase: "intake", toPhase: "active", actorId: "nav1", actorName: "Emily Rodriguez", reason: "Intake 2 complete; graduated to active navigation" },
+  { id: "je-pt3-1", patientId: "pt3", at: "2025-12-28T10:00:00Z", fromPhase: "referral", toPhase: "intake", actorId: "sup1", actorName: "Marcus Williams", reason: "Referral converted; Intake 1 scheduled" },
+  { id: "je-pt3-2", patientId: "pt3", at: "2026-01-08T15:30:00Z", fromPhase: "intake", toPhase: "active", actorId: "nav2", actorName: "David Chen", reason: "Intake 2 complete; graduated to active navigation" },
+  { id: "je-pt4-1", patientId: "pt4", at: "2025-12-18T10:00:00Z", fromPhase: "referral", toPhase: "intake", actorId: "sup1", actorName: "Marcus Williams", reason: "Referral converted; Intake 1 scheduled" },
+  { id: "je-pt4-2", patientId: "pt4", at: "2025-12-23T14:00:00Z", fromPhase: "intake", toPhase: "active", actorId: "nav2", actorName: "David Chen", reason: "Intake 2 complete; graduated to active navigation" },
+  { id: "je-pt4-3", patientId: "pt4", at: "2025-12-24T16:00:00Z", fromPhase: "active", toPhase: "telenavigation", actorId: "sup1", actorName: "Marcus Williams", reason: "Graduation confirmed; monthly telenavigation cadence begins" },
+  { id: "je-pt5-1", patientId: "pt5", at: "2025-12-30T10:00:00Z", fromPhase: "referral", toPhase: "intake", actorId: "sup1", actorName: "Marcus Williams", reason: "Referral converted; Intake 1 scheduled" },
+  { id: "je-pt5-2", patientId: "pt5", at: "2026-01-09T15:00:00Z", fromPhase: "intake", toPhase: "active", actorId: "nav3", actorName: "Maria Santos", reason: "Intake 2 complete; graduated to active navigation" },
+  { id: "je-ptbilling-1", patientId: "pt-billing", at: "2026-01-01T10:00:00Z", fromPhase: "referral", toPhase: "intake", actorId: "sup1", actorName: "Marcus Williams", reason: "Referral from St. Joseph's converted; Intake 1 scheduled" },
+  { id: "je-ptbilling-2", patientId: "pt-billing", at: "2026-01-10T14:00:00Z", fromPhase: "intake", toPhase: "active", actorId: "nav-john", actorName: "John Mitchell", reason: "Intake 2 complete; graduated to active navigation" },
+  { id: "je-ptval-1", patientId: "pt-validation-test", at: "2026-01-05T10:00:00Z", fromPhase: "referral", toPhase: "intake", actorId: "sup1", actorName: "Marcus Williams", reason: "Referral converted; Intake 1 scheduled" },
+  { id: "je-ptval-2", patientId: "pt-validation-test", at: "2026-01-16T14:00:00Z", fromPhase: "intake", toPhase: "active", actorId: "nav-maria", actorName: "Maria Gonzalez", reason: "Intake 2 complete; graduated to active navigation" },
+  { id: "je-ptelena-1", patientId: "pt-elena", at: "2026-01-28T11:00:00Z", fromPhase: "referral", toPhase: "intake", actorId: "sup1", actorName: "Marcus Williams", reason: "Referral from Banner Health converted; Intake 1 scheduled" },
+  { id: "je-ptelena-2", patientId: "pt-elena", at: "2026-01-30T12:00:00Z", fromPhase: "intake", toPhase: "active", actorId: "nav-maria", actorName: "Maria Gonzalez", reason: "Intake 2 complete; graduated to active navigation" },
+  { id: "je-ptji1-1", patientId: "pt-journey-intake1", at: "2026-01-28T10:00:00Z", fromPhase: "referral", toPhase: "intake", actorId: "sup1", actorName: "Marcus Williams", reason: "Referral from St. Joseph's converted; Intake 1 scheduled for Feb 1" },
+  { id: "je-ptji2-1", patientId: "pt-journey-intake2", at: "2026-01-15T10:00:00Z", fromPhase: "referral", toPhase: "intake", actorId: "sup1", actorName: "Marcus Williams", reason: "Referral from St. Joseph's converted; Intake 1 scheduled" },
+  { id: "je-ptjx-1", patientId: "pt-journey-exited", at: "2025-12-10T10:00:00Z", fromPhase: "referral", toPhase: "intake", actorId: "sup1", actorName: "Marcus Williams", reason: "Referral from Mercy Care converted; Intake 1 scheduled" },
+  { id: "je-ptjx-2", patientId: "pt-journey-exited", at: "2025-12-22T14:00:00Z", fromPhase: "intake", toPhase: "active", actorId: "nav8", actorName: "Kevin Martinez", reason: "Intake 2 complete; graduated to active navigation" },
+  { id: "je-ptjx-3", patientId: "pt-journey-exited", at: "2026-01-18T16:00:00Z", fromPhase: "active", toPhase: "exited", actorId: "nav8", actorName: "Kevin Martinez", reason: "Patient-initiated exit (relocation); supervisor confirmed" },
+]
+
+// ============================================================================
+// CHARGE SLIPS (Gellert day-close) — only SIGNED slips persist; unsigned
+// slips are derived on the fly. ~7 workdays of history, ~90% signed same-day;
+// TODAY's patient-days (2026-01-30 logs) are deliberately unsigned so the
+// day-close demo runs live. timeLogIds/totalMinutes/units mirror the seed
+// TimeLogs exactly (verify:gellert locks slip integrity).
+// ============================================================================
+
+export const initialChargeSlips: ChargeSlip[] = [
+  { id: "slip-nav1-pt1-2026-01-21", navigatorId: "nav1", patientId: "pt1", date: "2026-01-21", timeLogIds: ["tl-g01"], totalMinutes: 45, units: 3, code: "H0038", signedAt: "2026-01-21T17:05:00Z", signedBy: "nav1" },
+  { id: "slip-nav1-pt1-2026-01-22", navigatorId: "nav1", patientId: "pt1", date: "2026-01-22", timeLogIds: ["tl-g03"], totalMinutes: 25, units: 2, code: "H0038", signedAt: "2026-01-22T17:05:00Z", signedBy: "nav1" },
+  { id: "slip-nav1-pt1-2026-01-23", navigatorId: "nav1", patientId: "pt1", date: "2026-01-23", timeLogIds: ["tl-g05"], totalMinutes: 30, units: 2, code: "H0038", signedAt: "2026-01-23T17:05:00Z", signedBy: "nav1" },
+  { id: "slip-nav1-pt1-2026-01-26", navigatorId: "nav1", patientId: "pt1", date: "2026-01-26", timeLogIds: ["tl-g07"], totalMinutes: 50, units: 3, code: "H0038", signedAt: "2026-01-26T17:05:00Z", signedBy: "nav1" },
+  { id: "slip-nav1-pt1-2026-01-27", navigatorId: "nav1", patientId: "pt1", date: "2026-01-27", timeLogIds: ["tl-g09"], totalMinutes: 40, units: 3, code: "H0038", signedAt: "2026-01-27T17:05:00Z", signedBy: "nav1" },
+  { id: "slip-nav1-pt1-2026-01-28", navigatorId: "nav1", patientId: "pt1", date: "2026-01-28", timeLogIds: ["tl-g11"], totalMinutes: 30, units: 2, code: "H0038", signedAt: "2026-01-28T17:05:00Z", signedBy: "nav1" },
+  { id: "slip-nav1-pt1-2026-01-29", navigatorId: "nav1", patientId: "pt1", date: "2026-01-29", timeLogIds: ["tl-g13"], totalMinutes: 35, units: 2, code: "H0038", signedAt: "2026-01-29T17:05:00Z", signedBy: "nav1" },
+  { id: "slip-nav1-pt2-2026-01-21", navigatorId: "nav1", patientId: "pt2", date: "2026-01-21", timeLogIds: ["tl-g02"], totalMinutes: 30, units: 2, code: "H0038", signedAt: "2026-01-21T17:05:00Z", signedBy: "nav1" },
+  { id: "slip-nav1-pt2-2026-01-22", navigatorId: "nav1", patientId: "pt2", date: "2026-01-22", timeLogIds: ["tl-g04"], totalMinutes: 40, units: 3, code: "H0038", signedAt: "2026-01-22T17:05:00Z", signedBy: "nav1" },
+  { id: "slip-nav1-pt2-2026-01-23", navigatorId: "nav1", patientId: "pt2", date: "2026-01-23", timeLogIds: ["tl-g06"], totalMinutes: 20, units: 1, code: "H0038", signedAt: "2026-01-24T17:05:00Z", signedBy: "nav1" },
+  { id: "slip-nav1-pt2-2026-01-26", navigatorId: "nav1", patientId: "pt2", date: "2026-01-26", timeLogIds: ["tl-g08"], totalMinutes: 35, units: 2, code: "H0038", signedAt: "2026-01-26T17:05:00Z", signedBy: "nav1" },
+  { id: "slip-nav1-pt2-2026-01-27", navigatorId: "nav1", patientId: "pt2", date: "2026-01-27", timeLogIds: ["tl-g10"], totalMinutes: 25, units: 2, code: "H0038", signedAt: "2026-01-27T17:05:00Z", signedBy: "nav1" },
+  { id: "slip-nav1-pt2-2026-01-28", navigatorId: "nav1", patientId: "pt2", date: "2026-01-28", timeLogIds: ["tl-g12"], totalMinutes: 45, units: 3, code: "H0038", signedAt: "2026-01-28T17:05:00Z", signedBy: "nav1" },
+  { id: "slip-nav1-pt2-2026-01-29", navigatorId: "nav1", patientId: "pt2", date: "2026-01-29", timeLogIds: ["tl-g14"], totalMinutes: 30, units: 2, code: "H0038", signedAt: "2026-01-29T17:05:00Z", signedBy: "nav1" },
+  { id: "slip-nav2-pt4-2026-01-21", navigatorId: "nav2", patientId: "pt4", date: "2026-01-21", timeLogIds: ["tl-021"], totalMinutes: 55, units: 4, code: "H0038", signedAt: "2026-01-21T17:05:00Z", signedBy: "nav2" },
+  { id: "slip-nav3-pt5-2026-01-23", navigatorId: "nav3", patientId: "pt5", date: "2026-01-23", timeLogIds: ["tl-024"], totalMinutes: 60, units: 4, code: "H0038", signedAt: "2026-01-23T17:05:00Z", signedBy: "nav3" },
+  { id: "slip-nav-maria-pt2-2026-01-24", navigatorId: "nav-maria", patientId: "pt2", date: "2026-01-24", timeLogIds: ["tl-019"], totalMinutes: 30, units: 2, code: "H0038", signedAt: "2026-01-25T17:05:00Z", signedBy: "nav-maria" },
+  { id: "slip-nav-maria-pt1-2026-01-26", navigatorId: "nav-maria", patientId: "pt1", date: "2026-01-26", timeLogIds: ["tl-015"], totalMinutes: 40, units: 3, code: "H0038", signedAt: "2026-01-26T17:05:00Z", signedBy: "nav-maria" },
+  { id: "slip-nav2-pt4-2026-01-27", navigatorId: "nav2", patientId: "pt4", date: "2026-01-27", timeLogIds: ["tl-022"], totalMinutes: 30, units: 2, code: "H0038", signedAt: "2026-01-27T17:05:00Z", signedBy: "nav2" },
+  { id: "slip-nav3-pt5-2026-01-28", navigatorId: "nav3", patientId: "pt5", date: "2026-01-28", timeLogIds: ["tl-025"], totalMinutes: 25, units: 2, code: "H0038", signedAt: "2026-01-28T17:05:00Z", signedBy: "nav3" },
+  { id: "slip-nav-maria-pt-elena-2026-01-28", navigatorId: "nav-maria", patientId: "pt-elena", date: "2026-01-28", timeLogIds: ["tl-026"], totalMinutes: 60, units: 4, code: "H0038", signedAt: "2026-01-28T17:05:00Z", signedBy: "nav-maria" },
+  { id: "slip-nav-maria-pt1-2026-01-29", navigatorId: "nav-maria", patientId: "pt1", date: "2026-01-29", timeLogIds: ["tl-016"], totalMinutes: 20, units: 1, code: "H0038", signedAt: "2026-01-29T17:05:00Z", signedBy: "nav-maria" },
+  { id: "slip-nav-maria-pt-elena-2026-01-29", navigatorId: "nav-maria", patientId: "pt-elena", date: "2026-01-29", timeLogIds: ["tl-027"], totalMinutes: 30, units: 2, code: "H0038", signedAt: "2026-01-29T17:05:00Z", signedBy: "nav-maria" },
+]
+
+// ============================================================================
+// PROVIDER DIRECTORY & STANDING PATIENT FACTS (Gellert note system)
+// Phase 0 stubs — workstream N-B seeds ~9 Phoenix providers and the standing
+// facts (incl. the diabetic + colonoscopy-due patient) in Phase 1.
+// ============================================================================
+
+export const initialProviders: Provider[] = []
+
+export const initialStandingFacts: StandingPatientFacts[] = []

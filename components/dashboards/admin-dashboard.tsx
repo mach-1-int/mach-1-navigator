@@ -81,6 +81,23 @@ const actionConfig: Record<AuditAction, { label: string; icon: typeof Edit2; col
   sos_triggered: { label: "SOS Triggered", icon: AlertCircle, color: "bg-red-100 text-red-700 border-red-200" },
   sos_acknowledged: { label: "SOS Acknowledged", icon: Check, color: "bg-orange-100 text-orange-700 border-orange-200" },
   sos_resolved: { label: "SOS Resolved", icon: Check, color: "bg-green-100 text-green-700 border-green-200" },
+  // Journey engine (Gellert WorkFlow2025)
+  eligibility_completed: { label: "Eligibility Check", icon: ClipboardList, color: "bg-blue-100 text-blue-700 border-blue-200" },
+  outreach_attempt_logged: { label: "Outreach Attempt", icon: UserPlus, color: "bg-cyan-100 text-cyan-700 border-cyan-200" },
+  referral_closed: { label: "Referral Closed", icon: X, color: "bg-slate-100 text-slate-700 border-slate-200" },
+  intake_visit_completed: { label: "Intake Visit", icon: Check, color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  intake_no_show: { label: "Intake No-Show", icon: AlertCircle, color: "bg-amber-100 text-amber-700 border-amber-200" },
+  provider_notified: { label: "Provider Notified", icon: Building2, color: "bg-blue-100 text-blue-700 border-blue-200" },
+  graduation_flagged: { label: "Graduation Flagged", icon: ClipboardList, color: "bg-violet-100 text-violet-700 border-violet-200" },
+  graduation_confirmed: { label: "Graduation Confirmed", icon: Check, color: "bg-violet-100 text-violet-700 border-violet-200" },
+  telenav_check_in: { label: "Telenav Check-In", icon: Calendar, color: "bg-violet-100 text-violet-700 border-violet-200" },
+  patient_reengaged: { label: "Patient Re-Engaged", icon: UserPlus, color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  program_exited: { label: "Program Exited", icon: LogOut, color: "bg-slate-100 text-slate-700 border-slate-200" },
+  // Gellert billing mode
+  charge_slip_signed: { label: "Charge Slip Signed", icon: FileText, color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  remittance_pended: { label: "Remittance Pended", icon: AlertCircle, color: "bg-amber-100 text-amber-700 border-amber-200" },
+  remittance_reprocessed: { label: "Remittance Reprocessed", icon: RotateCcw, color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  denial_work_status_changed: { label: "Denial Work Status", icon: History, color: "bg-indigo-100 text-indigo-700 border-indigo-200" },
 }
 
 /** Blank form used before the org settings load into the edit dialog */

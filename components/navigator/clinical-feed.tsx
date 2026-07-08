@@ -34,6 +34,7 @@ const noteTypeConfig: Record<PatientNote["type"], { icon: typeof FileText; label
   phone: { icon: Phone, label: "Phone Call", color: "bg-chart-2/10 text-chart-2" },
   visit: { icon: ClipboardList, label: "Visit", color: "bg-chart-3/10 text-chart-3" },
   "follow-up": { icon: MessageSquare, label: "Follow-up", color: "bg-chart-4/10 text-chart-4" },
+  supervision: { icon: ClipboardList, label: "Supervision", color: "bg-chart-5/10 text-chart-5" },
 }
 
 export function ClinicalFeed() {

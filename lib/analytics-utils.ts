@@ -110,7 +110,10 @@ export function getOperationalMetrics(
   )
 
   // ========== UNASSIGNED RATE ==========
-  const pendingReferrals = referrals.filter((ref) => ref.status === "pending")
+  // In-pipeline = any non-terminal referral status (Gellert pipeline model)
+  const pendingReferrals = referrals.filter(
+    (ref) => !["converted", "ineligible", "unreachable", "declined"].includes(ref.status)
+  )
   const unassignedCount = pendingReferrals.length
   const totalReferrals = referrals.length
   const unassignedRate = totalReferrals > 0
