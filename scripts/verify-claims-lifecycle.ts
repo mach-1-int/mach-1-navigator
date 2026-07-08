@@ -72,7 +72,14 @@ const allClaims = generateMonthlyClaims(
 const validated = filterClaimsByMonth(allClaims, "2026-01").filter((c) => c.status === "VALIDATED")
 
 function exportFixture(): ClaimRecord[] {
-  return createClaimRecords(validated, initialPayers, medicaid, "837P", "verify-script", [])
+  return createClaimRecords({
+    claims: validated,
+    payers: initialPayers,
+    payerConfig: medicaid,
+    format: "837P",
+    by: "verify-script",
+    existing: [],
+  })
 }
 
 // =============================================================================
@@ -103,7 +110,14 @@ run("ClaimRecord snapshots + versioned rebill ids", () => {
     "History starts with the export event"
   )
   // Rebill: same claim exported again with prior records present gets -v2
-  const rebill = createClaimRecords([validated[0]], initialPayers, medicaid, "CSV", "verify-script", records)
+  const rebill = createClaimRecords({
+    claims: [validated[0]],
+    payers: initialPayers,
+    payerConfig: medicaid,
+    format: "CSV",
+    by: "verify-script",
+    existing: records,
+  })
   assert(rebill[0].id.endsWith("-v2"), "Rebill of an exported claim gets -v2")
   // Snapshot immutability: mutating the source claim after export must not change the record
   const before = JSON.stringify(records[0].snapshot)
