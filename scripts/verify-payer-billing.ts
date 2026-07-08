@@ -31,25 +31,9 @@ import {
 } from "../lib/initial-data"
 import { createInitialState } from "../lib/store"
 import { generateBillingCSV } from "../lib/csv-exporter"
+import { createVerifyHarness } from "./verify-harness"
 
-const assert = (condition: boolean, message: string) => {
-  if (!condition) throw new Error(`FAIL: ${message}`)
-  console.log(`  ✓ ${message}`)
-}
-
-let passed = 0
-let failed = 0
-
-function run(name: string, fn: () => void) {
-  try {
-    console.log(`\n--- ${name} ---`)
-    fn()
-    passed++
-  } catch (e) {
-    failed++
-    console.error(`  ✗ ${(e as Error).message}`)
-  }
-}
+const { assert, run, printSummary } = createVerifyHarness()
 
 console.log("Payer-Agnostic Billing Engine – Verification")
 console.log("=============================================")
@@ -366,6 +350,4 @@ run("Seed integrity: patient payerIds and time log navigatorIds resolve", () => 
   )
 })
 
-console.log("\n=============================================")
-console.log(`Result: ${passed} passed, ${failed} failed`)
-process.exit(failed > 0 ? 1 : 0)
+printSummary(45)

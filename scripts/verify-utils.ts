@@ -4,25 +4,9 @@
  */
 
 import { getInitials } from "../lib/utils"
+import { createVerifyHarness } from "./verify-harness"
 
-const assert = (condition: boolean, message: string) => {
-  if (!condition) throw new Error(`FAIL: ${message}`)
-  console.log(`  ✓ ${message}`)
-}
-
-let passed = 0
-let failed = 0
-
-function run(name: string, fn: () => void) {
-  try {
-    console.log(`\n--- ${name} ---`)
-    fn()
-    passed++
-  } catch (e) {
-    failed++
-    console.error(`  ✗ ${(e as Error).message}`)
-  }
-}
+const { assert, run, printSummary } = createVerifyHarness()
 
 console.log("lib/utils – Verification")
 console.log("=============================================")
@@ -51,6 +35,4 @@ run("getInitials: empty string yields empty initials", () => {
   assert(getInitials("") === "", "'' -> ''")
 })
 
-console.log("\n=============================================")
-console.log(`Result: ${passed} passed, ${failed} failed`)
-process.exit(failed > 0 ? 1 : 0)
+printSummary(45)

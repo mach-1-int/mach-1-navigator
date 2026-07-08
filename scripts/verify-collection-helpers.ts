@@ -26,25 +26,9 @@ import {
   getUnreadCount,
   getConversationThreads,
 } from "../lib/collection-helpers"
+import { createVerifyHarness } from "./verify-harness"
 
-const assert = (condition: boolean, message: string) => {
-  if (!condition) throw new Error(`FAIL: ${message}`)
-  console.log(`  ✓ ${message}`)
-}
-
-let passed = 0
-let failed = 0
-
-function run(name: string, fn: () => void) {
-  try {
-    console.log(`\n--- ${name} ---`)
-    fn()
-    passed++
-  } catch (e) {
-    failed++
-    console.error(`  ✗ ${(e as Error).message}`)
-  }
-}
+const { assert, run, printSummary } = createVerifyHarness()
 
 console.log("lib/collection-helpers – Verification")
 console.log("=============================================")
@@ -354,6 +338,4 @@ run("getConversationThreads: groups by partner, keeps latest message and unread 
   assert(bobThread.unreadCount === 1, "counts only unread incoming messages in the thread")
 })
 
-console.log("\n=============================================")
-console.log(`Result: ${passed} passed, ${failed} failed`)
-process.exit(failed > 0 ? 1 : 0)
+printSummary(45)

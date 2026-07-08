@@ -4,25 +4,9 @@
  */
 
 import { formatTimeAgo } from "../lib/time-format"
+import { createVerifyHarness } from "./verify-harness"
 
-const assert = (condition: boolean, message: string) => {
-  if (!condition) throw new Error(`FAIL: ${message}`)
-  console.log(`  ✓ ${message}`)
-}
-
-let passed = 0
-let failed = 0
-
-function run(name: string, fn: () => void) {
-  try {
-    console.log(`\n--- ${name} ---`)
-    fn()
-    passed++
-  } catch (e) {
-    failed++
-    console.error(`  ✗ ${(e as Error).message}`)
-  }
-}
+const { assert, run, printSummary } = createVerifyHarness()
 
 console.log("lib/time-format.ts – Verification")
 console.log("==================================")
@@ -58,6 +42,4 @@ run("Defaults to the current time when `now` is omitted", () => {
   assert(label === "Just now", `a just-created timestamp reads 'Just now' (got: ${label})`)
 })
 
-console.log("\n==================================")
-console.log(`Result: ${passed} passed, ${failed} failed`)
-process.exit(failed > 0 ? 1 : 0)
+printSummary(34)

@@ -7,25 +7,9 @@ import { initialNavigatorLocations, initialScheduleEvents, initialAppointments }
 import { deriveSafetyStatus, SAFETY_RULES } from "../lib/safety-status"
 import { formatTimeAgo } from "../lib/time-format"
 import type { NavigatorLocation, SOSEvent } from "../lib/types"
+import { createVerifyHarness } from "./verify-harness"
 
-const assert = (condition: boolean, message: string) => {
-  if (!condition) throw new Error(`FAIL: ${message}`)
-  console.log(`  ✓ ${message}`)
-}
-
-let passed = 0
-let failed = 0
-
-function run(name: string, fn: () => void) {
-  try {
-    console.log(`\n--- ${name} ---`)
-    fn()
-    passed++
-  } catch (e) {
-    failed++
-    console.error(`  ✗ ${(e as Error).message}`)
-  }
-}
+const { assert, run, printSummary } = createVerifyHarness()
 
 console.log("QA Protocol: The Safety Map – Verification")
 console.log("==========================================")
@@ -135,6 +119,4 @@ run("Derivation: Sarah's seed check-in is inside the idle window", () => {
   assert(deriveSeed(sarah!) === "IDLE", "Sarah derives IDLE (stationary + stale check-in)")
 })
 
-console.log("\n==========================================")
-console.log(`Result: ${passed} passed, ${failed} failed`)
-process.exit(failed > 0 ? 1 : 0)
+printSummary(42)

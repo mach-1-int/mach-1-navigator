@@ -16,25 +16,9 @@ import { generateMonthlyClaims } from "../lib/claims-engine"
 import { PAYER_CONFIGS } from "../lib/payer-config"
 import { localCurrentMonth } from "../lib/date-rebase"
 import type { IntakeRecord, Patient, TimeLog } from "../lib/types"
+import { createVerifyHarness } from "./verify-harness"
 
-const assert = (condition: boolean, message: string) => {
-  if (!condition) throw new Error(`FAIL: ${message}`)
-  console.log(`  ✓ ${message}`)
-}
-
-let passed = 0
-let failed = 0
-
-function run(name: string, fn: () => void) {
-  try {
-    console.log(`\n--- ${name} ---`)
-    fn()
-    passed++
-  } catch (e) {
-    failed++
-    console.error(`  ✗ ${(e as Error).message}`)
-  }
-}
+const { assert, run, printSummary } = createVerifyHarness()
 
 const MEDICAID = PAYER_CONFIGS["medicaid-bh"]
 const MEDICARE_PIN = PAYER_CONFIGS["medicare-pin"]
@@ -260,6 +244,4 @@ run("Unknown patient (no matching Patient record) still produces a claim with pl
   assert(claim.validationErrors!.includes("Patient record not found"), "patient-not-found error present")
 })
 
-console.log("\n========================================================")
-console.log(`Result: ${passed} passed, ${failed} failed`)
-process.exit(failed > 0 ? 1 : 0)
+printSummary(56)

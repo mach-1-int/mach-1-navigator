@@ -11,25 +11,9 @@ import {
   calculateScheduledHours,
 } from "../lib/schedule-validation"
 import type { ScheduleEvent } from "../lib/types"
+import { createVerifyHarness } from "./verify-harness"
 
-const assert = (condition: boolean, message: string) => {
-  if (!condition) throw new Error(`FAIL: ${message}`)
-  console.log(`  ✓ ${message}`)
-}
-
-let passed = 0
-let failed = 0
-
-function run(name: string, fn: () => void) {
-  try {
-    console.log(`\n--- ${name} ---`)
-    fn()
-    passed++
-  } catch (e) {
-    failed++
-    console.error(`  ✗ ${(e as Error).message}`)
-  }
-}
+const { assert, run, printSummary } = createVerifyHarness()
 
 function makeEvent(overrides: Partial<ScheduleEvent>): ScheduleEvent {
   return {
@@ -100,6 +84,4 @@ run("calculateScheduledHours: sums minutes for events within the date range", ()
   assert(result.totalMinutes === 90, "Total minutes reflects only the in-range event (90 min)")
 })
 
-console.log("\n============================================")
-console.log(`Result: ${passed} passed, ${failed} failed`)
-process.exit(failed > 0 ? 1 : 0)
+printSummary(44)
