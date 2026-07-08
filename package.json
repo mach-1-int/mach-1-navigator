@@ -18,7 +18,8 @@
     "verify:claims-engine": "npx tsx scripts/verify-claims-engine.ts",
     "verify:care-plan-helpers": "npx tsx scripts/verify-care-plan-helpers.ts",
     "verify:schedule": "npx tsx scripts/verify-schedule-validation.ts",
-    "test": "npm run verify:billing && npm run verify:safety-map && npm run verify:claims && npm run verify:referral-ingestion && npm run verify:utils && npm run verify:time-format && npm run verify:store && npm run verify:edi-835-parser && npm run verify:claims-engine && npm run verify:care-plan-helpers && npm run verify:schedule"
+    "verify:schedule-conflicts": "npx tsx scripts/verify-schedule-conflicts.ts",
+    "test": "npm run verify:billing && npm run verify:safety-map && npm run verify:claims && npm run verify:referral-ingestion && npm run verify:utils && npm run verify:time-format && npm run verify:store && npm run verify:edi-835-parser && npm run verify:claims-engine && npm run verify:care-plan-helpers && npm run verify:schedule && npm run verify:schedule-conflicts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
