@@ -113,14 +113,14 @@ export function NavigatorSchedule() {
     if (!currentNavigator || !selectedPatient || !selectedDate || !selectedTime) return null
     const patient = patients.find((p) => p.id === selectedPatient)
     if (!patient) return null
-    const draft = appointmentDraftToEvent(
+    const draft = appointmentDraftToEvent({
       patient,
-      currentNavigator.id,
-      currentNavigator.name,
-      selectedDate,
-      selectedTime,
-      selectedType
-    )
+      navigatorId: currentNavigator.id,
+      navigatorName: currentNavigator.name,
+      date: selectedDate,
+      time: selectedTime,
+      type: selectedType,
+    })
     return validateScheduleEvent(draft, scheduleEvents)
   }, [currentNavigator, selectedPatient, selectedDate, selectedTime, selectedType, patients, scheduleEvents])
 

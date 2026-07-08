@@ -54,6 +54,15 @@ function parseDisplayTime(time: string): { hours: number; minutes: number } {
   return { hours, minutes }
 }
 
+export interface AppointmentDraftInput {
+  patient: Patient
+  navigatorId: string
+  navigatorName: string
+  date: string // YYYY-MM-DD
+  time: string // e.g. "9:00 AM"
+  type: Appointment["type"]
+}
+
 /**
  * Build a draft ScheduleEvent from the "New Appointment" dialog inputs so it
  * can be run through validateScheduleEvent before committing.
@@ -63,14 +72,14 @@ function parseDisplayTime(time: string): { hours: number; minutes: number } {
  * - Location comes from the patient's address/zip
  * - isHighSafetyRisk derives from patient riskLevel === 3
  */
-export function appointmentDraftToEvent(
-  patient: Patient,
-  navigatorId: string,
-  navigatorName: string,
-  date: string, // YYYY-MM-DD
-  time: string, // e.g. "9:00 AM"
-  type: Appointment["type"]
-): Omit<ScheduleEvent, "id"> {
+export function appointmentDraftToEvent({
+  patient,
+  navigatorId,
+  navigatorName,
+  date,
+  time,
+  type,
+}: AppointmentDraftInput): Omit<ScheduleEvent, "id"> {
   const { hours, minutes } = parseDisplayTime(time)
   const [year, month, day] = date.split("-").map(Number)
   const start = new Date(year, month - 1, day, hours, minutes)
