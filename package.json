@@ -12,7 +12,8 @@
     "verify:claims": "npx tsx scripts/verify-claims-lifecycle.ts",
     "verify:journey": "npx tsx scripts/verify-journey.ts && npx tsx scripts/verify-journey-lifecycle.ts",
     "verify:notes": "npx tsx scripts/verify-notes-compliance.ts",
-    "verify:gellert": "npx tsx scripts/verify-gellert-billing.ts"
+    "verify:gellert": "npx tsx scripts/verify-gellert-billing.ts",
+    "verify:migration": "npx tsx scripts/verify-store-migration.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
