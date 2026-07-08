@@ -207,13 +207,75 @@ export const createInitialState = (): StoreState => ({
 })
 
 // ============================================================================
+// MIGRATIONS
+// ============================================================================
+
+/**
+ * A migration transforms a persisted state object from its version to the
+ * next one. Only fields whose shape or meaning actually changed need to be
+ * touched here — brand-new slices (arrays/objects that didn't exist before)
+ * are left alone and get seeded from createInitialState() by the defaulting
+ * merge in loadState. Migrations must be pure functions of their input; if
+ * one throws, loadState falls back to a full reset rather than persist
+ * partially-migrated data.
+ */
+type StateMigration = (state: Record<string, any>) => Record<string, any>
+
+const MIGRATIONS: Record<number, StateMigration> = {
+  // v12 -> v13 (Gellert blitz): Patient gained a required `journeyPhase`.
+  // Patients persisted before the journey engine existed predate this field
+  // entirely, so derive a phase from what we already know instead of
+  // discarding the patient (and every other slice) wholesale.
+  12: (state) => {
+    if (!Array.isArray(state.patients)) return state
+    return {
+      ...state,
+      patients: state.patients.map((p: any) =>
+        p && typeof p === "object" && !p.journeyPhase
+          ? { ...p, journeyPhase: deriveLegacyJourneyPhase(p) }
+          : p
+      ),
+    }
+  },
+}
+
+/**
+ * Best-effort journey phase for a patient persisted before the journey
+ * engine existed. There's no journeyEvents history to consult for these
+ * patients (that slice didn't exist yet either), so this is a coarse but
+ * safe default: anyone not already exited was actively being navigated.
+ */
+function deriveLegacyJourneyPhase(patient: Record<string, any>): "intake" | "active" | "telenavigation" | "exited" {
+  if (patient.survivalStatus === "inactive" || patient.exit) return "exited"
+  return "active"
+}
+
+/**
+ * Apply every registered migration from `fromVersion` up to CURRENT_VERSION,
+ * in order. Versions with no registered migration pass through unchanged
+ * (their new fields are backfilled by the defaulting merge in loadState).
+ * Throws if any migration step throws.
+ */
+export function migrateState(state: Record<string, any>, fromVersion: number): Record<string, any> {
+  let migrated = state
+  for (let v = fromVersion; v < CURRENT_VERSION; v++) {
+    const migrate = MIGRATIONS[v]
+    if (migrate) {
+      migrated = migrate(migrated)
+    }
+  }
+  return { ...migrated, _version: CURRENT_VERSION }
+}
+
+// ============================================================================
 // PERSISTENCE HELPERS
 // ============================================================================
 
 /**
  * Load state from localStorage, falling back to initial state if not found
  * Merges with initial state to ensure new fields are always present
- * Forces refresh when version changes to ensure users get updated seed data
+ * Migrates forward when the version is outdated; only resets to fresh seed
+ * data if there's no version to migrate from, or migration itself fails.
  */
 export function loadState(): StoreState {
   if (typeof window === "undefined") {
@@ -225,13 +287,28 @@ export function loadState(): StoreState {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
-      const parsed = JSON.parse(saved) as Partial<StoreState>
+      let parsed = JSON.parse(saved) as Partial<StoreState> & { _version?: number }
 
-      // Force refresh if version is outdated - ensures users get new seed data
-      if (!parsed._version || parsed._version < CURRENT_VERSION) {
-        console.log(`[Store] Version mismatch (${parsed._version || 0} < ${CURRENT_VERSION}), resetting to fresh seed data`)
+      if (!parsed._version) {
+        // No version stamp at all predates versioning itself - nothing to
+        // safely migrate from, so reset to fresh seed data.
+        console.log(`[Store] No version stamp found, resetting to fresh seed data`)
         localStorage.removeItem(STORAGE_KEY)
         return initialState
+      }
+
+      if (parsed._version < CURRENT_VERSION) {
+        try {
+          console.log(`[Store] Version mismatch (${parsed._version} < ${CURRENT_VERSION}), migrating in place`)
+          parsed = migrateState(parsed, parsed._version) as typeof parsed
+        } catch (migrationError) {
+          console.warn(
+            `[Store] Migration from v${parsed._version} to v${CURRENT_VERSION} failed, resetting to fresh seed data:`,
+            migrationError
+          )
+          localStorage.removeItem(STORAGE_KEY)
+          return initialState
+        }
       }
 
       // Validate the structure has required fields
