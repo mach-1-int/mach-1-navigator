@@ -304,6 +304,13 @@ function formatTime(date: Date): string {
 }
 
 /**
+ * Extract the YYYY-MM-DD calendar date (UTC) an event's ISO startTime falls on.
+ */
+export function getEventDateISO(startTime: string): string {
+  return new Date(startTime).toISOString().split("T")[0]
+}
+
+/**
  * Get available time slots for a navigator on a given day
  */
 export function getAvailableSlots(
@@ -333,7 +340,7 @@ export function getAvailableSlots(
     .filter((event) => {
       if (event.navigatorId !== navigatorId) return false
       if (event.status === "CANCELLED") return false
-      const eventDate = new Date(event.startTime).toISOString().split("T")[0]
+      const eventDate = getEventDateISO(event.startTime)
       return eventDate === date
     })
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
@@ -420,12 +427,12 @@ export function getPatientSchedule(
       if (event.status === "CANCELLED") return false
 
       if (startDate) {
-        const eventDate = new Date(event.startTime).toISOString().split("T")[0]
+        const eventDate = getEventDateISO(event.startTime)
         if (eventDate < startDate) return false
       }
 
       if (endDate) {
-        const eventDate = new Date(event.startTime).toISOString().split("T")[0]
+        const eventDate = getEventDateISO(event.startTime)
         if (eventDate > endDate) return false
       }
 
@@ -446,7 +453,7 @@ export function getNavigatorDailySchedule(
     .filter((event) => {
       if (event.navigatorId !== navigatorId) return false
       if (event.status === "CANCELLED") return false
-      const eventDate = new Date(event.startTime).toISOString().split("T")[0]
+      const eventDate = getEventDateISO(event.startTime)
       return eventDate === date
     })
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
@@ -464,7 +471,7 @@ export function calculateScheduledHours(
   const relevantEvents = events.filter((event) => {
     if (event.navigatorId !== navigatorId) return false
     if (event.status === "CANCELLED") return false
-    const eventDate = new Date(event.startTime).toISOString().split("T")[0]
+    const eventDate = getEventDateISO(event.startTime)
     return eventDate >= startDate && eventDate <= endDate
   })
 
