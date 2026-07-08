@@ -9,11 +9,15 @@
  * of its id combined with the seed (default 42) — never Math.random — so a
  * demo replays identically. Scenarios:
  *
- *   PAY_ALL  — every claim paid in full (CLP02=1)
- *   MIXED    — ~70% paid in full, ~15% paid at 85% with a CAS*CO*45
- *              contractual adjustment, ~15% denied (CLP02=4, paid 0) with
- *              CAS*CO*197 and remark LQ*HE*N30
- *   DENY_ALL — every claim denied
+ *   PAY_ALL        — every claim paid in full (CLP02=1)
+ *   MIXED          — ~70% paid in full, ~15% paid at 85% with a CAS*CO*45
+ *                    contractual adjustment, ~15% denied (CLP02=4, paid 0)
+ *                    with CAS*CO*197 and remark LQ*HE*N30
+ *   DENY_ALL       — every claim denied
+ *   DAP_ADJUSTMENT — every claim paid at 101% with a NEGATIVE CAS*CO*144
+ *                    (payment increase) and remark LQ*HE*N807 — the UHC
+ *                    Differential Adjustment Payment incentive whose codes
+ *                    are deliberately absent from the seed dictionary
  *
  * CLP01 = ClaimRecord.id (echoing our 837 CLM01), CLP03 = billedAmount,
  * BPR02 = sum of all claim payments.
@@ -40,7 +44,7 @@ import { localTodayISO } from "../date-rebase"
 // OPTIONS
 // ============================================================================
 
-export type RemitScenario = "PAY_ALL" | "MIXED" | "DENY_ALL"
+export type RemitScenario = "PAY_ALL" | "MIXED" | "DENY_ALL" | "DAP_ADJUSTMENT"
 
 export interface Simulate835Options {
   scenario?: RemitScenario // default "MIXED"
@@ -108,6 +112,19 @@ function adjudicate(record: ClaimRecord, scenario: RemitScenario, seed: number):
 
   if (scenario === "PAY_ALL") return paidInFull()
   if (scenario === "DENY_ALL") return denied()
+  if (scenario === "DAP_ADJUSTMENT") {
+    const paid = round2(billed * 1.01)
+    return {
+      record,
+      statusCode: "1",
+      paidAmount: paid,
+      // CARC 144: incentive adjustment — negative CAS = payment increase
+      // (billed - paid keeps CLP03 = CLP04 + ΣCAS balanced to the cent)
+      adjustments: [{ groupCode: "CO", reasonCode: "144", amount: round2(billed - paid) }],
+      // RARC N807: payment adjustment based on a payment-incentive program
+      rarcCodes: ["N807"],
+    }
+  }
 
   // MIXED: ~70% full, ~15% contractual reduction to 85%, ~15% denied
   if (roll < 0.7) return paidInFull()

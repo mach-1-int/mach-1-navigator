@@ -30,6 +30,7 @@ import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { useToast } from "@/hooks/use-toast"
 import { toast as sonnerToast } from "sonner"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   FileText,
   Check,
@@ -41,12 +42,19 @@ import {
   Edit3,
   RotateCcw,
   Target,
+  Link2,
+  Database,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { localTodayISO } from "@/lib/date-rebase"
 import { generateNarrative, validateResponses } from "@/lib/narrative-generator"
+import { isGellertTemplate, PROVIDER_FIELD_TYPE_FILTER } from "@/lib/gellert-templates"
+import { checkNoteCompliance, hasBlockingFindings } from "@/lib/note-compliance"
+import { buildAutoFillContext, resolveTemplateAutoFill, type AutoFillSource } from "@/lib/note-autofill"
+import { findSameDayPrimaryNote } from "@/lib/same-day-notes"
 import { EncounterTimer, type EncounterTimeData } from "./encounter-timer"
 import { AiRecorder, type AutoFillResult } from "./ai-recorder"
+import { CompliancePanel } from "./compliance-panel"
 import type { TemplateFieldContext } from "@/lib/gemini-scribe"
 import type { TemplateField, UserRole, ZCode, TimeLog } from "@/lib/types"
 
@@ -56,6 +64,8 @@ interface NoteBuilderProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onNoteCreated?: () => void
+  defaultTemplateId?: string
+  appointmentId?: string
 }
 
 interface FieldRendererProps {
@@ -63,14 +73,23 @@ interface FieldRendererProps {
   value: unknown
   onChange: (value: unknown) => void
   error?: string
+  dynamicOptions?: { value: string; label: string }[]
+}
+
+const AUTO_FILL_SOURCE_LABELS: Record<AutoFillSource, string> = {
+  "provider-directory": "Provider directory",
+  "standing-facts": "Standing patient facts",
+  "previous-note": "From last visit",
+  appointment: "From appointment",
 }
 
 // Billing modality type (derived from contact-method field)
 type Modality = "In-Person" | "Phone" | "Video"
 
-function FieldRenderer({ field, value, onChange, error }: FieldRendererProps) {
+function FieldRenderer({ field, value, onChange, error, dynamicOptions }: FieldRendererProps) {
   switch (field.type) {
-    case "select":
+    case "select": {
+      const selectOptions = field.options ?? dynamicOptions?.map((o) => o.label) ?? []
       return (
         <div className="space-y-2">
           <Label htmlFor={field.id} className="flex items-center gap-1">
@@ -82,7 +101,7 @@ function FieldRenderer({ field, value, onChange, error }: FieldRendererProps) {
               <SelectValue placeholder={`Select ${field.label.toLowerCase()}...`} />
             </SelectTrigger>
             <SelectContent>
-              {field.options?.map((option) => (
+              {selectOptions.map((option) => (
                 <SelectItem key={option} value={option}>
                   {option}
                 </SelectItem>
@@ -90,6 +109,84 @@ function FieldRenderer({ field, value, onChange, error }: FieldRendererProps) {
             </SelectContent>
           </Select>
           {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+      )
+    }
+
+    case "time":
+      return (
+        <div className="space-y-2">
+          <Label htmlFor={field.id} className="flex items-center gap-1">
+            {field.label}
+            {field.required && <span className="text-destructive">*</span>}
+          </Label>
+          <div className="flex items-center gap-2">
+            <Input
+              id={field.id}
+              value={(value as string) || ""}
+              onChange={(e) => onChange(e.target.value)}
+              onBlur={(e) => {
+                const normalized = e.target.value.trim().replace(/\s+/g, "").toUpperCase()
+                if (normalized !== e.target.value) onChange(normalized)
+              }}
+              placeholder={field.placeholder || "3:03PM"}
+              className={cn("w-32", error && "border-destructive ring-destructive")}
+            />
+            <span className="text-xs text-muted-foreground">H:MMAM/PM — colon required</span>
+          </div>
+          {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+      )
+
+    case "provider":
+      return (
+        <div className="space-y-2">
+          <Label htmlFor={field.id} className="flex items-center gap-1">
+            {field.label}
+            {field.required && <span className="text-destructive">*</span>}
+          </Label>
+          <Select value={value as string || ""} onValueChange={onChange}>
+            <SelectTrigger id={field.id} className={cn(error && "border-destructive ring-destructive")}>
+              <SelectValue placeholder={`Select ${field.label.toLowerCase()}...`} />
+            </SelectTrigger>
+            <SelectContent>
+              {(dynamicOptions ?? []).map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {(dynamicOptions ?? []).length === 0 && (
+            <p className="text-xs text-muted-foreground">No providers in the directory yet</p>
+          )}
+          {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+      )
+
+    case "attestation":
+      return (
+        <div className={cn(
+          "flex items-start gap-3 p-3 border rounded-lg",
+          value === true ? "border-emerald-300 bg-emerald-50/50" : "bg-muted/30",
+          error && "border-destructive"
+        )}>
+          <Checkbox
+            id={field.id}
+            checked={value === true}
+            onCheckedChange={(checked) => onChange(checked === true)}
+            className="mt-0.5"
+          />
+          <div className="space-y-1">
+            <Label htmlFor={field.id} className="flex items-center gap-1 cursor-pointer">
+              {field.label}
+              {field.required && <span className="text-destructive">*</span>}
+            </Label>
+            <p className="text-xs text-muted-foreground italic">
+              &ldquo;{field.attestationText}&rdquo;
+            </p>
+            {error && <p className="text-xs text-destructive">{error}</p>}
+          </div>
         </div>
       )
 
@@ -225,6 +322,8 @@ export function NoteBuilder({
   open,
   onOpenChange,
   onNoteCreated,
+  defaultTemplateId,
+  appointmentId,
 }: NoteBuilderProps) {
   const {
     noteTemplates,
@@ -235,6 +334,11 @@ export function NoteBuilder({
     addTimeLog,
     getNoteDraft,
     deleteNoteDraft,
+    notes,
+    providers,
+    navigators,
+    appointments,
+    getStandingFacts,
   } = useDemoData()
   const { currentUser } = useRole()
   const { toast } = useToast()
@@ -249,6 +353,10 @@ export function NoteBuilder({
   const [responses, setResponses] = useState<Record<string, unknown>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
 
+  // Chart auto-fill provenance (sky styling, parallel to violet AI provenance)
+  const [autoFilledFields, setAutoFilledFields] = useState<Map<string, AutoFillSource>>(new Map())
+  const [wasPreSelected, setWasPreSelected] = useState(false)
+
   // Encounter timer state
   const [encounterTime, setEncounterTime] = useState<EncounterTimeData>({
     startTime: null,
@@ -261,10 +369,22 @@ export function NoteBuilder({
   const [barrierAddressed, setBarrierAddressed] = useState<string>("")
   const [goalAlignment, setGoalAlignment] = useState<string>("")
 
-  // Derive modality from contact-method field for billing
+  const selectedTemplate = useMemo(() => {
+    return noteTemplates.find((t) => t.id === selectedTemplateId)
+  }, [noteTemplates, selectedTemplateId])
+
+  const isGellert = isGellertTemplate(selectedTemplate)
+  const isBillableTemplate = selectedTemplate?.billable !== false
+
+  // Derive modality from contact-method field for billing; Gellert templates
+  // carry no contact-method field — their encounter type implies the modality
   const modality = useMemo((): Modality | "" => {
     const contactMethod = responses["contact-method"] as string | undefined
-    if (!contactMethod) return ""
+    if (!contactMethod) {
+      const encounterType = selectedTemplate?.encounterTypes?.[0]
+      if (encounterType) return encounterType === "phone_call" ? "Phone" : "In-Person"
+      return ""
+    }
     // Map template contact method options to billing modality
     if (contactMethod.toLowerCase().includes("face") || contactMethod.toLowerCase().includes("person")) {
       return "In-Person"
@@ -276,7 +396,7 @@ export function NoteBuilder({
       return "Phone"
     }
     return ""
-  }, [responses])
+  }, [responses, selectedTemplate])
 
   // Manual override state
   const [isManualOverride, setIsManualOverride] = useState(false)
@@ -289,9 +409,36 @@ export function NoteBuilder({
   const [aiFilledFields, setAiFilledFields] = useState<Set<string>>(new Set())
   const [unconfirmedLowConfidence, setUnconfirmedLowConfidence] = useState<Set<string>>(new Set())
 
-  const selectedTemplate = useMemo(() => {
-    return noteTemplates.find((t) => t.id === selectedTemplateId)
-  }, [noteTemplates, selectedTemplateId])
+  // Supervision notes are a supervisor/admin instrument — hide the template otherwise
+  const visibleTemplates = useMemo(() => {
+    return noteTemplates.filter(
+      (t) => t.noteType !== "supervision" || currentUser?.role === "supervisor" || currentUser?.role === "admin"
+    )
+  }, [noteTemplates, currentUser])
+
+  // Resolve dynamic optionsSource fields (provider directory / navigator roster)
+  // here so FieldRenderer stays dumb
+  const dynamicFieldOptions = useMemo(() => {
+    if (!selectedTemplate) return {} as Record<string, { value: string; label: string }[]>
+    const map: Record<string, { value: string; label: string }[]> = {}
+    const linkedIds = new Set(patient?.providerIds ?? [])
+    for (const field of selectedTemplate.fields) {
+      if (field.optionsSource === "providers") {
+        const typeFilter = PROVIDER_FIELD_TYPE_FILTER[field.id]
+        const pool = providers.filter((p) => !typeFilter || p.type === typeFilter)
+        const sorted = [...pool].sort((a, b) => Number(linkedIds.has(b.id)) - Number(linkedIds.has(a.id)))
+        map[field.id] = sorted.map((p) => ({ value: p.id, label: `${p.name} — ${p.practiceName}` }))
+      } else if (field.optionsSource === "navigators") {
+        map[field.id] = navigators.map((n) => ({ value: n.name, label: n.name }))
+      }
+    }
+    return map
+  }, [selectedTemplate, providers, navigators, patient])
+
+  // Same-day multi-note model: is there already a billable primary note today?
+  const sameDayPrimary = useMemo(() => {
+    return findSameDayPrimaryNote(notes, patientId, localTodayISO())
+  }, [notes, patientId])
 
   // Convert template fields to context for AI scribe
   const templateFieldsContext: TemplateFieldContext[] = useMemo(() => {
@@ -300,10 +447,10 @@ export function NoteBuilder({
       id: field.id,
       label: field.label,
       type: field.type,
-      options: field.options,
+      options: field.options ?? dynamicFieldOptions[field.id]?.map((o) => o.label),
       required: field.required,
     }))
-  }, [selectedTemplate])
+  }, [selectedTemplate, dynamicFieldOptions])
 
   // Get patient's active Z-codes from intake
   const activeBarriers: ZCode[] = useMemo(() => {
@@ -322,26 +469,80 @@ export function NoteBuilder({
   const autoGeneratedNarrative = useMemo(() => {
     if (!selectedTemplate) return ""
 
+    const templateNarrative = generateNarrative(selectedTemplate, responses, { providers })
+
+    // Gellert notes are the manual's exact format — no billing preamble
+    // (the preview must match what addNoteFromTemplate saves)
+    if (isGellertTemplate(selectedTemplate)) return templateNarrative
+
     // Include billing fields in the narrative
     const billingPrefix = modality ? `Patient seen via ${modality}. ` : ""
     const barrierText = barrierAddressed ? `Addressed barrier: ${barrierAddressed}. ` : ""
     const goalText = goalAlignment ? `Aligned with care plan goal: ${goalAlignment}. ` : ""
 
-    const templateNarrative = generateNarrative(selectedTemplate, responses)
     return `${billingPrefix}${barrierText}${goalText}${templateNarrative}`
-  }, [selectedTemplate, responses, modality, barrierAddressed, goalAlignment])
+  }, [selectedTemplate, responses, providers, modality, barrierAddressed, goalAlignment])
 
   // The narrative to display (either auto-generated or manual)
   const displayNarrative = isManualOverride ? manualNarrative : autoGeneratedNarrative
 
+  // The manual, enforcing itself: run every applicable rule against the draft
+  const complianceFindings = useMemo(() => {
+    if (!selectedTemplate) return []
+    return checkNoteCompliance({
+      narrative: displayNarrative,
+      template: selectedTemplate,
+      responses,
+      durationMinutes: encounterTime.durationMinutes,
+      isBillable: isBillableTemplate,
+      sameDayPrimaryExists: !!sameDayPrimary,
+    })
+  }, [selectedTemplate, displayNarrative, responses, encounterTime.durationMinutes, isBillableTemplate, sameDayPrimary])
+
+  const complianceBlocked = hasBlockingFindings(complianceFindings)
+
   // Validation state
   const canSave = useMemo(() => {
-    // Check mandatory billing requirements
-    if (!modality) return false
-    if (encounterTime.durationMinutes < 1 && !encounterTime.isRunning) return false
+    // Check mandatory billing requirements (relaxed for non-billable templates)
+    if (isBillableTemplate) {
+      if (!modality) return false
+      if (encounterTime.durationMinutes < 1 && !encounterTime.isRunning) return false
+    }
     if (!displayNarrative) return false
+    if (complianceBlocked) return false
     return true
-  }, [modality, encounterTime.durationMinutes, encounterTime.isRunning, displayNarrative])
+  }, [isBillableTemplate, modality, encounterTime.durationMinutes, encounterTime.isRunning, displayNarrative, complianceBlocked])
+
+  // Select a template and apply chart auto-fill (the cut-and-paste killer):
+  // provider directory, standing patient facts, the linked appointment, and
+  // previous-note recall, each with provenance for the sky badges
+  const applyTemplateSelection = (templateId: string) => {
+    setSelectedTemplateId(templateId)
+    setResponses({})
+    setErrors({})
+    setAutoFilledFields(new Map())
+    const template = noteTemplates.find((t) => t.id === templateId)
+    if (!template) return
+    const ctx = buildAutoFillContext({
+      patient,
+      providers,
+      standingFacts: getStandingFacts(patientId),
+      previousNotes: notes.filter((n) => n.patientId === patientId),
+      appointment: appointments.find((a) => a.id === appointmentId),
+    })
+    const resolved = resolveTemplateAutoFill(template, ctx)
+    const nextResponses: Record<string, unknown> = {}
+    const provenance = new Map<string, AutoFillSource>()
+    for (const [fieldId, resolution] of Object.entries(resolved)) {
+      if (resolution.value === undefined || resolution.value === null || resolution.value === "") continue
+      nextResponses[fieldId] = resolution.value
+      provenance.set(fieldId, resolution.source)
+    }
+    if (provenance.size > 0) {
+      setResponses(nextResponses)
+      setAutoFilledFields(provenance)
+    }
+  }
 
   // Reset state when dialog opens (render-time "previous value" pattern, no effect needed)
   const [prevOpen, setPrevOpen] = useState(open)
@@ -351,6 +552,8 @@ export function NoteBuilder({
       setSelectedTemplateId("")
       setResponses({})
       setErrors({})
+      setAutoFilledFields(new Map())
+      setWasPreSelected(false)
       setEncounterTime({
         startTime: null,
         endTime: null,
@@ -366,6 +569,11 @@ export function NoteBuilder({
       setAiHasAutoFilled(false)
       setAiFilledFields(new Set())
       setUnconfirmedLowConfidence(new Set())
+      // Launched from an appointment: pre-select the matching Gellert template
+      if (defaultTemplateId && noteTemplates.some((t) => t.id === defaultTemplateId)) {
+        applyTemplateSelection(defaultTemplateId)
+        setWasPreSelected(true)
+      }
     }
   }
 
@@ -390,7 +598,13 @@ export function NoteBuilder({
         return newErrors
       })
     }
-    // A manual edit takes ownership of the field: clear AI provenance flags
+    // A manual edit takes ownership of the field: clear AI + auto-fill provenance
+    setAutoFilledFields((prev) => {
+      if (!prev.has(fieldId)) return prev
+      const next = new Map(prev)
+      next.delete(fieldId)
+      return next
+    })
     setAiFilledFields((prev) => {
       if (!prev.has(fieldId)) return prev
       const next = new Set(prev)
@@ -416,7 +630,19 @@ export function NoteBuilder({
 
   // Handler for AI scribe auto-fill
   const handleAiAutoFill = useCallback((result: AutoFillResult) => {
-    const { data, fieldsMatched, isMock, fieldConfidence } = result
+    const { fieldsMatched, isMock, fieldConfidence } = result
+    const data = { ...result.data }
+
+    // Provider fields store ids — map AI-returned labels/names back to the directory
+    for (const field of selectedTemplate?.fields ?? []) {
+      if (field.type !== "provider") continue
+      const value = data[field.id]
+      if (typeof value !== "string" || value === "" || providers.some((p) => p.id === value)) continue
+      const byLabel = dynamicFieldOptions[field.id]?.find((o) => o.label === value)
+      const byName = providers.find((p) => value.toLowerCase().includes(p.name.toLowerCase()))
+      if (byLabel) data[field.id] = byLabel.value
+      else if (byName) data[field.id] = byName.id
+    }
 
     // Update responses with AI-extracted data
     setResponses((prev) => ({ ...prev, ...data }))
@@ -453,7 +679,7 @@ export function NoteBuilder({
     setTimeout(() => {
       setAiAutoFillCount(null)
     }, 3000)
-  }, [toast])
+  }, [toast, selectedTemplate, providers, dynamicFieldOptions])
 
   // Handler for when AI detects duration in transcript (e.g., "20 minutes")
   const handleDurationDetected = useCallback((detectedMinutes: number) => {
@@ -507,18 +733,25 @@ export function NoteBuilder({
     const templateErrors = validateResponses(selectedTemplate, responses)
     Object.assign(newErrors, templateErrors)
 
-    // Validate billing fields
-    if (!modality) {
-      newErrors._modality = "Modality is required for billing"
-    }
+    // Validate billing fields (non-billable templates carry no billing requirements)
+    if (isBillableTemplate) {
+      if (!modality) {
+        newErrors._modality = "Modality is required for billing"
+      }
 
-    if (encounterTime.durationMinutes < 1 && !encounterTime.isRunning) {
-      newErrors._duration = "Duration must be at least 1 minute"
+      if (encounterTime.durationMinutes < 1 && !encounterTime.isRunning) {
+        newErrors._duration = "Duration must be at least 1 minute"
+      }
     }
 
     // Block signing while low-confidence AI suggestions remain unconfirmed
     if (unconfirmedLowConfidence.size > 0) {
       newErrors._aiConfirm = "Confirm AI-suggested values before signing"
+    }
+
+    // The manual is the gate: blocking compliance findings stop the signature
+    if (complianceBlocked) {
+      newErrors._compliance = "Resolve manual-compliance failures before signing"
     }
 
     setErrors(newErrors)
@@ -566,9 +799,14 @@ export function NoteBuilder({
       const startTime = encounterTime.startTime || new Date(now.getTime() - duration * 60 * 1000).toISOString()
       const timeSource = encounterTime.timeSource || "timer"
 
-      // 1. Create the TimeLog entry for billing (do this first to get the ID)
+      // Same-day continuation: link to the primary note; totals stay there
+      const isContinuation = selectedTemplate.id === "template-gellert-multidisciplinary" && !!sameDayPrimary
+
+      // 1. Create the TimeLog entry for billing (do this first to get the ID).
+      // Non-billable templates (supervision, multidisciplinary continuation)
+      // NEVER create a TimeLog — that is the manual's double-billing guard.
       let timeLogId: string | undefined
-      if (duration > 0) {
+      if (isBillableTemplate && duration > 0) {
         const today = localTodayISO()
         const timeLogData: Omit<TimeLog, "id"> = {
           patientId,
@@ -593,7 +831,12 @@ export function NoteBuilder({
         timeLogId = createdTimeLog?.id
       }
 
-      // 2. Create the Note with audit-proof time data
+      // 2. Create the Note with audit-proof time data + Gellert note metadata
+      const subjectNavigatorId =
+        selectedTemplate.noteType === "supervision"
+          ? navigators.find((n) => n.name === responses["navigator-discussed"])?.id
+          : undefined
+
       addNoteFromTemplate(
         patientId,
         selectedTemplate.id,
@@ -601,12 +844,19 @@ export function NoteBuilder({
         currentUser.id,
         currentUser.name,
         currentUser.role as UserRole,
-        duration,
+        isBillableTemplate ? duration : undefined,
         {
           startTime,
           endTime,
           timeLogId,
           timeSource,
+        },
+        {
+          linkedNoteId: isContinuation ? sameDayPrimary?.id : undefined,
+          carriesDayTotal: isGellert && isBillableTemplate && !sameDayPrimary ? true : undefined,
+          billable: isBillableTemplate ? undefined : false,
+          appointmentId,
+          subjectNavigatorId,
         }
       )
 
@@ -618,7 +868,9 @@ export function NoteBuilder({
 
       toast({
         title: "Note Created",
-        description: `${selectedTemplate.name} note and time log added successfully`,
+        description: isBillableTemplate
+          ? `${selectedTemplate.name} note and time log added successfully`
+          : `${selectedTemplate.name} note added (non-billable — no time log created)`,
       })
 
       onOpenChange(false)
@@ -641,10 +893,12 @@ export function NoteBuilder({
             <div>
               <DialogTitle className="flex items-center gap-2">
                 <FileText className="h-5 w-5 text-primary" />
-                Golden Encounter Note
+                {isGellert ? "Gellert Encounter Note" : "Golden Encounter Note"}
               </DialogTitle>
               <DialogDescription>
-                CMS G0023 Compliant Documentation for {patientName}
+                {isGellert && selectedTemplate?.manualSection
+                  ? `Gellert Note Manual — ${selectedTemplate.manualSection} — ${patientName}`
+                  : `CMS G0023 Compliant Documentation for ${patientName}`}
               </DialogDescription>
             </div>
             {patient?.billingTrack && (
@@ -662,8 +916,8 @@ export function NoteBuilder({
         </DialogHeader>
 
         <div className="flex-1 overflow-hidden flex flex-col">
-          {/* Sticky Encounter Timer */}
-          {selectedTemplateId && (
+          {/* Sticky Encounter Timer (non-billable notes carry no encounter time) */}
+          {selectedTemplateId && isBillableTemplate && (
             <div className="px-6 py-3 border-b bg-muted/30">
               <EncounterTimer
                 onTimeChange={handleTimeChange}
@@ -680,12 +934,12 @@ export function NoteBuilder({
                   <p className="text-sm text-muted-foreground">
                     Select a note template to get started:
                   </p>
-                  <Select value="" onValueChange={setSelectedTemplateId}>
+                  <Select value="" onValueChange={applyTemplateSelection}>
                     <SelectTrigger className="w-[250px]">
                       <SelectValue placeholder="Quick select template..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {noteTemplates.map((template) => (
+                      {visibleTemplates.map((template) => (
                         <SelectItem key={template.id} value={template.id}>
                           {template.name}
                         </SelectItem>
@@ -694,14 +948,14 @@ export function NoteBuilder({
                   </Select>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                  {noteTemplates.map((template) => (
+                  {visibleTemplates.map((template) => (
                     <Card
                       key={template.id}
                       className={cn(
                         "cursor-pointer transition-all hover:border-primary hover:shadow-md",
                         template.id === "template-standard-navigation" && "ring-2 ring-primary/50 border-primary"
                       )}
-                      onClick={() => setSelectedTemplateId(template.id)}
+                      onClick={() => applyTemplateSelection(template.id)}
                     >
                       <CardHeader className="pb-2">
                         <div className="flex items-center justify-between">
@@ -720,6 +974,16 @@ export function NoteBuilder({
                           <Badge variant="outline" className="text-xs capitalize">
                             {template.noteType}
                           </Badge>
+                          {isGellertTemplate(template) && (
+                            <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                              Gellert Manual
+                            </Badge>
+                          )}
+                          {template.billable === false && (
+                            <Badge variant="outline" className="text-xs bg-gray-50 text-gray-600 border-gray-200">
+                              Non-billable
+                            </Badge>
+                          )}
                           <span className="text-xs text-muted-foreground">
                             {template.fields.length} fields
                           </span>
@@ -740,7 +1004,9 @@ export function NoteBuilder({
                     <div>
                       <h3 className="text-lg font-semibold">{selectedTemplate?.name}</h3>
                       <p className="text-sm text-muted-foreground">
-                        Fill in the required fields below
+                        {wasPreSelected
+                          ? "Template pre-selected from the appointment type"
+                          : "Fill in the required fields below"}
                       </p>
                     </div>
                     <Button
@@ -750,6 +1016,8 @@ export function NoteBuilder({
                         setSelectedTemplateId("")
                         setResponses({})
                         setErrors({})
+                        setAutoFilledFields(new Map())
+                        setWasPreSelected(false)
                         setBarrierAddressed("")
                         setGoalAlignment("")
                         setIsManualOverride(false)
@@ -766,6 +1034,38 @@ export function NoteBuilder({
                     </Button>
                   </div>
 
+                  {/* Same-day multi-note model: warn before a second billable note */}
+                  {sameDayPrimary && isGellert && isBillableTemplate && (
+                    <Alert className="border-sky-300 bg-sky-50 text-sky-800">
+                      <Link2 className="h-4 w-4 text-sky-600" />
+                      <AlertTitle>Second note today</AlertTitle>
+                      <AlertDescription className="text-sky-700">
+                        A billable note already exists for {patientName} today ({sameDayPrimary.templateName || "note"}).
+                        Later notes carry appointment content only — linked, non-billable, totals stay on the primary note.
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-2 h-7 border-sky-300 text-sky-700 hover:bg-sky-100 block"
+                          onClick={() => applyTemplateSelection("template-gellert-multidisciplinary")}
+                        >
+                          Switch to Multidisciplinary Continuation
+                        </Button>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  {/* Continuation confirmation: this note will link to the primary */}
+                  {sameDayPrimary && selectedTemplate?.id === "template-gellert-multidisciplinary" && (
+                    <Alert className="border-sky-300 bg-sky-50 text-sky-800">
+                      <Link2 className="h-4 w-4 text-sky-600" />
+                      <AlertTitle>Same-day continuation</AlertTitle>
+                      <AlertDescription className="text-sky-700">
+                        Will be linked to today&apos;s primary note ({sameDayPrimary.templateName || "note"}) as
+                        non-billable appointment content. No time log will be created.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
                   {/* AI Scribe Recorder */}
                   <AiRecorder
                     templateFields={templateFieldsContext}
@@ -775,6 +1075,16 @@ export function NoteBuilder({
                     onDurationDetected={handleDurationDetected}
                     currentDuration={encounterTime.durationMinutes}
                     isTimerRunning={encounterTime.isRunning}
+                    sampleFilter={(sample) =>
+                      !sample.templateIds ||
+                      sample.templateIds.includes(selectedTemplateId) ||
+                      (!!sample.encounterType && !!selectedTemplate?.encounterTypes?.includes(sample.encounterType))
+                    }
+                    noteContext={{
+                      templateName: selectedTemplate?.name,
+                      encounterType: selectedTemplate?.encounterTypes?.[0],
+                      patientName,
+                    }}
                   />
 
                   {/* Demo Mode warning: values are canned, not AI output */}
@@ -895,29 +1205,64 @@ export function NoteBuilder({
 
                   <Separator />
 
-                  {/* Template Fields */}
+                  {/* Template Fields (showIf-gated, grouped by manual section) */}
                   <div className="space-y-5">
-                    {selectedTemplate?.fields.map((field) => {
+                    {(selectedTemplate?.fields ?? [])
+                      .filter((field) => !field.showIf || responses[field.showIf.fieldId] === field.showIf.equals)
+                      .map((field, index, visibleFields) => {
                       const isAiFilled = aiFilledFields.has(field.id)
+                      const autoFillSource = autoFilledFields.get(field.id)
                       const needsConfirm = unconfirmedLowConfidence.has(field.id)
+                      const sectionHeader =
+                        field.section && field.section !== visibleFields[index - 1]?.section
+                          ? field.section
+                          : null
                       return (
-                        <div
-                          key={field.id}
-                          className={cn(
-                            isAiFilled && "border-l-2 pl-3",
-                            isAiFilled && (needsConfirm ? "border-l-amber-400" : "border-l-violet-400")
+                        <div key={field.id}>
+                          {sectionHeader && (
+                            <div className="flex items-center gap-2 mb-3 mt-1">
+                              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                {sectionHeader}
+                              </span>
+                              <Separator className="flex-1" />
+                            </div>
                           )}
-                        >
-                          {isAiFilled && (
+                          <div
+                            className={cn(
+                              (isAiFilled || autoFillSource) && "border-l-2 pl-3",
+                              isAiFilled && (needsConfirm ? "border-l-amber-400" : "border-l-violet-400"),
+                              !isAiFilled && autoFillSource && "border-l-sky-400"
+                            )}
+                          >
+                          {(isAiFilled || autoFillSource || field.neverSkip) && (
                             <div className="flex items-center gap-2 mb-1.5">
-                              <Badge
-                                variant="outline"
-                                className="h-5 gap-1 text-xs bg-violet-50 text-violet-700 border-violet-300"
-                              >
-                                <Sparkles className="h-3 w-3" />
-                                AI
-                              </Badge>
-                              {needsConfirm && (
+                              {isAiFilled && (
+                                <Badge
+                                  variant="outline"
+                                  className="h-5 gap-1 text-xs bg-violet-50 text-violet-700 border-violet-300"
+                                >
+                                  <Sparkles className="h-3 w-3" />
+                                  AI
+                                </Badge>
+                              )}
+                              {!isAiFilled && autoFillSource && (
+                                <Badge
+                                  variant="outline"
+                                  className="h-5 gap-1 text-xs bg-sky-50 text-sky-700 border-sky-300"
+                                >
+                                  <Database className="h-3 w-3" />
+                                  Auto-filled from chart — {AUTO_FILL_SOURCE_LABELS[autoFillSource]}
+                                </Badge>
+                              )}
+                              {field.neverSkip && (
+                                <Badge
+                                  variant="outline"
+                                  className="h-5 text-xs bg-rose-50 text-rose-700 border-rose-300"
+                                >
+                                  Never skip
+                                </Badge>
+                              )}
+                              {isAiFilled && needsConfirm && (
                                 <>
                                   <span className="text-xs text-amber-700">
                                     Low confidence - please verify
@@ -940,7 +1285,9 @@ export function NoteBuilder({
                             value={responses[field.id]}
                             onChange={(value) => handleFieldChange(field.id, value)}
                             error={errors[field.id]}
+                            dynamicOptions={dynamicFieldOptions[field.id]}
                           />
+                          </div>
                         </div>
                       )
                     })}
@@ -1031,7 +1378,26 @@ export function NoteBuilder({
                       </Alert>
                     )}
 
+                    {/* Manual Compliance checklist (the manual, enforcing itself) */}
+                    {selectedTemplate && (
+                      <CompliancePanel findings={complianceFindings} template={selectedTemplate} />
+                    )}
+
+                    {/* Non-billable notes: no billing summary, no time log */}
+                    {!isBillableTemplate && (
+                      <Alert className="border-gray-300 bg-muted/40">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>Non-billable note</AlertTitle>
+                        <AlertDescription>
+                          {selectedTemplate?.noteType === "supervision"
+                            ? "Supervision notes are never billed and create no time log."
+                            : "Continuation notes create no time log — the day total stays on the primary note."}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+
                     {/* Billing Summary */}
+                    {isBillableTemplate && (
                     <Card className="bg-blue-50/50 border-blue-200">
                       <CardHeader className="pb-2">
                         <CardTitle className="text-sm">Billing Summary</CardTitle>
@@ -1069,6 +1435,7 @@ export function NoteBuilder({
                         )}
                       </CardContent>
                     </Card>
+                    )}
 
                     {/* Validation Errors */}
                     {Object.keys(errors).length > 0 && (
@@ -1104,7 +1471,11 @@ export function NoteBuilder({
               {selectedTemplateId && (
                 <span>
                   {encounterTime.isRunning && "Timer running... "}
-                  {!canSave && !encounterTime.isRunning && "Complete required fields to save"}
+                  {!canSave && !encounterTime.isRunning && (
+                    complianceBlocked
+                      ? "Resolve manual-compliance failures to sign"
+                      : "Complete required fields to save"
+                  )}
                 </span>
               )}
             </div>
@@ -1118,7 +1489,7 @@ export function NoteBuilder({
                   disabled={!canSave || encounterTime.isRunning}
                 >
                   <Check className="h-4 w-4 mr-2" />
-                  Save Note & Time Log
+                  {isBillableTemplate ? "Save Note & Time Log" : "Save Note"}
                 </Button>
               )}
             </div>

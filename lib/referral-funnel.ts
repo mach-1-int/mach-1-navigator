@@ -7,38 +7,35 @@
  */
 
 import type { Referral, ReferralStatus } from "./types"
-
-const FUNNEL_STAGE_ORDER: ReferralStatus[] = [
-  "received",
-  "accepted",
-  "outreach",
-  "agreed",
-  "intake_scheduled",
-  "converted",
-  "ineligible",
-  "unreachable",
-  "declined",
-]
+import { REFERRAL_PIPELINE_ORDER, isTerminalReferralStatus } from "./referral-pipeline"
 
 export interface FunnelSummary {
   total: number
   /** Counts per status, in funnel display order */
   stages: Array<{ status: ReferralStatus; count: number }>
   converted: number
+  /** Non-terminal referrals still working through the pipeline */
+  inPipeline: number
+  /** Terminal closes that did NOT convert (ineligible + unreachable + declined) */
+  closedWithoutConversion: number
   /** Overall referral -> converted %, rounded to whole percent */
   conversionRate: number
 }
 
 export function computeFunnel(referrals: Referral[]): FunnelSummary {
   const counts = new Map<ReferralStatus, number>()
+  let inPipeline = 0
   for (const r of referrals) {
     counts.set(r.status, (counts.get(r.status) ?? 0) + 1)
+    if (!isTerminalReferralStatus(r.status)) inPipeline++
   }
   const converted = counts.get("converted") ?? 0
   return {
     total: referrals.length,
-    stages: FUNNEL_STAGE_ORDER.map((status) => ({ status, count: counts.get(status) ?? 0 })),
+    stages: REFERRAL_PIPELINE_ORDER.map((status) => ({ status, count: counts.get(status) ?? 0 })),
     converted,
+    inPipeline,
+    closedWithoutConversion: referrals.length - inPipeline - converted,
     conversionRate: referrals.length > 0 ? Math.round((converted / referrals.length) * 100) : 0,
   }
 }

@@ -35,6 +35,7 @@ import {
 } from "recharts"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { ReferralFunnelCompact } from "@/components/supervisor/referral-funnel"
 
 export function ExecutiveDashboard() {
   const {
@@ -228,7 +229,10 @@ export function ExecutiveDashboard() {
       </div>
 
       {/* Tables Row */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
+        {/* Referral Funnel (compact) */}
+        <ReferralFunnelCompact />
+
         {/* Top Referrers */}
         <Card className="bg-card">
           <CardHeader>

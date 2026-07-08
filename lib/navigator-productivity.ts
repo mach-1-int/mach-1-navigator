@@ -5,9 +5,8 @@
  *
  * Units-math honesty: these are "daily units (charge slips)" — the claims
  * ledger's monthly "claim units" aggregate differently and are labeled apart.
- *
- * Owned by workstream B-B after Phase 0 — signatures are frozen; bodies are
- * working baselines B-B extends (trend windows, sparklines, windshield time).
+ * PROGRAM_TARGETS.monthlyUnitsPerNavigator (280) remains the org-level number;
+ * this module is the per-navigator daily view AMD's one-NPI reporting can't do.
  */
 
 import type { ChargeSlip, Navigator, PayerConfig, TimeLog } from "./types"
@@ -104,4 +103,33 @@ export function computeNavigatorProductivity(
       ),
     }
   })
+}
+
+/**
+ * Consecutive worked days (most recent first) fully signed on the service
+ * date. Today is skipped while still open — an unsigned in-progress day
+ * shouldn't zero the streak before end of day.
+ */
+export function computeDayCloseStreak(
+  navigatorId: string,
+  timeLogs: TimeLog[],
+  chargeSlips: ChargeSlip[],
+  payerConfig: PayerConfig,
+  today: string = new Date().toISOString().slice(0, 10)
+): number {
+  const workedDates = [
+    ...new Set(timeLogs.filter((l) => l.navigatorId === navigatorId && l.date <= today).map((l) => l.date)),
+  ]
+    .sort()
+    .reverse()
+
+  let streak = 0
+  for (const [index, date] of workedDates.entries()) {
+    const slips = deriveDailySlips(timeLogs, chargeSlips, payerConfig, { navigatorId, date })
+    const closedSameDay = slips.length > 0 && slips.every((s) => s.signedAt?.slice(0, 10) === date)
+    if (closedSameDay) streak++
+    else if (index === 0 && date === today) continue
+    else break
+  }
+  return streak
 }

@@ -3,7 +3,6 @@
 import { useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import {
   Collapsible,
@@ -22,6 +21,8 @@ import {
   ChevronDown,
   ChevronUp,
   AlertCircle,
+  Pin,
+  Link2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { PatientNote } from "@/lib/types"
@@ -36,7 +37,7 @@ const NOTE_TYPE_CONFIG = {
   phone: { label: "Phone", className: "bg-purple-100 text-purple-700 border-purple-200", icon: Phone },
   "follow-up": { label: "Follow-up", className: "bg-amber-100 text-amber-700 border-amber-200", icon: Calendar },
   general: { label: "General", className: "bg-gray-100 text-gray-700 border-gray-200", icon: FileText },
-  supervision: { label: "Supervision", className: "bg-amber-100 text-amber-700 border-amber-200", icon: FileText },
+  supervision: { label: "Supervision", className: "bg-amber-100 text-amber-700 border-amber-200", icon: Pin },
 }
 
 const MODALITY_ICONS = {
@@ -70,7 +71,8 @@ export function ExpandableNoteCard({ note }: ExpandableNoteCardProps) {
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <Card className={cn(
         "transition-all",
-        isOpen && "ring-2 ring-primary/20 shadow-md"
+        isOpen && "ring-2 ring-primary/20 shadow-md",
+        note.type === "supervision" && "border-l-4 border-l-amber-400"
       )}>
         <CollapsibleTrigger asChild>
           <button type="button" className="w-full text-left">
@@ -90,6 +92,17 @@ export function ExpandableNoteCard({ note }: ExpandableNoteCardProps) {
                       <Badge variant="outline" className={cn("text-xs", typeConfig.className)}>
                         {typeConfig.label}
                       </Badge>
+                      {note.linkedNoteId && (
+                        <Badge variant="outline" className="text-xs bg-sky-50 text-sky-700 border-sky-200">
+                          <Link2 className="h-3 w-3 mr-1" />
+                          Continuation
+                        </Badge>
+                      )}
+                      {note.billable === false && (
+                        <Badge variant="outline" className="text-xs bg-gray-50 text-gray-600 border-gray-200">
+                          Non-billable
+                        </Badge>
+                      )}
                       {note.templateName && (
                         <span className="text-xs text-muted-foreground truncate">
                           {note.templateName}

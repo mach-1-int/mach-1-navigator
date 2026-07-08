@@ -36,12 +36,14 @@ import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { useToast } from "@/hooks/use-toast"
 import { getCurrentPositionSafe } from "@/lib/geo"
-import { Plus, Home, Phone, Video, Building, ChevronLeft, ChevronRight, AlertTriangle, Calendar, Clock, Map, List, LogIn, LogOut, MapPin, BadgeCheck, CalendarClock, Info, Users, Siren } from "lucide-react"
+import { Plus, Home, Phone, Video, Building, ChevronLeft, ChevronRight, AlertTriangle, Calendar, Clock, Map, List, LogIn, LogOut, MapPin, BadgeCheck, CalendarClock, Info, Users, Siren, FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { Appointment, NavigatorShift, DayOfWeek } from "@/lib/types"
+import type { Appointment, EncounterType, NavigatorShift, DayOfWeek } from "@/lib/types"
 import { RouteMap } from "./route-map"
 import { appointmentDraftToEvent, todayISO } from "@/lib/schedule-utils"
 import { validateScheduleEvent } from "@/lib/schedule-validation"
+import { ENCOUNTER_TYPE_LABELS, encounterTypeForAppointment, templateIdForEncounterType } from "@/lib/note-taxonomy"
+import { NoteBuilder } from "@/components/notes/note-builder"
 
 const TIME_SLOTS = [
   "8:00 AM", "9:00 AM", "10:00 AM", "11:00 AM", 
@@ -61,6 +63,19 @@ const appointmentTypeIcon = {
   video_call: Video,
   clinic: Building,
 }
+
+// Default Gellert encounter type when the navigator picks a visit type
+const DEFAULT_ENCOUNTER_BY_VISIT_TYPE: Record<Appointment["type"], EncounterType> = {
+  home_visit: "sdoh",
+  phone_call: "phone_call",
+  video_call: "phone_call",
+  clinic: "medical_appointment",
+}
+
+// Supervision notes are authored from supervision sessions, not scheduled patient visits
+const SCHEDULABLE_ENCOUNTER_TYPES = (Object.keys(ENCOUNTER_TYPE_LABELS) as EncounterType[]).filter(
+  (t) => t !== "supervision"
+)
 
 const appointmentTypeColor = {
   home_visit: "bg-chart-1/10 border-chart-1 text-chart-1",
@@ -87,7 +102,7 @@ const DAY_MAP: Record<number, DayOfWeek> = {
 }
 
 export function NavigatorSchedule() {
-  const { patients, navigators, scheduleAppointment, updateAppointment, checkInAppointment, checkOutAppointment, getSupervisor, scheduleEvents, navigatorShifts, updateNavigatorLocation, triggerSOS, isHydrated } = useDemoData()
+  const { patients, navigators, scheduleAppointment, checkInAppointment, checkOutAppointment, getSupervisor, scheduleEvents, navigatorShifts, updateNavigatorLocation, triggerSOS, isHydrated } = useDemoData()
   const { currentUser } = useRole()
   const { toast } = useToast()
   const currentNavigator = navigators.find((n) => n.id === currentUser?.id) ?? navigators[0]
@@ -98,11 +113,13 @@ export function NavigatorSchedule() {
   const [selectedAppointment, setSelectedAppointment] = useState<AppointmentWithPatient | null>(null)
   const [selectedPatient, setSelectedPatient] = useState("")
   const [selectedType, setSelectedType] = useState<Appointment["type"]>("home_visit")
+  const [selectedEncounterType, setSelectedEncounterType] = useState<EncounterType>("sdoh")
   const [selectedDate, setSelectedDate] = useState("")
   const [selectedTime, setSelectedTime] = useState("")
   const [weekOffset, setWeekOffset] = useState(0)
   const [viewMode, setViewMode] = useState<ViewMode>("dual-track")
   const [showTeamView, setShowTeamView] = useState(false)
+  const [documentingAppointment, setDocumentingAppointment] = useState<AppointmentWithPatient | null>(null)
 
   // Shifts from context (published only)
   const allShifts = navigatorShifts.filter((s) => s.isPublished)
@@ -252,27 +269,27 @@ export function NavigatorSchedule() {
         selectedDate,
         selectedTime,
         selectedType,
-        currentNavigator.id
+        currentNavigator.id,
+        undefined,
+        selectedEncounterType
       )
       setDialogOpen(false)
       setSelectedPatient("")
       setSelectedDate("")
       setSelectedTime("")
       setSelectedType("home_visit")
+      setSelectedEncounterType("sdoh")
     }
+  }
+
+  const handleDocumentVisit = (appointment: AppointmentWithPatient) => {
+    setDetailsDialogOpen(false)
+    setDocumentingAppointment(appointment)
   }
 
   const handleAppointmentClick = (appointment: AppointmentWithPatient) => {
     setSelectedAppointment(appointment)
     setDetailsDialogOpen(true)
-  }
-
-  const handleMarkComplete = () => {
-    if (selectedAppointment) {
-      updateAppointment(selectedAppointment.id, { status: "completed" })
-      setDetailsDialogOpen(false)
-      setSelectedAppointment(null)
-    }
   }
 
   // EVV Check-In handler - real device GPS when available, fallback otherwise
@@ -503,7 +520,13 @@ export function NavigatorSchedule() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Visit Type</label>
-                  <Select value={selectedType} onValueChange={(v) => setSelectedType(v as Appointment["type"])}>
+                  <Select
+                    value={selectedType}
+                    onValueChange={(v) => {
+                      setSelectedType(v as Appointment["type"])
+                      setSelectedEncounterType(DEFAULT_ENCOUNTER_BY_VISIT_TYPE[v as Appointment["type"]])
+                    }}
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -518,6 +541,24 @@ export function NavigatorSchedule() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Encounter Type</label>
+                  <Select value={selectedEncounterType} onValueChange={(v) => setSelectedEncounterType(v as EncounterType)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SCHEDULABLE_ENCOUNTER_TYPES.map(type => (
+                        <SelectItem key={type} value={type}>
+                          {ENCOUNTER_TYPE_LABELS[type]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Pre-selects the matching Gellert note template when documenting the visit
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Date</label>
@@ -909,6 +950,10 @@ export function NavigatorSchedule() {
                   <Clock className="h-4 w-4 text-muted-foreground" />
                   <span>{selectedAppointment.time}</span>
                 </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <span>Encounter: {ENCOUNTER_TYPE_LABELS[encounterTypeForAppointment(selectedAppointment)]}</span>
+                </div>
                 {/* EVV Information */}
                 {selectedAppointment.checkInTime && (
                   <div className="flex items-center gap-2 text-sm text-green-600">
@@ -941,6 +986,13 @@ export function NavigatorSchedule() {
             <Button variant="outline" onClick={() => setDetailsDialogOpen(false)}>
               Close
             </Button>
+            {/* Gellert note pre-selected from the appointment's encounter type */}
+            {selectedAppointment && selectedAppointment.status !== "cancelled" && selectedAppointment.status !== "no_show" && (
+              <Button variant="secondary" onClick={() => handleDocumentVisit(selectedAppointment)}>
+                <FileText className="h-4 w-4 mr-2" />
+                Document Visit
+              </Button>
+            )}
             {/* EVV Workflow Buttons */}
             {selectedAppointment && selectedAppointment.status === "scheduled" && (
               <Button
@@ -969,6 +1021,20 @@ export function NavigatorSchedule() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Document Visit: Gellert note builder pre-selected from the appointment's encounter type */}
+      {documentingAppointment && (
+        <NoteBuilder
+          patientId={documentingAppointment.patientId}
+          patientName={documentingAppointment.patientName}
+          open={!!documentingAppointment}
+          onOpenChange={(open) => {
+            if (!open) setDocumentingAppointment(null)
+          }}
+          defaultTemplateId={templateIdForEncounterType(encounterTypeForAppointment(documentingAppointment))}
+          appointmentId={documentingAppointment.id}
+        />
+      )}
     </div>
   )
 }

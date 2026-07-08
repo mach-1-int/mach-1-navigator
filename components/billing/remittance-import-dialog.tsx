@@ -25,6 +25,7 @@ import { AlertTriangle, FileCheck2, FileUp } from "lucide-react"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { statusChipMeta } from "@/lib/claim-lifecycle"
+import { findUnknownCodes } from "@/lib/remittance-review"
 import { parse835, X12ParseError, type Remittance835 } from "@/lib/edi/edi-835-parser"
 import { matchRemittance, type RemittanceMatchResult } from "@/lib/edi/remittance-matcher"
 import { toast } from "sonner"
@@ -51,7 +52,7 @@ export function RemittanceImportDialog({
   onOpenChange,
   preloadedText,
 }: RemittanceImportDialogProps) {
-  const { claimRecords, applyRemittance } = useDemoData()
+  const { claimRecords, remarkCodes, applyRemittance } = useDemoData()
   const { currentUser } = useRole()
 
   const [text, setText] = useState("")
@@ -116,7 +117,13 @@ export function RemittanceImportDialog({
       currentUser?.id ?? "biller1"
     )
     toast.success(
-      `${result.applied} payment${result.applied !== 1 ? "s" : ""} applied, ${result.unmatched} unmatched`
+      `${result.applied} payment${result.applied !== 1 ? "s" : ""} applied, ${result.pended} pended for review, ${result.unmatched} unmatched`,
+      {
+        description:
+          result.pended > 0
+            ? "Pended remittances are held on unknown remark codes — see the Needs Review queue"
+            : undefined,
+      }
     )
     onOpenChange(false)
   }, [parsed, applyRemittance, currentUser, onOpenChange])
@@ -182,6 +189,16 @@ export function RemittanceImportDialog({
                 <Badge variant="secondary" className="bg-emerald-100 text-emerald-700">
                   {parsed.match.matches.length} matched
                 </Badge>
+                {(() => {
+                  const pendCount = parsed.match.matches.filter(
+                    (m) => findUnknownCodes(m.remittance, remarkCodes).length > 0
+                  ).length
+                  return pendCount > 0 ? (
+                    <Badge variant="secondary" className="bg-amber-100 text-amber-700">
+                      {pendCount} will pend for review
+                    </Badge>
+                  ) : null
+                })()}
                 <Badge
                   variant="secondary"
                   className={cn(
@@ -214,10 +231,21 @@ export function RemittanceImportDialog({
                   {parsed.match.matches.map((m) => {
                     const record = recordById.get(m.claimRecordId)
                     const meta = statusChipMeta(m.resolvedStatus)
+                    const unknownCodes = findUnknownCodes(m.remittance, remarkCodes)
                     return (
-                      <TableRow key={m.claimRecordId}>
+                      <TableRow
+                        key={m.claimRecordId}
+                        className={cn(unknownCodes.length > 0 && "bg-amber-50/50")}
+                      >
                         <TableCell className="font-medium">
                           {record?.snapshot.patientName ?? m.claimRecordId}
+                          {unknownCodes.length > 0 && (
+                            <p className="flex items-center gap-1 text-xs font-normal text-amber-700 mt-0.5">
+                              <AlertTriangle className="h-3 w-3 shrink-0" />
+                              Unknown remark code{unknownCodes.length === 1 ? "" : "s"}:{" "}
+                              {unknownCodes.join(", ")} — will pend for review
+                            </p>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           {record ? `$${record.billedAmount.toFixed(2)}` : "—"}
@@ -226,9 +254,18 @@ export function RemittanceImportDialog({
                           ${m.remittance.paidAmount.toFixed(2)}
                         </TableCell>
                         <TableCell>
-                          <Badge variant="secondary" className={cn("font-medium", meta.colorClasses)}>
-                            {meta.label}
-                          </Badge>
+                          {unknownCodes.length > 0 ? (
+                            <Badge
+                              variant="outline"
+                              className="bg-amber-50 text-amber-700 border-amber-300"
+                            >
+                              Will pend
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className={cn("font-medium", meta.colorClasses)}>
+                              {meta.label}
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell className="font-mono text-xs">
                           {m.remittance.carcCodes.length > 0

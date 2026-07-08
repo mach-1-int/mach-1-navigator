@@ -1,11 +1,8 @@
-/* eslint-disable @typescript-eslint/no-unused-vars -- Phase 0 stub signatures are frozen; params intentionally unused */
 /**
  * Zones & geo — Gellert's coverage-zone model (they run 11; the demo seeds 6
  * Phoenix-metro zones) plus windshield-time (unbillable drive time) math.
  *
- * Owned by workstream B-C after Phase 0 — signatures are FROZEN.
- * zoneForZip/resolveZoneForPatient/computeZoneCoverage/zoneRenderShapes ship
- * working; computeWindshieldTime is a stub B-C implements first (half-day).
+ * Owned by workstream B-C — signatures are FROZEN.
  */
 
 import type { Appointment, GeoPoint, Navigator, Patient, User, Zone } from "./types"
@@ -50,10 +47,17 @@ export function computeZoneCoverage(
   _navigators: Navigator[],
   users: User[]
 ): ZoneCoverage[] {
+  // Resolve each patient once against the FULL zone list (explicit zoneId wins
+  // over zip) so a patient can never be counted in two zones.
+  const activeByZone = new Map<string, number>()
+  for (const patient of patients) {
+    if (patient.survivalStatus !== "active") continue
+    const zone = resolveZoneForPatient(zones, patient)
+    if (zone) activeByZone.set(zone.id, (activeByZone.get(zone.id) ?? 0) + 1)
+  }
+
   return zones.map((zone) => {
-    const activePatients = patients.filter(
-      (p) => p.survivalStatus === "active" && resolveZoneForPatient([zone], p)?.id === zone.id
-    ).length
+    const activePatients = activeByZone.get(zone.id) ?? 0
 
     const assignedNavigators = users.filter(
       (u) => u.role === "navigator" && u.attributes?.zoneId === zone.id
@@ -82,20 +86,88 @@ export interface WindshieldDay {
   stops: number
 }
 
+/** Per-navigator rollup of WindshieldDay records */
+export interface WindshieldSummary {
+  navigatorId: string
+  days: number
+  totalDriveMinutes: number
+  avgDriveMinutesPerDay: number
+}
+
+/** Appointment types that put a navigator on the road (calls don't drive) */
+const TRAVEL_APPOINTMENT_TYPES = new Set<Appointment["type"]>(["home_visit", "clinic"])
+
 /**
  * Per-navigator-per-day windshield time from same-day appointment stops
  * (patient lat/lng, else zip centroid). Labeled "windshield time (unbillable)"
  * everywhere it renders.
  *
- * PHASE 0 STUB — B-C implements (sort same-day stops by time, sum
- * geoProvider.driveTimeMinutes between consecutive stop points).
+ * Stops = non-cancelled in-person appointments with a resolvable point,
+ * sorted by time; driveMinutes = Σ geoProvider.driveTimeMinutes between
+ * consecutive stops (0 for a 1-stop day — home-base legs are not counted).
  */
 export function computeWindshieldTime(
-  _appointments: Appointment[],
-  _patients: Patient[],
-  _geoProvider: GeoProvider
+  appointments: Appointment[],
+  patients: Patient[],
+  geoProvider: GeoProvider
 ): WindshieldDay[] {
-  return []
+  const patientById = new Map(patients.map((p) => [p.id, p]))
+
+  const stopPoint = (patientId: string): GeoPoint | null => {
+    const patient = patientById.get(patientId)
+    if (!patient) return null
+    if (patient.lat !== undefined && patient.lng !== undefined) {
+      return { lat: patient.lat, lng: patient.lng }
+    }
+    const zip = patient.address?.zip
+    return zip ? geoProvider.zipToPoint(zip) : null
+  }
+
+  const byNavigatorDay = new Map<string, { navigatorId: string; date: string; stops: { time: string; point: GeoPoint }[] }>()
+  for (const apt of appointments) {
+    if (apt.status === "cancelled") continue
+    if (!TRAVEL_APPOINTMENT_TYPES.has(apt.type)) continue
+    const point = stopPoint(apt.patientId)
+    if (!point) continue
+    const key = `${apt.navigatorId}|${apt.date}`
+    const day = byNavigatorDay.get(key) ?? { navigatorId: apt.navigatorId, date: apt.date, stops: [] }
+    day.stops.push({ time: apt.time, point })
+    byNavigatorDay.set(key, day)
+  }
+
+  const days: WindshieldDay[] = []
+  for (const { navigatorId, date, stops } of byNavigatorDay.values()) {
+    stops.sort((a, b) => a.time.localeCompare(b.time))
+    let driveMinutes = 0
+    for (let i = 1; i < stops.length; i++) {
+      driveMinutes += geoProvider.driveTimeMinutes(stops[i - 1].point, stops[i].point)
+    }
+    days.push({ navigatorId, date, driveMinutes, stops: stops.length })
+  }
+
+  return days.sort(
+    (a, b) => a.navigatorId.localeCompare(b.navigatorId) || a.date.localeCompare(b.date)
+  )
+}
+
+/** Per-navigator daily averages over a set of WindshieldDay records */
+export function computeWindshieldAverages(days: WindshieldDay[]): WindshieldSummary[] {
+  const byNavigator = new Map<string, { days: number; totalDriveMinutes: number }>()
+  for (const day of days) {
+    const entry = byNavigator.get(day.navigatorId) ?? { days: 0, totalDriveMinutes: 0 }
+    entry.days++
+    entry.totalDriveMinutes += day.driveMinutes
+    byNavigator.set(day.navigatorId, entry)
+  }
+
+  return Array.from(byNavigator.entries())
+    .map(([navigatorId, { days: dayCount, totalDriveMinutes }]) => ({
+      navigatorId,
+      days: dayCount,
+      totalDriveMinutes,
+      avgDriveMinutesPerDay: Math.round((totalDriveMinutes / dayCount) * 10) / 10,
+    }))
+    .sort((a, b) => a.navigatorId.localeCompare(b.navigatorId))
 }
 
 // ============================================================================

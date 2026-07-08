@@ -288,7 +288,8 @@ export const initialPatients: Patient[] = [
     journeyPhase: "active", zoneId: "zone-central-phoenix",
     assignedNavigator: "nav1", assignedSupervisor: "sup1", healthPlan: "United Healthcare", enrollmentDate: "2024-06-01",
     lastContactDate: "2026-01-24", medicationCompliance: 85, pcpCompliance: true,
-    upcomingAppointments: [{ id: "apt1", patientId: "pt1", navigatorId: "nav1", date: "2026-01-30", time: "10:00", type: "home_visit", status: "scheduled" }],
+    providerIds: ["prov-pcp-smith", "prov-cardio-patel", "prov-lab-labcorp", "prov-pharm-walgreens"],
+    upcomingAppointments: [{ id: "apt1", patientId: "pt1", navigatorId: "nav1", date: "2026-01-30", time: "10:00", type: "home_visit", status: "scheduled", encounterType: "medical_appointment" }],
     medications: [
       { id: "med1", name: "Metformin", dosage: "500mg", frequency: "Twice daily", nextRefillDate: "2026-02-01", compliance: true },
       { id: "med2", name: "Lisinopril", dosage: "10mg", frequency: "Once daily", nextRefillDate: "2026-01-30", compliance: false },
@@ -308,7 +309,8 @@ export const initialPatients: Patient[] = [
     journeyPhase: "active", zoneId: "zone-west-valley",
     assignedNavigator: "nav1", assignedSupervisor: "sup1", healthPlan: "Mercy Care", enrollmentDate: "2024-08-15",
     lastContactDate: "2026-01-22", medicationCompliance: 92, pcpCompliance: true,
-    upcomingAppointments: [{ id: "apt2", patientId: "pt2", navigatorId: "nav1", date: "2026-01-29", time: "14:00", type: "phone_call", status: "scheduled" }],
+    providerIds: ["prov-pcp-okafor", "prov-cardio-patel", "prov-pharm-cvs"],
+    upcomingAppointments: [{ id: "apt2", patientId: "pt2", navigatorId: "nav1", date: "2026-01-29", time: "14:00", type: "phone_call", status: "scheduled", encounterType: "phone_call" }],
     medications: [
       { id: "med3", name: "Atorvastatin", dosage: "20mg", frequency: "Once daily", nextRefillDate: "2026-02-10", compliance: true },
     ],
@@ -326,6 +328,7 @@ export const initialPatients: Patient[] = [
     journeyPhase: "active", zoneId: "zone-tempe-scottsdale",
     assignedNavigator: "nav2", assignedSupervisor: "sup1", healthPlan: "United Healthcare", enrollmentDate: "2024-05-20",
     lastContactDate: "2026-01-20", medicationCompliance: 78, pcpCompliance: false,
+    providerIds: ["prov-pcp-smith", "prov-cardio-patel", "prov-lab-labcorp"],
     upcomingAppointments: [],
     medications: [
       { id: "med4", name: "Warfarin", dosage: "5mg", frequency: "Once daily", nextRefillDate: "2026-01-27", compliance: false },
@@ -346,7 +349,8 @@ export const initialPatients: Patient[] = [
     telenavigation: { startedAt: "2025-12-24", cadenceDays: 30, lastCheckInAt: "2025-12-26" },
     assignedNavigator: "nav2", assignedSupervisor: "sup1", healthPlan: "Molina", enrollmentDate: "2024-09-01",
     lastContactDate: "2026-01-25", medicationCompliance: 98, pcpCompliance: true,
-    upcomingAppointments: [{ id: "apt3", patientId: "pt4", navigatorId: "nav2", date: "2026-02-01", time: "09:00", type: "video_call", status: "scheduled" }],
+    providerIds: ["prov-pcp-okafor"],
+    upcomingAppointments: [{ id: "apt3", patientId: "pt4", navigatorId: "nav2", date: "2026-02-01", time: "09:00", type: "video_call", status: "scheduled", encounterType: "phone_call" }],
     medications: [
       { id: "med6", name: "Amlodipine", dosage: "5mg", frequency: "Once daily", nextRefillDate: "2026-02-15", compliance: true },
     ],
@@ -363,6 +367,7 @@ export const initialPatients: Patient[] = [
     journeyPhase: "active", zoneId: "zone-east-valley",
     assignedNavigator: "nav3", assignedSupervisor: "sup1", healthPlan: "United Healthcare", enrollmentDate: "2024-04-10",
     lastContactDate: "2026-01-18", medicationCompliance: 72, pcpCompliance: false,
+    providerIds: ["prov-pcp-okafor", "prov-psych-nguyen", "prov-pharm-walgreens"],
     upcomingAppointments: [],
     medications: [
       { id: "med7", name: "Insulin Glargine", dosage: "20 units", frequency: "Once daily", nextRefillDate: "2026-01-28", compliance: false },
@@ -457,7 +462,8 @@ export const initialPatients: Patient[] = [
         time: "14:00",
         type: "clinic", // Using clinic type for pharmacy visit
         status: "scheduled",
-        notes: "Pharmacy Pickup - CVS on Glendale Ave"
+        notes: "Pharmacy Pickup - CVS on Glendale Ave",
+        encounterType: "medication_assistance"
       }
     ],
     medications: [
@@ -599,11 +605,11 @@ export const initialPatients: Patient[] = [
 // ============================================================================
 
 export const initialAppointments: Appointment[] = [
-  { id: "apt1", patientId: "pt1", navigatorId: "nav1", date: "2026-01-30", time: "10:00", type: "home_visit", status: "scheduled" },
-  { id: "apt2", patientId: "pt2", navigatorId: "nav1", date: "2026-01-29", time: "14:00", type: "phone_call", status: "scheduled" },
-  { id: "apt3", patientId: "pt4", navigatorId: "nav2", date: "2026-02-01", time: "09:00", type: "video_call", status: "scheduled" },
+  { id: "apt1", patientId: "pt1", navigatorId: "nav1", date: "2026-01-30", time: "10:00", type: "home_visit", status: "scheduled", encounterType: "medical_appointment" },
+  { id: "apt2", patientId: "pt2", navigatorId: "nav1", date: "2026-01-29", time: "14:00", type: "phone_call", status: "scheduled", encounterType: "phone_call" },
+  { id: "apt3", patientId: "pt4", navigatorId: "nav2", date: "2026-02-01", time: "09:00", type: "video_call", status: "scheduled", encounterType: "phone_call" },
   // Elena's pharmacy pickup for Patient Portal demo
-  { id: "apt-elena-pharmacy", patientId: "pt-elena", navigatorId: "nav-maria", date: "2026-02-02", time: "14:00", type: "clinic", status: "scheduled", notes: "Pharmacy Pickup - CVS on Glendale Ave" },
+  { id: "apt-elena-pharmacy", patientId: "pt-elena", navigatorId: "nav-maria", date: "2026-02-02", time: "14:00", type: "clinic", status: "scheduled", notes: "Pharmacy Pickup - CVS on Glendale Ave", encounterType: "medication_assistance" },
   // Journey engine demo: intake visits for the two in-intake patients
   { id: "apt-journey-intake1", patientId: "pt-journey-intake1", navigatorId: "nav-sarah", date: "2026-02-01", time: "10:00", type: "home_visit", status: "scheduled", notes: "Intake 1 — onboarding visit" },
   { id: "apt-journey-intake2", patientId: "pt-journey-intake2", navigatorId: "nav3", date: "2026-02-02", time: "13:30", type: "home_visit", status: "scheduled", notes: "Intake 2 — survey + navigation contract (third scheduling attempt)" },
@@ -1353,6 +1359,304 @@ export const initialNotes: PatientNote[] = [
     content: "Patient admitted to Banner Desert. COPD exacerbation. Family notified. Will visit tomorrow.",
     type: "clinical",
     createdAt: "2026-01-15T09:00:00Z"
+  },
+  // ==========================================================================
+  // GELLERT MANUAL-FORMAT NOTES (templateId + responses + manual-perfect
+  // content: third person, H:MMAM/PM times, closing presence + day total).
+  // No TimeLogs are seeded for these — billing seed integrity is untouched.
+  // ==========================================================================
+  // pt1 James Thompson — PCP visit with transit (the repeat-visit recall source)
+  {
+    id: "note-g-pt1-pcp1",
+    patientId: "pt1",
+    authorId: "nav1",
+    authorName: "Emily Rodriguez",
+    authorRole: "navigator",
+    type: "visit",
+    createdAt: "2026-01-05T18:20:00Z",
+    templateId: "template-gellert-medical",
+    templateName: "Medical Appointment ± Transit",
+    duration: 50,
+    carriesDayTotal: true,
+    responses: {
+      "transport-provided": true,
+      "pickup-time": "9:40AM",
+      "pickup-location": "Patient's home",
+      "arrival-time": "10:05AM",
+      "office-provider": "prov-pcp-smith",
+      "provider-guidance": "Continue metformin 500mg twice daily with meals, check fasting blood sugar each morning, and log the readings for review at the next visit.",
+      "patient-response": "asked how to handle a missed dose, stated, \"I check my sugar before breakfast every day now,\" and repeated the medication instructions back correctly.",
+      "follow-up-date": "January 16",
+      "follow-up-time": "10:00AM",
+      "follow-up-address": "4045 W Main St, Phoenix, AZ 85004",
+      "with-patient-until": "11:15AM",
+      "duration": 50,
+    },
+    content:
+      "Navigator provided transport, picking the patient up at 9:40AM from Patient's home. Navigator and patient arrived at the office at 10:05AM. Patient was seen by Dr. Jane Smith, MD at Desert Family Medicine, 4045 W Main St, Phoenix, AZ 85004. The provider advised: Continue metformin 500mg twice daily with meals, check fasting blood sugar each morning, and log the readings for review at the next visit. Patient asked how to handle a missed dose, stated, \"I check my sugar before breakfast every day now,\" and repeated the medication instructions back correctly. A follow-up appointment was scheduled for January 16 at 10:00AM at 4045 W Main St, Phoenix, AZ 85004. Navigator was with the patient until 11:15AM. Total = 50 minutes.",
+  },
+  // pt1 — multidisciplinary day, PRIMARY note (transit + carries the day total)
+  {
+    id: "note-g-pt1-pcp2",
+    patientId: "pt1",
+    authorId: "nav1",
+    authorName: "Emily Rodriguez",
+    authorRole: "navigator",
+    type: "visit",
+    createdAt: "2026-01-16T19:05:00Z",
+    templateId: "template-gellert-medical",
+    templateName: "Medical Appointment ± Transit",
+    duration: 110,
+    carriesDayTotal: true,
+    responses: {
+      "transport-provided": true,
+      "pickup-time": "9:35AM",
+      "pickup-location": "Patient's home",
+      "arrival-time": "10:00AM",
+      "office-provider": "prov-pcp-smith",
+      "provider-guidance": "Blood pressure readings are improving; continue lisinopril each morning, reduce dietary sodium, and repeat fasting labs before the next visit.",
+      "patient-response": "told Dr. Smith, \"I've been walking to the mailbox every day like you asked,\" asked about the swelling in his ankles, and confirmed the plan for repeat labs.",
+      "follow-up-date": "February 13",
+      "follow-up-time": "9:30AM",
+      "follow-up-address": "4045 W Main St, Phoenix, AZ 85004",
+      "with-patient-until": "2:45PM",
+      "duration": 110,
+    },
+    content:
+      "Navigator provided transport, picking the patient up at 9:35AM from Patient's home. Navigator and patient arrived at the office at 10:00AM. Patient was seen by Dr. Jane Smith, MD at Desert Family Medicine, 4045 W Main St, Phoenix, AZ 85004. The provider advised: Blood pressure readings are improving; continue lisinopril each morning, reduce dietary sodium, and repeat fasting labs before the next visit. Patient told Dr. Smith, \"I've been walking to the mailbox every day like you asked,\" asked about the swelling in his ankles, and confirmed the plan for repeat labs. A follow-up appointment was scheduled for February 13 at 9:30AM at 4045 W Main St, Phoenix, AZ 85004. Navigator was with the patient until 2:45PM. Total = 110 minutes.",
+  },
+  // pt1 — multidisciplinary day, CONTINUATION (linked, non-billable, no transit)
+  {
+    id: "note-g-pt1-multi",
+    patientId: "pt1",
+    authorId: "nav1",
+    authorName: "Emily Rodriguez",
+    authorRole: "navigator",
+    type: "visit",
+    createdAt: "2026-01-16T21:30:00Z",
+    templateId: "template-gellert-multidisciplinary",
+    templateName: "Multidisciplinary Continuation",
+    linkedNoteId: "note-g-pt1-pcp2",
+    billable: false,
+    responses: {
+      "arrival-time": "1:15PM",
+      "office-provider": "prov-cardio-patel",
+      "provider-guidance": "Echocardiogram results were stable; continue current medications and return in six months.",
+      "patient-response": "asked whether his palpitations were related to his blood sugar and stated, \"That puts my mind at ease.\"",
+      "follow-up-date": "July 17",
+      "with-patient-until": "2:45PM",
+    },
+    content:
+      "Navigator and patient arrived at the appointment at 1:15PM. Patient was seen by Dr. Anita Patel, MD at Heart & Vascular Institute of Arizona, 1331 N 7th St, Suite 375, Phoenix, AZ 85006. The provider advised: Echocardiogram results were stable; continue current medications and return in six months. Patient asked whether his palpitations were related to his blood sugar and stated, \"That puts my mind at ease.\" A follow-up appointment was scheduled for July 17. Navigator was with the patient until 2:45PM.",
+  },
+  // pt1 — phone call (the colonoscopy-due thread from standing facts)
+  {
+    id: "note-g-pt1-phone",
+    patientId: "pt1",
+    authorId: "nav1",
+    authorName: "Emily Rodriguez",
+    authorRole: "navigator",
+    type: "phone",
+    createdAt: "2026-01-24T17:15:00Z",
+    templateId: "template-gellert-phone",
+    templateName: "Phone Call",
+    duration: 10,
+    carriesDayTotal: true,
+    responses: {
+      "call-time": "10:15AM",
+      "spoke-with": "patient",
+      "call-purpose": "to confirm the home visit scheduled for January 30 and review his morning glucose log",
+      "patient-statements": "confirmed he will be home at 10:00AM on January 30 and stated, \"My sugar was 118 this morning.\"",
+      "plan": "Navigator will complete the home visit on January 30 and bring the colonoscopy scheduling information discussed with Dr. Smith.",
+      "call-end-time": "10:25AM",
+      "duration": 10,
+    },
+    content:
+      "Navigator placed a phone call at 10:15AM and spoke with the patient. The purpose of the call was to confirm the home visit scheduled for January 30 and review his morning glucose log. Patient confirmed he will be home at 10:00AM on January 30 and stated, \"My sugar was 118 this morning.\" Plan: Navigator will complete the home visit on January 30 and bring the colonoscopy scheduling information discussed with Dr. Smith. The call ended at 10:25AM. Total = 10 minutes.",
+  },
+  // pt2 Dorothy Martinez — SDOH / resource navigation
+  {
+    id: "note-g-pt2-sdoh",
+    patientId: "pt2",
+    authorId: "nav1",
+    authorName: "Emily Rodriguez",
+    authorRole: "navigator",
+    type: "visit",
+    createdAt: "2026-01-16T20:00:00Z",
+    templateId: "template-gellert-sdoh",
+    templateName: "SDOH / Resource Navigation",
+    duration: 35,
+    carriesDayTotal: true,
+    responses: {
+      "arrival-time": "11:30AM",
+      "need-category": "Food security",
+      "resource-connected": "St. Mary's Food Bank weekly home-delivery program; Navigator dialed the intake line and the patient completed the enrollment questions herself.",
+      "unite-us-referral": "Submitted",
+      "patient-response": "answered every intake question, chose the Thursday delivery window, and stated, \"This takes a real worry off my plate.\"",
+      "with-patient-until": "12:05PM",
+      "duration": 35,
+    },
+    content:
+      "Navigator met with the patient at 11:30AM. Navigator assisted the patient with a Food security need. Resource connected: St. Mary's Food Bank weekly home-delivery program; Navigator dialed the intake line and the patient completed the enrollment questions herself. Unite Us referral: Submitted. Patient answered every intake question, chose the Thursday delivery window, and stated, \"This takes a real worry off my plate.\" Navigator was with the patient until 12:05PM. Total = 35 minutes.",
+  },
+  // pt2 — medication assistance with the verbatim no-touch attestation
+  {
+    id: "note-g-pt2-med-assist",
+    patientId: "pt2",
+    authorId: "nav1",
+    authorName: "Emily Rodriguez",
+    authorRole: "navigator",
+    type: "visit",
+    createdAt: "2026-01-19T22:10:00Z",
+    templateId: "template-gellert-med-assist",
+    templateName: "Medication Assistance",
+    duration: 40,
+    carriesDayTotal: true,
+    responses: {
+      "arrival-time": "3:00PM",
+      "pillbox-activity": "Patient filled all seven compartments of her weekly pillbox with atorvastatin while Navigator read each label aloud and gave verbal direction only; she double-checked each compartment when finished.",
+      "no-touch-attestation": true,
+      "pharmacy": "prov-pharm-cvs",
+      "patient-response": "filled every compartment herself, called CVS to request her atorvastatin refill, and stated, \"This is so much easier when we do it together.\"",
+      "with-patient-until": "3:40PM",
+      "duration": 40,
+    },
+    content:
+      "Navigator arrived at the patient's home at 3:00PM. Patient filled all seven compartments of her weekly pillbox with atorvastatin while Navigator read each label aloud and gave verbal direction only; she double-checked each compartment when finished. Patient refilled medication containers independently with verbal direction only; Navigator never touched the medications. Refills were coordinated with CVS Pharmacy at CVS #08842, 5940 W Glendale Ave, Glendale, AZ 85301. Patient filled every compartment herself, called CVS to request her atorvastatin refill, and stated, \"This is so much easier when we do it together.\" Navigator was with the patient until 3:40PM. Total = 40 minutes.",
+  },
+  // pt3 Robert Wilson — cardiology appointment, no transit
+  {
+    id: "note-g-pt3-cardio",
+    patientId: "pt3",
+    authorId: "nav2",
+    authorName: "David Chen",
+    authorRole: "navigator",
+    type: "visit",
+    createdAt: "2026-01-15T21:00:00Z",
+    templateId: "template-gellert-medical",
+    templateName: "Medical Appointment ± Transit",
+    duration: 45,
+    carriesDayTotal: true,
+    responses: {
+      "transport-provided": false,
+      "arrival-time": "1:30PM",
+      "office-provider": "prov-cardio-patel",
+      "provider-guidance": "INR was in range; continue warfarin 5mg daily, keep vitamin K intake consistent, and return for a recheck in four weeks.",
+      "patient-response": "confirmed his pill routine, asked whether he could restart his evening walks, and stated, \"I feel steadier than I did last month.\"",
+      "follow-up-date": "February 12",
+      "follow-up-time": "1:30PM",
+      "follow-up-address": "1331 N 7th St, Suite 375, Phoenix, AZ 85006",
+      "with-patient-until": "2:15PM",
+      "duration": 45,
+    },
+    content:
+      "Navigator and patient arrived at the office at 1:30PM. Patient was seen by Dr. Anita Patel, MD at Heart & Vascular Institute of Arizona, 1331 N 7th St, Suite 375, Phoenix, AZ 85006. The provider advised: INR was in range; continue warfarin 5mg daily, keep vitamin K intake consistent, and return for a recheck in four weeks. Patient confirmed his pill routine, asked whether he could restart his evening walks, and stated, \"I feel steadier than I did last month.\" A follow-up appointment was scheduled for February 12 at 1:30PM at 1331 N 7th St, Suite 375, Phoenix, AZ 85006. Navigator was with the patient until 2:15PM. Total = 45 minutes.",
+  },
+  // pt3 — lab draw with transit
+  {
+    id: "note-g-pt3-lab",
+    patientId: "pt3",
+    authorId: "nav2",
+    authorName: "David Chen",
+    authorRole: "navigator",
+    type: "visit",
+    createdAt: "2026-01-27T16:30:00Z",
+    templateId: "template-gellert-lab",
+    templateName: "Lab / Imaging",
+    duration: 30,
+    carriesDayTotal: true,
+    responses: {
+      "transport-provided": true,
+      "pickup-time": "7:50AM",
+      "pickup-location": "Patient's home",
+      "arrival-time": "8:15AM",
+      "facility": "prov-lab-labcorp",
+      "orders-completed": "INR draw and complete metabolic panel collected as ordered by Dr. Patel.",
+      "results-follow-up": "Dr. Patel's office will call the patient with results within two business days; Navigator will confirm at the February 12 appointment",
+      "patient-response": "checked in at the front desk himself, presented his insurance card, and stated, \"That was quicker than I expected.\"",
+      "with-patient-until": "8:45AM",
+      "duration": 30,
+    },
+    content:
+      "Navigator provided transport, picking the patient up at 7:50AM from Patient's home. Navigator and patient arrived at the facility at 8:15AM. Services were completed at LabCorp Patient Service Center at LabCorp — Phoenix Central, 1300 N 12th St, Suite 300, Phoenix, AZ 85006. Orders completed: INR draw and complete metabolic panel collected as ordered by Dr. Patel. Results follow-up: Dr. Patel's office will call the patient with results within two business days; Navigator will confirm at the February 12 appointment. Patient checked in at the front desk himself, presented his insurance card, and stated, \"That was quicker than I expected.\" Navigator was with the patient until 8:45AM. Total = 30 minutes.",
+  },
+  // pt3 — supervision note (authored by the supervisor, never billed)
+  {
+    id: "note-g-pt3-supervision",
+    patientId: "pt3",
+    authorId: "sup1",
+    authorName: "Marcus Williams",
+    authorRole: "supervisor",
+    type: "supervision",
+    createdAt: "2026-01-24T23:00:00Z",
+    templateId: "template-gellert-supervision",
+    templateName: "Supervision Note",
+    billable: false,
+    subjectNavigatorId: "nav2",
+    responses: {
+      "navigator-discussed": "David Chen",
+      "concerns": "Patient's warfarin adherence dipped after the January INR scare; navigator flagged missed evening doses and transportation strain for morning lab draws.",
+      "directives": "Supervisor directed the navigator to schedule INR draws with transport support, complete a medication-barriers assessment at the next visit, and escalate any missed dose immediately.",
+      "follow-up-date": "next 1:1 on February 7",
+    },
+    content:
+      "Supervisor discussed this patient's care with Navigator David Chen. Concerns discussed: Patient's warfarin adherence dipped after the January INR scare; navigator flagged missed evening doses and transportation strain for morning lab draws. Directives given: Supervisor directed the navigator to schedule INR draws with transport support, complete a medication-barriers assessment at the next visit, and escalate any missed dose immediately. Supervision follow-up scheduled for next 1:1 on February 7.",
+  },
+  // pt5 Frank Anderson — behavioral health with transit + SI/HI/AH/VH screen
+  {
+    id: "note-g-pt5-bh",
+    patientId: "pt5",
+    authorId: "nav3",
+    authorName: "Maria Santos",
+    authorRole: "navigator",
+    type: "visit",
+    createdAt: "2026-01-21T21:30:00Z",
+    templateId: "template-gellert-bh",
+    templateName: "Behavioral Health ± Transit",
+    duration: 65,
+    carriesDayTotal: true,
+    responses: {
+      "transport-provided": true,
+      "pickup-time": "12:35PM",
+      "pickup-location": "Patient's home",
+      "arrival-time": "1:05PM",
+      "bh-provider": "prov-psych-nguyen",
+      "safety-screen": [
+        "Suicidal ideation (SI)",
+        "Homicidal ideation (HI)",
+        "Auditory hallucinations (AH)",
+        "Visual hallucinations (VH)",
+      ],
+      "med-changes": "Dr. Nguyen increased sertraline from 50mg to 100mg daily and reviewed side effects to watch for during the first two weeks.",
+      "patient-response": "asked whether the higher dose would make him drowsy, agreed to the change, and stated, \"I finally feel like someone is listening to me.\"",
+      "follow-up-date": "February 18",
+      "with-patient-until": "2:10PM",
+      "duration": 65,
+    },
+    content:
+      "Navigator provided transport, picking the patient up at 12:35PM from Patient's home. Navigator and patient arrived at the office at 1:05PM. Patient was seen by Dr. Robert Nguyen, MD at Copper Sky Behavioral Health, 2222 E Thomas Rd, Phoenix, AZ 85016. Patient denied: Suicidal ideation (SI), Homicidal ideation (HI), Auditory hallucinations (AH), Visual hallucinations (VH). Medication changes discussed: Dr. Nguyen increased sertraline from 50mg to 100mg daily and reviewed side effects to watch for during the first two weeks. Patient asked whether the higher dose would make him drowsy, agreed to the change, and stated, \"I finally feel like someone is listening to me.\" A follow-up appointment was scheduled for February 18. Navigator was with the patient until 2:10PM. Total = 65 minutes.",
+  },
+  // pt5 — supervision note (high-risk patient, zero-tolerance reminder)
+  {
+    id: "note-g-pt5-supervision",
+    patientId: "pt5",
+    authorId: "sup1",
+    authorName: "Marcus Williams",
+    authorRole: "supervisor",
+    type: "supervision",
+    createdAt: "2026-01-28T22:30:00Z",
+    templateId: "template-gellert-supervision",
+    templateName: "Supervision Note",
+    billable: false,
+    subjectNavigatorId: "nav3",
+    responses: {
+      "navigator-discussed": "Maria Santos",
+      "concerns": "High-risk patient with a High security flag; navigator reported rising tension from the patient during the January 21 transport and two recent missed insulin refills.",
+      "directives": "Supervisor directed the navigator to complete safety check-ins before each home visit, document any incident with the patient's exact words per the zero-tolerance policy, and coordinate an insulin refill with the pharmacy this week.",
+      "follow-up-date": "next 1:1 on February 4",
+    },
+    content:
+      "Supervisor discussed this patient's care with Navigator Maria Santos. Concerns discussed: High-risk patient with a High security flag; navigator reported rising tension from the patient during the January 21 transport and two recent missed insulin refills. Directives given: Supervisor directed the navigator to complete safety check-ins before each home visit, document any incident with the patient's exact words per the zero-tolerance policy, and coordinate an insulin refill with the pharmacy this week. Supervision follow-up scheduled for next 1:1 on February 4.",
   },
 ]
 
@@ -3787,10 +4091,136 @@ export const initialChargeSlips: ChargeSlip[] = [
 
 // ============================================================================
 // PROVIDER DIRECTORY & STANDING PATIENT FACTS (Gellert note system)
-// Phase 0 stubs — workstream N-B seeds ~9 Phoenix providers and the standing
-// facts (incl. the diabetic + colonoscopy-due patient) in Phase 1.
+// The cut-and-paste killer: provider names/practices/addresses live here once
+// and auto-fill into notes instead of being retyped per note.
 // ============================================================================
 
-export const initialProviders: Provider[] = []
+export const initialProviders: Provider[] = [
+  {
+    id: "prov-pcp-smith",
+    name: "Dr. Jane Smith",
+    credential: "MD",
+    specialty: "Family Medicine",
+    practiceName: "Desert Family Medicine",
+    address: { street: "4045 W Main St", city: "Phoenix", state: "AZ", zip: "85004" },
+    phone: "(602) 555-0140",
+    type: "pcp",
+  },
+  {
+    id: "prov-pcp-okafor",
+    name: "Dr. Daniel Okafor",
+    credential: "DO",
+    specialty: "Internal Medicine",
+    practiceName: "Camelback Primary Care",
+    address: { street: "5040 N 15th Ave", city: "Phoenix", state: "AZ", zip: "85015" },
+    phone: "(602) 555-0141",
+    type: "pcp",
+  },
+  {
+    id: "prov-cardio-patel",
+    name: "Dr. Anita Patel",
+    credential: "MD",
+    specialty: "Cardiology",
+    practiceName: "Heart & Vascular Institute of Arizona",
+    address: { street: "1331 N 7th St, Suite 375", city: "Phoenix", state: "AZ", zip: "85006" },
+    phone: "(602) 555-0142",
+    type: "specialist",
+  },
+  {
+    id: "prov-bh-copper-sky",
+    name: "Copper Sky Behavioral Health",
+    specialty: "Outpatient Behavioral Health Clinic",
+    practiceName: "Copper Sky Behavioral Health",
+    address: { street: "2222 E Thomas Rd", city: "Phoenix", state: "AZ", zip: "85016" },
+    phone: "(602) 555-0143",
+    type: "behavioral_health",
+  },
+  {
+    id: "prov-psych-nguyen",
+    name: "Dr. Robert Nguyen",
+    credential: "MD",
+    specialty: "Psychiatry",
+    practiceName: "Copper Sky Behavioral Health",
+    address: { street: "2222 E Thomas Rd", city: "Phoenix", state: "AZ", zip: "85016" },
+    phone: "(602) 555-0144",
+    type: "behavioral_health",
+  },
+  {
+    id: "prov-lab-labcorp",
+    name: "LabCorp Patient Service Center",
+    specialty: "Clinical Laboratory",
+    practiceName: "LabCorp — Phoenix Central",
+    address: { street: "1300 N 12th St, Suite 300", city: "Phoenix", state: "AZ", zip: "85006" },
+    phone: "(602) 555-0145",
+    type: "lab_imaging",
+  },
+  {
+    id: "prov-imaging-simonmed",
+    name: "SimonMed Imaging",
+    specialty: "Diagnostic Imaging",
+    practiceName: "SimonMed Imaging — Mesa",
+    address: { street: "6634 E Baseline Rd", city: "Mesa", state: "AZ", zip: "85206" },
+    phone: "(480) 555-0146",
+    type: "lab_imaging",
+  },
+  {
+    id: "prov-pharm-walgreens",
+    name: "Walgreens Pharmacy",
+    specialty: "Retail Pharmacy",
+    practiceName: "Walgreens #04521",
+    address: { street: "1610 E Camelback Rd", city: "Phoenix", state: "AZ", zip: "85016" },
+    phone: "(602) 555-0147",
+    type: "pharmacy",
+  },
+  {
+    id: "prov-pharm-cvs",
+    name: "CVS Pharmacy",
+    specialty: "Retail Pharmacy",
+    practiceName: "CVS #08842",
+    address: { street: "5940 W Glendale Ave", city: "Glendale", state: "AZ", zip: "85301" },
+    phone: "(623) 555-0148",
+    type: "pharmacy",
+  },
+]
 
-export const initialStandingFacts: StandingPatientFacts[] = []
+// Durable per-patient facts the auto-fill layer recalls across notes.
+// pt1 is the field anecdote: diabetic patient with a colonoscopy due.
+export const initialStandingFacts: StandingPatientFacts[] = [
+  {
+    patientId: "pt1",
+    diabetic: true,
+    colonoscopy: { status: "due", note: "Overdue since November; patient agreed to scheduling support at the January visit" },
+    preferredPharmacyProviderId: "prov-pharm-walgreens",
+    updatedAt: "2026-01-24T17:30:00Z",
+    updatedBy: "nav1",
+  },
+  {
+    patientId: "pt2",
+    diabetic: false,
+    colonoscopy: { status: "up_to_date", note: "Completed 2024" },
+    mammogram: { status: "up_to_date", note: "Completed September 2025" },
+    preferredPharmacyProviderId: "prov-pharm-cvs",
+    updatedAt: "2026-01-19T22:30:00Z",
+    updatedBy: "nav1",
+  },
+  {
+    patientId: "pt3",
+    colonoscopy: { status: "declined", note: "Declined screening discussion at the January cardiology visit; revisit in six months" },
+    updatedAt: "2026-01-15T21:30:00Z",
+    updatedBy: "nav2",
+  },
+  {
+    patientId: "pt4",
+    mammogram: { status: "due", note: "Due this quarter; reminder set for the next telenavigation check-in" },
+    updatedAt: "2026-01-10T18:00:00Z",
+    updatedBy: "nav2",
+  },
+  {
+    patientId: "pt5",
+    diabetic: true,
+    colonoscopy: { status: "never", note: "Never screened; education provided January 21" },
+    preferredPharmacyProviderId: "prov-pharm-walgreens",
+    updatedAt: "2026-01-21T22:00:00Z",
+    updatedBy: "nav3",
+  },
+]

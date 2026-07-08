@@ -58,6 +58,10 @@ import { NoteBuilder } from "@/components/notes/note-builder"
 import { IntakeForm } from "@/components/intake/intake-form"
 import { BillingProgressBar } from "@/components/patient/billing-progress-bar"
 import { NoteDetailModal } from "@/components/notes/note-detail-modal"
+import { PhaseChip } from "@/components/journey/phase-chip"
+import { JourneyTimeline } from "@/components/journey/journey-timeline"
+import { GraduationPanel } from "@/components/journey/graduation-panel"
+import { IntakeChecklist } from "@/components/intake/intake-checklist"
 import { NotesSplitView } from "@/components/notes/notes-split-view"
 import { ExpandableNoteList } from "@/components/notes/expandable-note-card"
 import type { Patient, AdverseEvent, Appointment, PatientNote } from "@/lib/types"
@@ -356,6 +360,7 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
               <p className="text-muted-foreground text-sm mb-3">Chart: {patient.chartNumber}</p>
               <div className="flex flex-wrap gap-2 justify-center">
                 <Badge className={riskBadge.className}>{riskBadge.label}</Badge>
+                <PhaseChip patient={patient} />
                 <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
                   <RefreshCw className="h-3 w-3 mr-1" />
                   AMD Sync: Active
@@ -753,8 +758,9 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
       {/* Right Column - Action (Tabs) */}
       <div className="lg:col-span-2">
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="journey">Journey</TabsTrigger>
             <TabsTrigger value="care-plan">Care Plan</TabsTrigger>
             <TabsTrigger value="timeline">Timeline</TabsTrigger>
             <TabsTrigger value="notes">Notes</TabsTrigger>
@@ -957,6 +963,13 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
           </TabsContent>
 
           {/* Care Plan Tab */}
+          {/* Journey Tab (composition only: journey components own the logic) */}
+          <TabsContent value="journey" className="mt-4 space-y-4">
+            {patient.journeyPhase === "intake" && <IntakeChecklist patientId={patient.id} />}
+            <GraduationPanel patient={patient} />
+            <JourneyTimeline patientId={patient.id} />
+          </TabsContent>
+
           <TabsContent value="care-plan" className="mt-4">
             <CarePlanTab patientId={patientId} />
           </TabsContent>

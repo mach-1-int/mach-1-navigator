@@ -19,9 +19,12 @@ import { cn } from "@/lib/utils"
 import { useState } from "react"
 import { useRole } from "@/lib/role-context"
 import { useDemoData } from "@/lib/demo-data-context"
-import type { PatientNote } from "@/lib/types"
+import { PhaseChip } from "@/components/journey/phase-chip"
+import { JOURNEY_PHASE_CONFIG } from "@/lib/journey"
+import type { JourneyPhase, PatientNote } from "@/lib/types"
 
 type RiskFilter = "all" | "1" | "2" | "3"
+type PhaseFilter = "all" | JourneyPhase
 
 export function NavigatorPatients() {
   const { navigateTo, currentUser } = useRole()
@@ -32,6 +35,7 @@ export function NavigatorPatients() {
 
   const [search, setSearch] = useState("")
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("all")
+  const [phaseFilter, setPhaseFilter] = useState<PhaseFilter>("all")
   const [selectedPatient, setSelectedPatient] = useState<string | null>(null)
   const [noteText, setNoteText] = useState("")
   const [noteType, setNoteType] = useState<PatientNote["type"]>("general")
@@ -50,13 +54,14 @@ export function NavigatorPatients() {
 
   const filteredPatients = myPatients.filter((p) => {
     const matchesRisk = riskFilter === "all" || String(p.riskLevel) === riskFilter
+    const matchesPhase = phaseFilter === "all" || p.journeyPhase === phaseFilter
     const q = search.trim().toLowerCase()
     const matchesSearch =
       !q ||
       p.name.toLowerCase().includes(q) ||
       p.chartNumber.toLowerCase().includes(q) ||
       p.healthPlan.toLowerCase().includes(q)
-    return matchesRisk && matchesSearch
+    return matchesRisk && matchesPhase && matchesSearch
   })
 
   const highRiskCount = myPatients.filter((p) => p.riskLevel === 3).length
@@ -149,6 +154,19 @@ export function NavigatorPatients() {
                 <SelectItem value="1">Low Risk (L1)</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={phaseFilter} onValueChange={(v: PhaseFilter) => setPhaseFilter(v)}>
+              <SelectTrigger className="w-full sm:w-44 bg-card">
+                <SelectValue placeholder="Journey Phase" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Phases</SelectItem>
+                {(Object.keys(JOURNEY_PHASE_CONFIG) as JourneyPhase[]).map((phase) => (
+                  <SelectItem key={phase} value={phase}>
+                    {JOURNEY_PHASE_CONFIG[phase].label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -214,6 +232,7 @@ export function NavigatorPatients() {
                           <p className="text-xs text-muted-foreground">
                             {patient.chartNumber} · {patient.healthPlan}
                           </p>
+                          <PhaseChip patient={patient} compact className="mt-1" />
                         </div>
                       </div>
 

@@ -40,6 +40,7 @@ import {
   Clock,
   FileOutput,
   Send,
+  ShieldAlert,
   Users,
   TrendingUp,
   Wallet,
@@ -56,9 +57,11 @@ import {
   formatMonthDisplay,
 } from "@/lib/claims-engine"
 import { getActiveClaimMonthKeys } from "@/lib/claim-lifecycle"
+import { deriveDailySlips } from "@/lib/charge-slips"
 import { generate837P } from "@/lib/edi/edi-837p-generator"
 import { downloadMonthlyClaimsCsv, triggerFileDownload } from "@/lib/csv-exporter"
 import { ClaimsLedger } from "@/components/billing/claims-ledger"
+import { DenialWorkQueue } from "@/components/billing/denial-work-queue"
 import type { BillableClaim } from "@/lib/types"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -76,6 +79,7 @@ export function ClaimsManager() {
   const {
     patients,
     timeLogs,
+    chargeSlips,
     navigators,
     intakeRecords,
     activePayerConfigId,
@@ -94,7 +98,7 @@ export function ClaimsManager() {
 
   // State
   const [selectedMonth, setSelectedMonth] = useState<string>("")
-  const [selectedTab, setSelectedTab] = useState<"ready" | "attention" | "ledger">("ready")
+  const [selectedTab, setSelectedTab] = useState<"ready" | "attention" | "denials" | "ledger">("ready")
   const [selectedClaims, setSelectedClaims] = useState<Set<string>>(new Set())
   const [nudgeDialogOpen, setNudgeDialogOpen] = useState(false)
   const [claimToNudge, setClaimToNudge] = useState<BillableClaim | null>(null)
@@ -168,6 +172,24 @@ export function ClaimsManager() {
 
   // Ledger metrics from persisted claim records
   const activeRecords = useMemo(() => claimRecords.filter((r) => !r.voided), [claimRecords])
+
+  const deniedCount = useMemo(
+    () => activeRecords.filter((r) => r.status === "DENIED").length,
+    [activeRecords]
+  )
+
+  // Informational day-close signal per claim: unsigned charge-slip days in the
+  // claim's month. NEVER a validation error — claims export regardless.
+  const unsignedSlipDaysByClaim = useMemo(() => {
+    const counts = new Map<string, number>()
+    const slips = deriveDailySlips(timeLogs, chargeSlips, activePayerConfig)
+    for (const slip of slips) {
+      if (slip.signed) continue
+      const key = `${slip.patientId}:${slip.date.slice(0, 7)}`
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    return counts
+  }, [timeLogs, chargeSlips, activePayerConfig])
 
   const outstandingAR = useMemo(() => {
     return activeRecords
@@ -532,8 +554,8 @@ export function ClaimsManager() {
       </Card>
 
       {/* Claims Tabs */}
-      <Tabs value={selectedTab} onValueChange={(v) => setSelectedTab(v as "ready" | "attention" | "ledger")}>
-        <TabsList className="grid w-full grid-cols-3 max-w-xl">
+      <Tabs value={selectedTab} onValueChange={(v) => setSelectedTab(v as "ready" | "attention" | "denials" | "ledger")}>
+        <TabsList className="grid w-full grid-cols-4 max-w-2xl">
           <TabsTrigger value="ready" className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4" />
             Ready to Bill
@@ -546,6 +568,13 @@ export function ClaimsManager() {
             Needs Attention
             <Badge variant="secondary" className="bg-red-100 text-red-700">
               {attentionClaims.length}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="denials" className="flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4" />
+            Denials
+            <Badge variant="secondary" className="bg-rose-100 text-rose-700">
+              {deniedCount}
             </Badge>
           </TabsTrigger>
           <TabsTrigger value="ledger" className="flex items-center gap-2">
@@ -680,6 +709,19 @@ export function ClaimsManager() {
                                     In-progress month
                                   </Badge>
                                 )}
+                                {(() => {
+                                  const unsignedDays = unsignedSlipDaysByClaim.get(
+                                    `${claim.patientId}:${claim.month}`
+                                  )
+                                  return unsignedDays ? (
+                                    <Badge
+                                      variant="outline"
+                                      className="bg-slate-50 text-slate-600 border-slate-200 text-xs"
+                                    >
+                                      {unsignedDays} unsigned slip-day{unsignedDays === 1 ? "" : "s"}
+                                    </Badge>
+                                  ) : null
+                                })()}
                               </div>
                               <p className="text-xs text-muted-foreground">
                                 {claim.serviceType} • {claim.diagnosisCodes.slice(0, 2).join(", ")}
@@ -820,6 +862,11 @@ export function ClaimsManager() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Denial Work Queue Tab */}
+        <TabsContent value="denials" className="mt-4">
+          <DenialWorkQueue />
         </TabsContent>
 
         {/* Ledger Tab */}

@@ -3,8 +3,9 @@
  * Scores and ranks navigators for optimal patient-navigator matching
  */
 
-import type { Referral, NavigatorAttributes } from './types'
+import type { Referral, NavigatorAttributes, Zone } from './types'
 import { geo } from './geo'
+import { zoneForZip } from './zones'
 
 // ============================================================================
 // SCORING FUNCTION
@@ -31,10 +32,13 @@ export interface NavigatorWithAttributes {
  * - Capacity: +30 pts * (1 - current/max), full navigators get 0
  * - Language match: +20 pts, mismatch when needed: -50 (hard fail)
  * - Acuity capability: +10 pts if navigator can handle required level
+ * - Zone match (when zones provided): +15 pts same zone; cross-zone is
+ *   informational only (0 pts)
  */
 export function calculateMatchScore(
   referral: Referral,
-  navigator: NavigatorWithAttributes
+  navigator: NavigatorWithAttributes,
+  zones?: Zone[]
 ): MatchResult {
   const attrs = navigator.attributes
   const matchReasons: string[] = []
@@ -106,6 +110,25 @@ export function calculateMatchScore(
     matchReasons.push(`⚠️ Not certified for ${requiredAcuity} acuity`)
   }
 
+  // -------------------------------------------------------------------------
+  // ZONE SCORING (optional - only when the caller passes the zone list)
+  // -------------------------------------------------------------------------
+  if (zones && zones.length > 0) {
+    const referralZone = zoneForZip(zones, referral.zipCode)
+    const navigatorZone = attrs.zoneId
+      ? zones.find((z) => z.id === attrs.zoneId)
+      : zoneForZip(zones, attrs.homeZipCode)
+
+    if (referralZone && navigatorZone) {
+      if (referralZone.id === navigatorZone.id) {
+        score += 15
+        matchReasons.push(`Zone match: ${referralZone.name} +15 pts`)
+      } else {
+        matchReasons.push(`Cross-zone: patient in ${referralZone.name}, navigator covers ${navigatorZone.name}`)
+      }
+    }
+  }
+
   return {
     score,
     distance,
@@ -128,10 +151,11 @@ export interface RankedNavigator extends MatchResult {
  */
 export function rankNavigatorsForReferral(
   referral: Referral,
-  navigators: NavigatorWithAttributes[]
+  navigators: NavigatorWithAttributes[],
+  zones?: Zone[]
 ): RankedNavigator[] {
   const results: RankedNavigator[] = navigators.map(nav => {
-    const match = calculateMatchScore(referral, nav)
+    const match = calculateMatchScore(referral, nav, zones)
     return {
       navigatorId: nav.id,
       navigatorName: nav.name,
@@ -149,9 +173,10 @@ export function rankNavigatorsForReferral(
  */
 export function getBestMatch(
   referral: Referral,
-  navigators: NavigatorWithAttributes[]
+  navigators: NavigatorWithAttributes[],
+  zones?: Zone[]
 ): RankedNavigator | null {
-  const ranked = rankNavigatorsForReferral(referral, navigators)
+  const ranked = rankNavigatorsForReferral(referral, navigators, zones)
 
   // Return best match only if score is positive (viable match)
   if (ranked.length > 0 && ranked[0].score > 0) {

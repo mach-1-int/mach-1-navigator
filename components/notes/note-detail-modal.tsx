@@ -8,7 +8,6 @@ import {
 } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Clock,
@@ -20,6 +19,8 @@ import {
   Users,
   Stethoscope,
   AlertCircle,
+  Pin,
+  Link2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { PatientNote } from "@/lib/types"
@@ -36,7 +37,7 @@ const NOTE_TYPE_CONFIG = {
   phone: { label: "Phone", className: "bg-purple-100 text-purple-700 border-purple-200", icon: Phone },
   "follow-up": { label: "Follow-up", className: "bg-amber-100 text-amber-700 border-amber-200", icon: Calendar },
   general: { label: "General", className: "bg-gray-100 text-gray-700 border-gray-200", icon: FileText },
-  supervision: { label: "Supervision", className: "bg-amber-100 text-amber-700 border-amber-200", icon: FileText },
+  supervision: { label: "Supervision", className: "bg-amber-100 text-amber-700 border-amber-200", icon: Pin },
 }
 
 const MODALITY_ICONS = {
@@ -74,8 +75,20 @@ export function NoteDetailModal({ note, open, onOpenChange }: NoteDetailModalPro
               <div>
                 <DialogTitle className="flex items-center gap-2">
                   <Badge variant="outline" className={cn("text-xs", typeConfig.className)}>
+                    {note.type === "supervision" && <Pin className="h-3 w-3 mr-1" />}
                     {typeConfig.label}
                   </Badge>
+                  {note.linkedNoteId && (
+                    <Badge variant="outline" className="text-xs bg-sky-50 text-sky-700 border-sky-200">
+                      <Link2 className="h-3 w-3 mr-1" />
+                      Same-day continuation
+                    </Badge>
+                  )}
+                  {note.billable === false && (
+                    <Badge variant="outline" className="text-xs bg-gray-50 text-gray-600 border-gray-200">
+                      Non-billable
+                    </Badge>
+                  )}
                   {note.templateName && (
                     <span className="text-sm font-normal text-muted-foreground">
                       {note.templateName}

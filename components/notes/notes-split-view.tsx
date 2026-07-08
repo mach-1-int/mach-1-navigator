@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
@@ -16,6 +16,8 @@ import {
   Stethoscope,
   ChevronRight,
   AlertCircle,
+  Pin,
+  Link2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { PatientNote } from "@/lib/types"
@@ -31,7 +33,7 @@ const NOTE_TYPE_CONFIG = {
   phone: { label: "Phone", className: "bg-purple-100 text-purple-700 border-purple-200", icon: Phone },
   "follow-up": { label: "Follow-up", className: "bg-amber-100 text-amber-700 border-amber-200", icon: Calendar },
   general: { label: "General", className: "bg-gray-100 text-gray-700 border-gray-200", icon: FileText },
-  supervision: { label: "Supervision", className: "bg-amber-100 text-amber-700 border-amber-200", icon: FileText },
+  supervision: { label: "Supervision", className: "bg-amber-100 text-amber-700 border-amber-200", icon: Pin },
 }
 
 const MODALITY_ICONS = {
@@ -90,15 +92,18 @@ export function NotesSplitView({ notes, emptyMessage = "No notes available" }: N
                     "w-full text-left p-3 rounded-lg transition-all",
                     isSelected
                       ? "bg-primary/10 border border-primary/30"
-                      : "hover:bg-muted/50 border border-transparent"
+                      : "hover:bg-muted/50 border border-transparent",
+                    note.type === "supervision" && "border-l-2 border-l-amber-400 bg-amber-50/40"
                   )}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
+                        {note.type === "supervision" && <Pin className="h-3 w-3 text-amber-600" />}
                         <Badge variant="outline" className={cn("text-xs", typeConfig.className)}>
                           {typeConfig.label}
                         </Badge>
+                        {note.linkedNoteId && <Link2 className="h-3 w-3 text-sky-600" />}
                         {isSelected && <ChevronRight className="h-3 w-3 text-primary" />}
                       </div>
                       <p className="text-xs text-muted-foreground line-clamp-2">
@@ -148,12 +153,25 @@ export function NotesSplitView({ notes, emptyMessage = "No notes available" }: N
                     </span>
                   </div>
                 </div>
-                {selectedNote.duration && (
-                  <Badge variant="outline" className="text-xs">
-                    <Clock className="h-3 w-3 mr-1" />
-                    {selectedNote.duration} min
-                  </Badge>
-                )}
+                <div className="flex items-center gap-1">
+                  {selectedNote.linkedNoteId && (
+                    <Badge variant="outline" className="text-xs bg-sky-50 text-sky-700 border-sky-200">
+                      <Link2 className="h-3 w-3 mr-1" />
+                      Continuation
+                    </Badge>
+                  )}
+                  {selectedNote.billable === false && (
+                    <Badge variant="outline" className="text-xs bg-gray-50 text-gray-600 border-gray-200">
+                      Non-billable
+                    </Badge>
+                  )}
+                  {selectedNote.duration && (
+                    <Badge variant="outline" className="text-xs">
+                      <Clock className="h-3 w-3 mr-1" />
+                      {selectedNote.duration} min
+                    </Badge>
+                  )}
+                </div>
               </div>
             </CardHeader>
             <ScrollArea className="h-[calc(100%-72px)]">

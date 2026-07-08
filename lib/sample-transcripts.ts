@@ -1,7 +1,18 @@
+import type { EncounterType } from "./types"
+
 /**
- * Sample transcripts for demo/testing the AI Scribe feature
+ * Sample transcripts for demo/testing the AI Scribe feature.
+ * Untagged samples show for every template; tagged samples are filtered to
+ * their encounter type / template ids by the recorder's sampleFilter.
  */
-export const SAMPLE_TRANSCRIPTS: { label: string; transcript: string }[] = [
+export interface SampleTranscript {
+  label: string
+  encounterType?: EncounterType
+  templateIds?: string[]
+  transcript: string
+}
+
+export const SAMPLE_TRANSCRIPTS: SampleTranscript[] = [
   {
     label: "Transportation Barrier",
     transcript: `Navigator: Good morning Mrs. Johnson, how are you doing today?
@@ -39,5 +50,23 @@ Navigator: That could be why you've been having stomach upset. Always take it wi
 Patient: Oh, I see. Can you write this down for me?
 Navigator: Of course. I'll make you a medication schedule. I'm also going to arrange for a pharmacist to call you next week for additional counseling.
 Patient: That would be very helpful. Thank you for explaining everything.`,
+  },
+  {
+    label: "PCP Visit with Transit",
+    encounterType: "medical_appointment",
+    templateIds: ["template-gellert-medical"],
+    transcript: `Okay, documenting today's visit. I picked the patient up at her home at nine forty this morning and we drove straight to her primary care appointment. We arrived at the office at ten oh five - that's Desert Family Medicine, 4045 West Main Street, Phoenix, Arizona 85004. She was seen by her PCP, Dr. Jane Smith. Dr. Smith reviewed her blood pressure log, said the readings are trending better, and advised her to keep taking the lisinopril every morning and to cut back on salty snacks. She also wants labs repeated before the next visit. The patient was engaged the whole time - she asked Dr. Smith about the swelling in her ankles and told her, quote, I've been walking to the mailbox every day like you asked, end quote. She repeated the medication instructions back correctly. Before we left, the front desk scheduled her follow-up for March 4 at two thirty in the afternoon, same office, 4045 West Main Street. I drove her home afterward and stayed with her until eleven fifteen to make sure she got settled. That was about 50 minutes total for the encounter.`,
+  },
+  {
+    label: "BH Visit with Med Change",
+    encounterType: "behavioral_health",
+    templateIds: ["template-gellert-bh"],
+    transcript: `Behavioral health appointment today. No transport this time - the patient met me at the clinic. We arrived at the behavioral health office at one o five in the afternoon and she was seen by her psychiatrist, Dr. Robert Nguyen. I did the standard safety screening in the waiting room: she denied any thoughts of hurting herself, denied any thoughts of hurting anyone else, and denied hearing voices or seeing things that are not there. No safety concerns at all today. Dr. Nguyen talked through how she has been sleeping and decided to increase her sertraline from fifty milligrams to one hundred milligrams daily, and he explained the possible side effects to watch for in the first two weeks. The patient was very involved in the discussion - she asked whether the higher dose would make her drowsy and said, quote, I finally feel like someone is listening to me, end quote. She agreed to the medication change and confirmed her pharmacy is still the same. Follow-up with Dr. Nguyen is in four weeks. I was with the patient until two ten in the afternoon. Total time was about 65 minutes.`,
+  },
+  {
+    label: "Medication Assistance - Pillbox",
+    encounterType: "medication_assistance",
+    templateIds: ["template-gellert-med-assist"],
+    transcript: `Medication assistance visit at the patient's apartment. I arrived at three o'clock in the afternoon. We worked on her weekly pillbox together. To be clear for the record: the patient filled every compartment of the pillbox herself with her own hands - I gave verbal direction only, reading each label out loud with her, and I never touched the medications at any point. She sorted the metformin into the morning and evening slots and the atorvastatin into the evening slots, and she double-checked each compartment when she finished. She was actively involved the whole time and said, quote, this is so much easier when we do it together, end quote. She noticed she only had four days of metformin left, so while I was there she called her pharmacy, Walgreens on Camelback Road, and requested the refill herself - it will be ready Thursday. Plan is to repeat the pillbox routine at next week's visit. I was with the patient until three forty in the afternoon. Total was 40 minutes.`,
   },
 ]

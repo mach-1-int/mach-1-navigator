@@ -1,10 +1,13 @@
 "use client"
 
-import { useEffect } from "react"
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet"
+import { useEffect, useMemo } from "react"
+import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from "react-leaflet"
 import L from "leaflet"
 import "leaflet/dist/leaflet.css"
-import type { NavigatorLocation, SafetyStatus } from "@/lib/types"
+import type { NavigatorLocation, SafetyStatus, Zone } from "@/lib/types"
+import { zoneRenderShapes } from "@/lib/zones"
+
+const METERS_PER_MILE = 1609.34
 
 // Relative time for popup (QA: "Last Check-in: 2 hours ago")
 function formatLastCheckIn(isoString: string): string {
@@ -143,6 +146,10 @@ interface MapComponentProps {
   sosNavigatorIds?: Set<string>
   /** Phone per navigatorId (resolved by parent from users); no phone = no Call Now */
   phones?: Record<string, string | undefined>
+  /** Coverage zones rendered as semi-transparent circle overlays */
+  zones?: Zone[]
+  /** Subset of zone ids to render; undefined = all provided zones */
+  visibleZoneIds?: string[]
 }
 
 export default function MapComponent({
@@ -151,7 +158,18 @@ export default function MapComponent({
   onSelectNavigator,
   sosNavigatorIds,
   phones,
+  zones,
+  visibleZoneIds,
 }: MapComponentProps) {
+  // Circle approximations from zone zip centroids (honest simulator-tier shapes)
+  const zoneShapes = useMemo(() => {
+    if (!zones || zones.length === 0) return []
+    const shapes = zoneRenderShapes(zones)
+    if (!visibleZoneIds) return shapes
+    const visible = new Set(visibleZoneIds)
+    return shapes.filter((s) => visible.has(s.zoneId))
+  }, [zones, visibleZoneIds])
+
   const selectedLocation = selectedNavigatorId
     ? locations.find((loc) => loc.navigatorId === selectedNavigatorId)
     : null
@@ -302,6 +320,54 @@ export default function MapComponent({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+
+        {zoneShapes.map((shape) => (
+          <Circle
+            key={shape.zoneId}
+            center={[shape.center.lat, shape.center.lng]}
+            radius={shape.radiusMiles * METERS_PER_MILE}
+            pathOptions={{
+              color: shape.color,
+              weight: 1.5,
+              opacity: 0.6,
+              fillColor: shape.color,
+              fillOpacity: 0.12,
+            }}
+          />
+        ))}
+
+        {zoneShapes.length > 0 && (
+          <div className="leaflet-bottom leaflet-left">
+            <div
+              className="leaflet-control"
+              style={{
+                backgroundColor: "rgba(255, 255, 255, 0.92)",
+                borderRadius: "8px",
+                boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
+                padding: "6px 10px",
+                fontSize: "11px",
+                lineHeight: 1.6,
+              }}
+            >
+              <p style={{ fontWeight: 600, marginBottom: "2px" }}>Coverage Zones</p>
+              {zoneShapes.map((shape) => (
+                <div key={shape.zoneId} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span
+                    style={{
+                      width: "10px",
+                      height: "10px",
+                      borderRadius: "50%",
+                      backgroundColor: shape.color,
+                      opacity: 0.7,
+                      flexShrink: 0,
+                    }}
+                  />
+                  {shape.name}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {locations.map((location) => {
           const isSOS = sosNavigatorIds?.has(location.navigatorId) ?? false

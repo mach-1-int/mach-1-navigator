@@ -5,18 +5,27 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
-import { Users, ChevronRight, TrendingUp, TrendingDown, Minus } from "lucide-react"
+import { Users, ChevronRight, TrendingUp, TrendingDown, Minus, MapPin } from "lucide-react"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { calculateDurationMinutes } from "@/lib/store"
+import { computeZoneCoverage } from "@/lib/zones"
 import { cn } from "@/lib/utils"
 
 export function NavigatorDirectory() {
-  const { navigators, patients, appointments, timeLogs, getNudgesForNavigator } = useDemoData()
+  const { navigators, patients, appointments, timeLogs, users, zones, getNudgesForNavigator } = useDemoData()
   const { navigateTo, currentUser } = useRole()
 
   // Filter navigators under the current supervisor
   const teamNavigators = navigators.filter(nav => nav.supervisorId === currentUser?.id)
+
+  // Per-zone census vs assigned navigators (Mitch's weekly manual join, live)
+  const zoneCoverage = computeZoneCoverage(zones, patients, navigators, users)
+
+  const zoneForNavigator = (navigatorId: string) => {
+    const zoneId = users.find(u => u.id === navigatorId)?.attributes?.zoneId
+    return zoneId ? zones.find(z => z.id === zoneId) : undefined
+  }
 
   // Calculate additional metrics for each navigator
   const navigatorMetrics = teamNavigators.map(nav => {
@@ -149,6 +158,7 @@ export function NavigatorDirectory() {
             <TableHeader>
               <TableRow className="border-border hover:bg-transparent">
                 <TableHead className="text-muted-foreground">Navigator</TableHead>
+                <TableHead className="text-center text-muted-foreground">Zone</TableHead>
                 <TableHead className="text-center text-muted-foreground">Current Load</TableHead>
                 <TableHead className="text-center text-muted-foreground">Compliance %</TableHead>
                 <TableHead className="text-center text-muted-foreground">Avg Visit Time</TableHead>
@@ -162,7 +172,8 @@ export function NavigatorDirectory() {
                 const loadBadge = getLoadBadge(navigator.loadStatus)
                 const trend = getComplianceTrend(navigator.avgCompliance)
                 const TrendIcon = trend.icon
-                
+                const zone = zoneForNavigator(navigator.id)
+
                 return (
                   <TableRow 
                     key={navigator.id} 
@@ -179,6 +190,19 @@ export function NavigatorDirectory() {
                           <p className="text-xs text-muted-foreground">{navigator.lengthOfService} months experience</p>
                         </div>
                       </div>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {zone ? (
+                        <Badge variant="outline" className="gap-1.5 font-normal">
+                          <span
+                            className="h-2 w-2 rounded-full shrink-0"
+                            style={{ backgroundColor: zone.color }}
+                          />
+                          {zone.name}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-center">
                       <div className="flex flex-col items-center gap-1">
@@ -226,6 +250,62 @@ export function NavigatorDirectory() {
                   </TableRow>
                 )
               })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* Zone Coverage - per-zone census vs assigned navigators */}
+      <Card className="bg-card">
+        <CardHeader>
+          <CardTitle className="text-card-foreground flex items-center gap-2">
+            <MapPin className="h-5 w-5 text-primary" />
+            Zone Coverage
+          </CardTitle>
+          <CardDescription>Active patients vs assigned navigators per coverage zone</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow className="border-border hover:bg-transparent">
+                <TableHead className="text-muted-foreground">Zone</TableHead>
+                <TableHead className="text-center text-muted-foreground">Active Patients</TableHead>
+                <TableHead className="text-center text-muted-foreground">Navigators</TableHead>
+                <TableHead className="text-center text-muted-foreground">Patients / Navigator</TableHead>
+                <TableHead className="text-center text-muted-foreground">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {zoneCoverage.map(({ zone, activePatients, assignedNavigators, patientsPerNavigator, uncovered }) => (
+                <TableRow key={zone.id} className="border-border">
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-3 w-3 rounded-full shrink-0"
+                        style={{ backgroundColor: zone.color }}
+                      />
+                      <div>
+                        <p className="font-medium text-card-foreground">{zone.name}</p>
+                        {zone.description && (
+                          <p className="text-xs text-muted-foreground">{zone.description}</p>
+                        )}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-center font-medium text-card-foreground">{activePatients}</TableCell>
+                  <TableCell className="text-center font-medium text-card-foreground">{assignedNavigators}</TableCell>
+                  <TableCell className="text-center text-card-foreground">
+                    {patientsPerNavigator !== null ? patientsPerNavigator : "—"}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {uncovered ? (
+                      <Badge variant="secondary" className="bg-red-100 text-red-700">Uncovered</Badge>
+                    ) : (
+                      <Badge variant="secondary" className="bg-emerald-100 text-emerald-700">Covered</Badge>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>

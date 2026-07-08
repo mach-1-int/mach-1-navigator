@@ -42,12 +42,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import {
+  AlertTriangle,
   BookOpenCheck,
+  BookPlus,
   ChevronDown,
   ChevronRight,
   FileDown,
   FileUp,
   MoreHorizontal,
+  RefreshCcw,
   RotateCcw,
   Search,
 } from "lucide-react"
@@ -55,13 +58,15 @@ import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { canTransition, statusChipMeta } from "@/lib/claim-lifecycle"
 import { getPayerConfig } from "@/lib/payer-config"
+import { classifyRemitCodes, type ClassifiedRemitCode } from "@/lib/remittance-review"
+import { classificationMeta } from "@/components/billing/denial-work-queue"
 import { generate837P } from "@/lib/edi/edi-837p-generator"
-import { generateSample835 } from "@/lib/edi/edi-835-simulator"
+import { generateSample835, type RemitScenario } from "@/lib/edi/edi-835-simulator"
 import { defaultClearinghouse } from "@/lib/clearinghouse/adapter"
 import { triggerFileDownload } from "@/lib/csv-exporter"
 import { localTodayISO } from "@/lib/date-rebase"
 import { RemittanceImportDialog } from "@/components/billing/remittance-import-dialog"
-import type { BillableClaim, ClaimRecord, ClaimStatus } from "@/lib/types"
+import type { BillableClaim, ClaimRecord, ClaimStatus, RemarkClassification } from "@/lib/types"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -74,6 +79,13 @@ const FILTER_STATUSES: ClaimStatus[] = [
   "PAID",
   "DENIED",
 ]
+
+/**
+ * Pseudo-status for the DAP review queue: records whose remittance is HELD on
+ * unknown remark codes (pendedRemittance set). Not a ClaimStatus — the state
+ * machine is untouched; these records sit at ACCEPTED until reprocessed.
+ */
+type LedgerStatusFilter = ClaimStatus | "ALL" | "NEEDS_REVIEW"
 
 /** Small shared status chip driven by claim-lifecycle metadata */
 function StatusChip({ status }: { status: ClaimStatus }) {
@@ -126,14 +138,17 @@ export function ClaimsLedger() {
     recordManualPayment,
     reopenClaimRecord,
     submitClaimBatch,
+    addRemarkCode,
+    reprocessPendedRemittances,
     getNavigatorDisplayName,
   } = useDemoData()
   const { currentUser } = useRole()
 
   const userId = currentUser?.id ?? "biller1"
+  const userName = currentUser?.name ?? "Biller"
 
   // Filters
-  const [statusFilter, setStatusFilter] = useState<ClaimStatus | "ALL">("ALL")
+  const [statusFilter, setStatusFilter] = useState<LedgerStatusFilter>("ALL")
   const [search, setSearch] = useState("")
 
   // Row expansion
@@ -142,6 +157,15 @@ export function ClaimsLedger() {
   // Import dialog + generated sample 835 kept in state for "Import now"
   const [importOpen, setImportOpen] = useState(false)
   const [preloadedText, setPreloadedText] = useState<string | null>(null)
+
+  // "Add code to dictionary" inline dialog (biller can't reach the admin view)
+  const [addCodeDialog, setAddCodeDialog] = useState<{
+    code: string
+    type: "CARC" | "RARC"
+  } | null>(null)
+  const [addCodeDescription, setAddCodeDescription] = useState("")
+  const [addCodeClassification, setAddCodeClassification] =
+    useState<RemarkClassification>("adjustment")
 
   // Manual payment / denial dialog
   const [paymentDialog, setPaymentDialog] = useState<{
@@ -159,10 +183,20 @@ export function ClaimsLedger() {
     return remarkCodes.filter((rc) => rc.type === "CARC")
   }, [remarkCodes])
 
+  const needsReviewCount = useMemo(() => {
+    return claimRecords.filter((r) => !r.voided && r.pendedRemittance).length
+  }, [claimRecords])
+
   const visibleRecords = useMemo(() => {
     const term = search.trim().toLowerCase()
     return [...claimRecords]
-      .filter((r) => statusFilter === "ALL" || r.status === statusFilter)
+      .filter((r) =>
+        statusFilter === "ALL"
+          ? true
+          : statusFilter === "NEEDS_REVIEW"
+            ? !r.voided && !!r.pendedRemittance
+            : r.status === statusFilter
+      )
       .filter((r) => term === "" || r.snapshot.patientName.toLowerCase().includes(term))
       .sort((a, b) => b.exportedAt.localeCompare(a.exportedAt))
   }, [claimRecords, statusFilter, search])
@@ -187,6 +221,12 @@ export function ClaimsLedger() {
         "No description on file"
       )
     },
+    [remarkCodes]
+  )
+
+  /** Join remit codes against the dictionary (descriptions + classifications) */
+  const classifyCodes = useCallback(
+    (codes: string[]): ClassifiedRemitCode[] => classifyRemitCodes(codes, remarkCodes),
     [remarkCodes]
   )
 
@@ -298,10 +338,64 @@ export function ClaimsLedger() {
   )
 
   // ==========================================================================
+  // PEND REVIEW ACTIONS (DAP false-denial guardrail)
+  // ==========================================================================
+
+  const openAddCodeDialog = useCallback((code: string) => {
+    setAddCodeDescription("")
+    setAddCodeClassification("adjustment")
+    setAddCodeDialog({ code, type: /^[a-z]/i.test(code) ? "RARC" : "CARC" })
+  }, [])
+
+  const confirmAddCode = useCallback(() => {
+    if (!addCodeDialog) return
+    if (!addCodeDescription.trim()) {
+      toast.error("Please enter a description for the code")
+      return
+    }
+    addRemarkCode(
+      {
+        type: addCodeDialog.type,
+        code: addCodeDialog.code,
+        description: addCodeDescription.trim(),
+        classification: addCodeClassification,
+      },
+      userId,
+      userName
+    )
+    toast.success(`${addCodeDialog.type} ${addCodeDialog.code} added to the dictionary`, {
+      description: `Classified: ${addCodeClassification} — reprocess pended remits to post`,
+    })
+    setAddCodeDialog(null)
+  }, [addCodeDialog, addCodeDescription, addCodeClassification, addRemarkCode, userId, userName])
+
+  const handleReprocess = useCallback(() => {
+    const result = reprocessPendedRemittances(userId)
+    if (result.reprocessed === 0) {
+      toast.info("No pended remittances resolved", {
+        description:
+          result.stillPended > 0
+            ? `${result.stillPended} still pended — add the unknown codes to the dictionary first`
+            : "Nothing is pended for review",
+      })
+      return
+    }
+    toast.success(
+      `${result.reprocessed} pended remittance${result.reprocessed === 1 ? "" : "s"} posted`,
+      {
+        description:
+          result.stillPended > 0
+            ? `${result.stillPended} still pended on unknown codes`
+            : "Review queue is clear",
+      }
+    )
+  }, [reprocessPendedRemittances, userId])
+
+  // ==========================================================================
   // HEADER ACTIONS (835 round trip)
   // ==========================================================================
 
-  const handleGenerateSample835 = useCallback(() => {
+  const handleGenerateSample835 = useCallback((scenario: RemitScenario) => {
     const eligible = claimRecords.filter(
       (r) => !r.voided && (r.status === "SUBMITTED" || r.status === "ACCEPTED")
     )
@@ -312,17 +406,27 @@ export function ClaimsLedger() {
       return
     }
 
-    const text = generateSample835(eligible, payers)
+    const text = generateSample835(eligible, payers, { scenario })
     const date = localTodayISO()
-    triggerFileDownload(text, `sample-remit-${date}.835`, "text/plain")
+    const suffix = scenario === "DAP_ADJUSTMENT" ? "dap" : "mixed"
+    triggerFileDownload(text, `sample-remit-${suffix}-${date}.835`, "text/plain")
     setPreloadedText(text)
 
-    toast.success(`Sample 835 generated for ${eligible.length} claims`, {
-      action: {
-        label: "Import now",
-        onClick: () => setImportOpen(true),
-      },
-    })
+    toast.success(
+      scenario === "DAP_ADJUSTMENT"
+        ? `UHC DAP sample 835 generated for ${eligible.length} claims`
+        : `Sample 835 generated for ${eligible.length} claims`,
+      {
+        description:
+          scenario === "DAP_ADJUSTMENT"
+            ? "Every claim paid at 101% with CARC 144 / RARC N807 — unknown to the dictionary"
+            : undefined,
+        action: {
+          label: "Import now",
+          onClick: () => setImportOpen(true),
+        },
+      }
+    )
   }, [claimRecords, payers])
 
   const handleOpenImport = useCallback(() => {
@@ -346,10 +450,23 @@ export function ClaimsLedger() {
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={handleGenerateSample835}>
-                <FileDown className="h-4 w-4 mr-2" />
-                Generate Sample 835
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline">
+                    <FileDown className="h-4 w-4 mr-2" />
+                    Generate Sample 835
+                    <ChevronDown className="h-4 w-4 ml-2" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleGenerateSample835("MIXED")}>
+                    Standard remit (mixed)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleGenerateSample835("DAP_ADJUSTMENT")}>
+                    UHC DAP scenario (unknown incentive code)
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button variant="outline" onClick={handleOpenImport}>
                 <FileUp className="h-4 w-4 mr-2" />
                 Import 835
@@ -370,7 +487,7 @@ export function ClaimsLedger() {
             </div>
             <Select
               value={statusFilter}
-              onValueChange={(v) => setStatusFilter(v as ClaimStatus | "ALL")}
+              onValueChange={(v) => setStatusFilter(v as LedgerStatusFilter)}
             >
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Filter by status" />
@@ -382,8 +499,19 @@ export function ClaimsLedger() {
                     {statusChipMeta(status).label}
                   </SelectItem>
                 ))}
+                <SelectItem value="NEEDS_REVIEW">Needs Review</SelectItem>
               </SelectContent>
             </Select>
+            {needsReviewCount > 0 && (
+              <Badge
+                variant="outline"
+                className="bg-amber-50 text-amber-700 border-amber-300 cursor-pointer"
+                onClick={() => setStatusFilter("NEEDS_REVIEW")}
+              >
+                <AlertTriangle className="h-3 w-3 mr-1" />
+                {needsReviewCount} pended for review
+              </Badge>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -435,7 +563,9 @@ export function ClaimsLedger() {
                       onSimulateClearinghouse={handleSimulateClearinghouse}
                       onOpenPaymentDialog={openPaymentDialog}
                       onReopen={handleReopen}
-                      remarkDescription={remarkDescription}
+                      onAddCode={openAddCodeDialog}
+                      onReprocess={handleReprocess}
+                      classifyCodes={classifyCodes}
                       getNavigatorDisplayName={getNavigatorDisplayName}
                     />
                   )
@@ -509,6 +639,78 @@ export function ClaimsLedger() {
         </DialogContent>
       </Dialog>
 
+      {/* Add Code to Dictionary Dialog (inline — biller can't reach the admin view) */}
+      <Dialog open={addCodeDialog !== null} onOpenChange={(open) => !open && setAddCodeDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Code to Dictionary</DialogTitle>
+            <DialogDescription>
+              Classify the unknown remark code so the pended remittance can post correctly
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Code</label>
+                <p className="font-mono font-semibold pt-1">{addCodeDialog?.code}</p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Type</label>
+                <Select
+                  value={addCodeDialog?.type ?? "CARC"}
+                  onValueChange={(v) =>
+                    setAddCodeDialog((prev) =>
+                      prev ? { ...prev, type: v as "CARC" | "RARC" } : prev
+                    )
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CARC">CARC — Claim Adjustment Reason Code</SelectItem>
+                    <SelectItem value="RARC">RARC — Remittance Advice Remark Code</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Description</label>
+              <Input
+                value={addCodeDescription}
+                onChange={(e) => setAddCodeDescription(e.target.value)}
+                placeholder="e.g., Incentive adjustment (Differential Adjustment Payment)"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Classification</label>
+              <Select
+                value={addCodeClassification}
+                onValueChange={(v) => setAddCodeClassification(v as RemarkClassification)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="informational">Informational</SelectItem>
+                  <SelectItem value="adjustment">Adjustment</SelectItem>
+                  <SelectItem value="denial">Denial</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddCodeDialog(null)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmAddCode}>
+              <BookPlus className="h-4 w-4 mr-2" />
+              Add to Dictionary
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* 835 Import Dialog */}
       <RemittanceImportDialog
         open={importOpen}
@@ -533,8 +735,38 @@ interface ClaimsLedgerRowProps {
   onSimulateClearinghouse: (record: ClaimRecord) => void
   onOpenPaymentDialog: (record: ClaimRecord, mode: "PAID" | "DENIED") => void
   onReopen: (record: ClaimRecord) => void
-  remarkDescription: (type: "CARC" | "RARC", code: string) => string
+  onAddCode: (code: string) => void
+  onReprocess: () => void
+  classifyCodes: (codes: string[]) => ClassifiedRemitCode[]
   getNavigatorDisplayName: (id: string) => string
+}
+
+/** Remit-code badge with dictionary description + classification tooltip */
+function RemitCodeBadge({ classified, kind }: { classified: ClassifiedRemitCode; kind: "CARC" | "RARC" }) {
+  const meta = classificationMeta(classified.classification)
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge
+          variant="outline"
+          className={cn(
+            "text-xs cursor-default",
+            kind === "CARC"
+              ? "bg-amber-50 text-amber-700 border-amber-200"
+              : "bg-slate-50 text-slate-700 border-slate-200"
+          )}
+        >
+          {kind} {classified.code}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs space-y-1">
+        <p>{classified.description}</p>
+        <Badge variant="outline" className={cn("text-xs", meta.colorClasses)}>
+          {meta.label}
+        </Badge>
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 function ClaimsLedgerRow({
@@ -547,11 +779,20 @@ function ClaimsLedgerRow({
   onSimulateClearinghouse,
   onOpenPaymentDialog,
   onReopen,
-  remarkDescription,
+  onAddCode,
+  onReprocess,
+  classifyCodes,
   getNavigatorDisplayName,
 }: ClaimsLedgerRowProps) {
   const canReopen =
     !record.voided && (record.status === "REJECTED" || record.status === "DENIED")
+
+  const pend = !record.voided ? record.pendedRemittance : undefined
+  const isDapPaid =
+    record.status === "PAID" &&
+    !!record.remittance &&
+    record.remittance.carcCodes.includes("144") &&
+    record.remittance.paidAmount > record.billedAmount
 
   return (
     <>
@@ -590,10 +831,30 @@ function ClaimsLedgerRow({
           ${record.billedAmount.toFixed(2)}
         </TableCell>
         <TableCell className="text-right font-medium text-emerald-600">
-          {record.remittance ? `$${record.remittance.paidAmount.toFixed(2)}` : "—"}
+          <span className="inline-flex items-center gap-1.5">
+            {isDapPaid && (
+              <Badge
+                variant="outline"
+                className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200"
+              >
+                +1% DAP
+              </Badge>
+            )}
+            {record.remittance ? `$${record.remittance.paidAmount.toFixed(2)}` : "—"}
+          </span>
         </TableCell>
         <TableCell>
-          <StatusChip status={record.status} />
+          <span className="inline-flex items-center gap-1.5">
+            <StatusChip status={record.status} />
+            {pend && (
+              <Badge
+                variant="outline"
+                className="text-xs bg-amber-50 text-amber-700 border-amber-300"
+              >
+                Needs Review
+              </Badge>
+            )}
+          </span>
         </TableCell>
         <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
           {formatDateTime(record.exportedAt)}
@@ -704,41 +965,86 @@ function ClaimsLedgerRow({
                         {record.remittance.remitDate ? ` • ${record.remittance.remitDate}` : ""}
                       </p>
                     )}
+                    {isDapPaid && (
+                      <p className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300 text-xs font-medium pt-1">
+                        <BookOpenCheck className="h-3.5 w-3.5 shrink-0" />
+                        +1% incentive adjustment (CARC 144 — classified:{" "}
+                        {classifyCodes(["144"])[0]?.classification ?? "adjustment"})
+                      </p>
+                    )}
                     {(record.remittance.carcCodes.length > 0 ||
                       record.remittance.rarcCodes.length > 0) && (
                       <div className="flex flex-wrap gap-1 pt-1">
-                        {record.remittance.carcCodes.map((code) => (
-                          <Tooltip key={`carc-${code}`}>
-                            <TooltipTrigger asChild>
-                              <Badge
-                                variant="outline"
-                                className="text-xs bg-amber-50 text-amber-700 border-amber-200 cursor-default"
-                              >
-                                CARC {code}
-                              </Badge>
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-xs">
-                              {remarkDescription("CARC", code)}
-                            </TooltipContent>
-                          </Tooltip>
+                        {classifyCodes(record.remittance.carcCodes).map((classified) => (
+                          <RemitCodeBadge
+                            key={`carc-${classified.code}`}
+                            classified={classified}
+                            kind="CARC"
+                          />
                         ))}
-                        {record.remittance.rarcCodes.map((code) => (
-                          <Tooltip key={`rarc-${code}`}>
-                            <TooltipTrigger asChild>
-                              <Badge
-                                variant="outline"
-                                className="text-xs bg-slate-50 text-slate-700 border-slate-200 cursor-default"
-                              >
-                                RARC {code}
-                              </Badge>
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-xs">
-                              {remarkDescription("RARC", code)}
-                            </TooltipContent>
-                          </Tooltip>
+                        {classifyCodes(record.remittance.rarcCodes).map((classified) => (
+                          <RemitCodeBadge
+                            key={`rarc-${classified.code}`}
+                            classified={classified}
+                            kind="RARC"
+                          />
                         ))}
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* Pended remittance (DAP review queue) */}
+              {pend && (
+                <div className="md:col-span-2 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
+                  <p className="flex items-center gap-1.5 text-sm font-medium text-amber-800 dark:text-amber-300 mb-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    Remittance pended for review
+                  </p>
+                  <div className="space-y-2 text-sm">
+                    <p>
+                      <span className="text-muted-foreground">Would post:</span>{" "}
+                      <span className="font-medium">{pend.resolvedStatus}</span>
+                      <span className="text-muted-foreground"> at </span>
+                      <span className="font-medium text-emerald-600">
+                        ${pend.remittance.paidAmount.toFixed(2)}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {" "}
+                        (billed ${record.billedAmount.toFixed(2)}) — held on unknown remark code
+                        {pend.unknownCodes.length === 1 ? "" : "s"}
+                      </span>
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {pend.unknownCodes.map((code) => (
+                        <span key={code} className="inline-flex items-center gap-1">
+                          <Badge
+                            variant="outline"
+                            className="text-xs bg-amber-100 text-amber-700 border-amber-300 font-mono"
+                          >
+                            {code}
+                          </Badge>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => onAddCode(code)}
+                          >
+                            <BookPlus className="h-3 w-3 mr-1" />
+                            Add code to dictionary
+                          </Button>
+                        </span>
+                      ))}
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700"
+                        onClick={onReprocess}
+                      >
+                        <RefreshCcw className="h-3 w-3 mr-1" />
+                        Reprocess pended remits
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}

@@ -4,9 +4,6 @@
  * day total (carriesDayTotal). Later notes that day are CONTINUATIONS —
  * appointment content only, linked via linkedNoteId, billable: false, and they
  * create NO TimeLog (prevents transport/time double-billing).
- *
- * Owned by workstream N-A after Phase 0 — signatures are frozen; bodies are
- * working baselines.
  */
 
 import type { PatientNote } from "./types"
@@ -15,9 +12,16 @@ function noteDate(note: PatientNote): string {
   return note.createdAt.slice(0, 10)
 }
 
-/** Is this note a billable (TimeLog-carrying) note? */
+/**
+ * Is this note a billable (TimeLog-carrying) note? Quick untimed notes never
+ * anchor a patient-day — a primary must actually carry encounter time.
+ */
 function isBillableNote(note: PatientNote): boolean {
-  return note.billable !== false && !note.linkedNoteId
+  return (
+    note.billable !== false &&
+    !note.linkedNoteId &&
+    (note.timeLogId !== undefined || (note.duration ?? 0) > 0)
+  )
 }
 
 /**

@@ -49,23 +49,87 @@ export function canTransitionReferral(from: ReferralStatus, to: ReferralStatus):
   return REFERRAL_TRANSITIONS[from]?.includes(to) ?? false
 }
 
+/** Pipeline display order: working statuses first, then terminal closes */
+export const REFERRAL_PIPELINE_ORDER: ReferralStatus[] = [
+  "received",
+  "accepted",
+  "outreach",
+  "agreed",
+  "intake_scheduled",
+  "converted",
+  "ineligible",
+  "unreachable",
+  "declined",
+]
+
+/** Status chip metadata (mirrors statusChipMeta in lib/claim-lifecycle.ts) */
+export function referralStatusMeta(status: ReferralStatus): { label: string; colorClasses: string } {
+  switch (status) {
+    case "received":
+      return { label: "Received", colorClasses: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" }
+    case "ineligible":
+      return { label: "Ineligible", colorClasses: "bg-destructive/10 text-destructive" }
+    case "accepted":
+      return { label: "Accepted — Contact Due", colorClasses: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" }
+    case "outreach":
+      return { label: "Outreach", colorClasses: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300" }
+    case "unreachable":
+      return { label: "Unreachable", colorClasses: "bg-muted text-muted-foreground" }
+    case "declined":
+      return { label: "Declined", colorClasses: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300" }
+    case "agreed":
+      return { label: "Agreed", colorClasses: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" }
+    case "intake_scheduled":
+      return { label: "Intake Scheduled", colorClasses: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300" }
+    case "converted":
+      return { label: "Converted", colorClasses: "bg-primary/10 text-primary" }
+  }
+}
+
+export const INELIGIBILITY_REASON_LABELS: Record<IneligibilityReason, string> = {
+  insurance: "Insurance not verified",
+  out_of_service_area: "Out of service area",
+  no_medical_need: "No documented medical need",
+  level_of_care: "Level of care not appropriate",
+  age: "Age ineligible",
+}
+
+export const OUTREACH_CHANNEL_LABELS: Record<OutreachAttempt["channel"], string> = {
+  phone: "Phone",
+  text: "Text",
+  in_person: "In person",
+}
+
+export const OUTREACH_DISPOSITION_LABELS: Record<OutreachAttempt["disposition"], string> = {
+  no_answer: "No answer",
+  voicemail: "Voicemail",
+  wrong_number: "Wrong number",
+  callback_requested: "Callback requested",
+  declined: "Declined",
+  agreed: "Agreed",
+}
+
 // ============================================================================
 // ELIGIBILITY (5-gate short-circuit decision tree)
 // ============================================================================
 
+export type EligibilityGateKey = keyof Pick<
+  EligibilityCheck,
+  "insuranceVerified" | "inServiceArea" | "medicalNeedConfirmed" | "levelOfCareAppropriate" | "ageEligible"
+>
+
 /** Gate order matters: the FIRST failing gate names the ineligibility reason */
-const ELIGIBILITY_GATES: Array<{
-  key: keyof Pick<
-    EligibilityCheck,
-    "insuranceVerified" | "inServiceArea" | "medicalNeedConfirmed" | "levelOfCareAppropriate" | "ageEligible"
-  >
+export const ELIGIBILITY_GATES: Array<{
+  key: EligibilityGateKey
   reason: IneligibilityReason
+  label: string
+  question: string
 }> = [
-  { key: "insuranceVerified", reason: "insurance" },
-  { key: "inServiceArea", reason: "out_of_service_area" },
-  { key: "medicalNeedConfirmed", reason: "no_medical_need" },
-  { key: "levelOfCareAppropriate", reason: "level_of_care" },
-  { key: "ageEligible", reason: "age" },
+  { key: "insuranceVerified", reason: "insurance", label: "Insurance", question: "AHCCCS / accepted plan verified?" },
+  { key: "inServiceArea", reason: "out_of_service_area", label: "Service area", question: "Patient lives inside the coverage area?" },
+  { key: "medicalNeedConfirmed", reason: "no_medical_need", label: "Medical need", question: "Referral documents a qualifying medical need?" },
+  { key: "levelOfCareAppropriate", reason: "level_of_care", label: "Level of care", question: "Peer-support navigation is the right level of care?" },
+  { key: "ageEligible", reason: "age", label: "Age", question: "Patient meets the adult age requirement?" },
 ]
 
 /**

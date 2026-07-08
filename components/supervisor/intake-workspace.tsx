@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Separator } from "@/components/ui/separator"
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -37,7 +36,9 @@ import {
   type NavigatorWithAttributes,
   type RankedNavigator,
 } from "@/lib/matching-logic"
-import type { NavigatorAttributes, Referral } from "@/lib/types"
+import { zoneForZip } from "@/lib/zones"
+import { referralStatusMeta } from "@/lib/referral-pipeline"
+import type { NavigatorAttributes, Referral, Zone } from "@/lib/types"
 import { toast } from "sonner"
 
 interface IntakeWorkspaceProps {
@@ -46,7 +47,7 @@ interface IntakeWorkspaceProps {
 
 export function IntakeWorkspace({ referralId }: IntakeWorkspaceProps) {
   const { goBack } = useRole()
-  const { referrals, acceptReferral, getNavigatorsWithAttributes } = useDemoData()
+  const { referrals, zones, acceptReferral, getNavigatorsWithAttributes } = useDemoData()
   const [isAssigning, setIsAssigning] = useState(false)
   // Language override for QA Test B (toggle to es to see Sarah drop)
   const [languageOverride, setLanguageOverride] = useState<string | null>(null)
@@ -55,6 +56,15 @@ export function IntakeWorkspace({ referralId }: IntakeWorkspaceProps) {
   const referral = useMemo(() => {
     return referrals.find(r => r.id === referralId)
   }, [referrals, referralId])
+
+  // Conversion is only legal once the patient has agreed to services
+  const conversionBlocked = !!referral && !["agreed", "intake_scheduled"].includes(referral.status)
+
+  // Gellert coverage zone containing the referral's zip (for zone-match chips)
+  const referralZone = useMemo(
+    () => (referral ? zoneForZip(zones, referral.zipCode) : undefined),
+    [zones, referral]
+  )
 
   // Effective referral for matching (language override for testing)
   const effectiveReferral = useMemo(() => {
@@ -98,7 +108,7 @@ export function IntakeWorkspace({ referralId }: IntakeWorkspaceProps) {
           description: "Complete eligibility and outreach before Match & Assign.",
         })
       }
-    } catch (error) {
+    } catch {
       toast.error("Failed to assign referral")
     } finally {
       setIsAssigning(false)
@@ -121,10 +131,31 @@ export function IntakeWorkspace({ referralId }: IntakeWorkspaceProps) {
           <ArrowLeft className="h-4 w-4" />
           Back to Referrals
         </Button>
-        <Badge variant="outline" className="text-xs">
-          Referral ID: {referral.id}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className={cn("text-xs", referralStatusMeta(referral.status).colorClasses)}>
+            {referralStatusMeta(referral.status).label}
+          </Badge>
+          <Badge variant="outline" className="text-xs">
+            Referral ID: {referral.id}
+          </Badge>
+        </div>
       </div>
+
+      {/* Guard banner: patient hasn't agreed to services yet */}
+      {conversionBlocked && (
+        <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50/70 dark:border-amber-900 dark:bg-amber-950/30 p-3 mb-4">
+          <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+              Outreach in progress — patient has not agreed to services
+            </p>
+            <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
+              Complete eligibility and outreach in the Referral CRM before Match &amp; Assign. Patients are only
+              created once they accept services.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Split Screen */}
       <ResizablePanelGroup direction="horizontal" className="flex-1 rounded-lg border">
@@ -186,7 +217,10 @@ export function IntakeWorkspace({ referralId }: IntakeWorkspaceProps) {
                         isTopMatch={index === 0 && nav.score > 0}
                         onAssign={() => handleAssign(nav.navigatorId, nav.navigatorName)}
                         isAssigning={isAssigning}
+                        conversionBlocked={conversionBlocked}
                         referral={referral}
+                        zones={zones}
+                        referralZone={referralZone}
                       />
                     ))
                   )}
@@ -392,7 +426,10 @@ interface NavigatorMatchCardProps {
   isTopMatch: boolean
   onAssign: () => void
   isAssigning: boolean
+  conversionBlocked: boolean
   referral: Referral
+  zones: Zone[]
+  referralZone?: Zone
 }
 
 function NavigatorMatchCard({
@@ -402,8 +439,13 @@ function NavigatorMatchCard({
   isTopMatch,
   onAssign,
   isAssigning,
+  conversionBlocked,
   referral,
+  zones,
+  referralZone,
 }: NavigatorMatchCardProps) {
+  const navigatorZone = attrs?.zoneId ? zones.find(z => z.id === attrs.zoneId) : undefined
+  const sameZone = !!navigatorZone && !!referralZone && navigatorZone.id === referralZone.id
   // Calculate match percentage (normalize score to 0-100)
   // Max possible score: 40 (distance) + 30 (capacity) + 20 (language) + 10 (acuity) = 100
   const matchPercentage = Math.max(0, Math.min(100, navigator.score))
@@ -502,6 +544,24 @@ function NavigatorMatchCard({
 
             {/* Match Badges */}
             <div className="flex flex-wrap gap-1.5 mb-3">
+              {navigatorZone && (
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "text-xs gap-1",
+                    sameZone
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : "bg-muted/50 text-muted-foreground"
+                  )}
+                >
+                  <span
+                    className="h-2 w-2 rounded-full shrink-0"
+                    style={{ backgroundColor: navigatorZone.color }}
+                  />
+                  {navigatorZone.name}
+                  {sameZone && " — same zone"}
+                </Badge>
+              )}
               {badges.map((badge, i) => (
                 <Badge
                   key={i}
@@ -552,10 +612,10 @@ function NavigatorMatchCard({
             {/* Assign Button */}
             <Button
               onClick={onAssign}
-              disabled={!isViableMatch || isAssigning}
+              disabled={!isViableMatch || isAssigning || conversionBlocked}
               className={cn(
                 "w-full",
-                isTopMatch && isViableMatch && "bg-emerald-600 hover:bg-emerald-700"
+                isTopMatch && isViableMatch && !conversionBlocked && "bg-emerald-600 hover:bg-emerald-700"
               )}
             >
               {isAssigning ? (
@@ -563,6 +623,8 @@ function NavigatorMatchCard({
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Assigning...
                 </>
+              ) : conversionBlocked ? (
+                "Awaiting Patient Agreement"
               ) : isViableMatch ? (
                 <>
                   <CheckCircle2 className="h-4 w-4 mr-2" />

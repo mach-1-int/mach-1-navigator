@@ -10,6 +10,7 @@
 
 import type {
   AdverseEvent,
+  ExitPathway,
   IntakeChecklistItem,
   IntakeChecklistKey,
   IntakeVisit,
@@ -17,6 +18,7 @@ import type {
   Patient,
 } from "./types"
 import { localTodayISO } from "./date-rebase"
+import { businessDaysBetween } from "./business-days"
 
 // ============================================================================
 // PHASE TRANSITION MATRIX
@@ -55,6 +57,30 @@ export const JOURNEY_PHASE_CONFIG: Record<JourneyPhase, PhaseChipConfig> = {
 export const ADVERSE_EVENT_OVERLAY_CONFIG: PhaseChipConfig = {
   label: "Adverse Event",
   className: "bg-red-100 text-red-700 border-red-200",
+}
+
+/** Display labels for the five documented program-exit pathways */
+export const EXIT_PATHWAY_CONFIG: Record<ExitPathway, { label: string; description: string }> = {
+  patient_initiated: {
+    label: "Patient-initiated",
+    description: "Patient chose to leave the program (requires supervisor confirmation)",
+  },
+  ineligible: {
+    label: "Ineligibility",
+    description: "Patient no longer meets program eligibility criteria",
+  },
+  mia: {
+    label: "Missing in action (MIA)",
+    description: "Unreachable / repeated no-shows per the closure protocol",
+  },
+  deceased: {
+    label: "Deceased",
+    description: "Patient is deceased",
+  },
+  safety: {
+    label: "Safety",
+    description: "Exit required for navigator or patient safety",
+  },
 }
 
 // ============================================================================
@@ -145,3 +171,34 @@ export function isIntakeVisitComplete(visit: IntakeVisit): boolean {
 
 /** The number of intake no-shows that triggers the MIA closure protocol */
 export const NO_SHOW_CLOSURE_THRESHOLD = 3
+
+/** Checklist progress for an intake visit (drives progress chips) */
+export function intakeChecklistProgress(visit: IntakeVisit): { done: number; total: number } {
+  return {
+    done: visit.checklist.filter((item) => item.done).length,
+    total: visit.checklist.length,
+  }
+}
+
+// ============================================================================
+// PCP-WITHIN-7-BUSINESS-DAYS COUNTDOWN
+// ============================================================================
+
+export interface PcpDueStatus {
+  dueBy: string // YYYY-MM-DD
+  businessDaysRemaining: number // negative when past due
+  status: "ok" | "due_soon" | "overdue"
+}
+
+/**
+ * Countdown against the PCP-within-7-business-days deadline stamped at
+ * conversion (IntakeRecord.pcpDueBy). due_soon within 2 business days.
+ */
+export function pcpDueStatus(pcpDueBy: string, today: string = localTodayISO()): PcpDueStatus {
+  const businessDaysRemaining = businessDaysBetween(today, pcpDueBy)
+  return {
+    dueBy: pcpDueBy,
+    businessDaysRemaining,
+    status: businessDaysRemaining < 0 ? "overdue" : businessDaysRemaining <= 2 ? "due_soon" : "ok",
+  }
+}

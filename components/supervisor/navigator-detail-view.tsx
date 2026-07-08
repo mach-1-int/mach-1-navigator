@@ -1,5 +1,6 @@
 "use client"
 
+import { useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -15,28 +16,62 @@ import {
   CheckCircle2,
   XCircle,
   Phone,
-  Mail
+  Mail,
+  TrendingUp
 } from "lucide-react"
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
+import { computeNavigatorProductivity, computeDayCloseStreak } from "@/lib/navigator-productivity"
+import { computeWindshieldTime } from "@/lib/zones"
+import { geo } from "@/lib/geo"
 import { cn } from "@/lib/utils"
+
+const PRODUCTIVITY_WINDOW_DAYS = 14
 
 interface NavigatorDetailViewProps {
   navigatorId: string
 }
 
 export function NavigatorDetailView({ navigatorId }: NavigatorDetailViewProps) {
-  const { navigators, patients, adverseEvents, getNudgesForNavigator, getUser, getSupervisor } = useDemoData()
+  const { navigators, patients, adverseEvents, timeLogs, chargeSlips, appointments, activePayerConfig, getNudgesForNavigator, getUser, getSupervisor } = useDemoData()
   const { goBack, navigateTo } = useRole()
 
   const navigator = navigators.find(n => n.id === navigatorId)
   const navigatorUser = getUser(navigatorId)
   const navPatients = patients.filter(p => p.assignedNavigator === navigatorId)
-  const navAdverseEvents = adverseEvents.filter(ae => 
+  const navAdverseEvents = adverseEvents.filter(ae =>
     navPatients.some(p => p.id === ae.patientId)
   )
   const messages = getNudgesForNavigator(navigatorId)
-  
+
+  const productivity = useMemo(
+    () =>
+      navigator
+        ? computeNavigatorProductivity([navigator], timeLogs, chargeSlips, activePayerConfig, PRODUCTIVITY_WINDOW_DAYS)[0]
+        : null,
+    [navigator, timeLogs, chargeSlips, activePayerConfig]
+  )
+  const dayCloseStreak = useMemo(
+    () => computeDayCloseStreak(navigatorId, timeLogs, chargeSlips, activePayerConfig),
+    [navigatorId, timeLogs, chargeSlips, activePayerConfig]
+  )
+  const avgWindshieldMinutes = useMemo(() => {
+    const days = computeWindshieldTime(appointments, patients, geo).filter(
+      d => d.navigatorId === navigatorId
+    )
+    if (days.length === 0) return null
+    return Math.round(days.reduce((sum, d) => sum + d.driveMinutes, 0) / days.length)
+  }, [appointments, patients, navigatorId])
+
   if (!navigator) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
@@ -49,7 +84,6 @@ export function NavigatorDetailView({ navigatorId }: NavigatorDetailViewProps) {
   // Calculate compliance gaps
   const medicationRisks = navPatients.filter(p => p.medicationCompliance < 80)
   const pcpMissed = navPatients.filter(p => !p.pcpCompliance)
-  const highRiskPatients = navPatients.filter(p => p.riskLevel === 3)
   const activeAdverseEvents = navAdverseEvents.filter(ae => ae.status !== "ended")
 
   // Performance metrics
@@ -164,6 +198,99 @@ export function NavigatorDetailView({ navigatorId }: NavigatorDetailViewProps) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Daily Productivity */}
+      <Card className="bg-card">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-card-foreground">
+            <TrendingUp className="h-5 w-5 text-primary" />
+            Daily Productivity
+          </CardTitle>
+          <CardDescription>
+            daily units (charge slips) vs L{navigator.level} target ({productivity?.targetUnitsPerDay ?? "—"}/day) · {PRODUCTIVITY_WINDOW_DAYS}-day window
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="mb-4 grid gap-4 sm:grid-cols-3">
+            <div>
+              <p className={cn(
+                "text-2xl font-bold",
+                productivity && productivity.attainmentPct < 80 ? "text-warning" : "text-card-foreground"
+              )}>
+                {productivity && productivity.trend.length > 0 ? productivity.avgUnitsPerDay : "—"}
+              </p>
+              <p className="text-sm text-muted-foreground">Avg units/day</p>
+              <p className="text-xs text-muted-foreground">
+                {productivity ? `${productivity.attainmentPct}% of target · day-close ${productivity.dayCloseRate}%` : "no activity in window"}
+              </p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-card-foreground">{dayCloseStreak}</p>
+              <p className="text-sm text-muted-foreground">Day-close streak</p>
+              <p className="text-xs text-muted-foreground">consecutive days fully signed same-day</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-card-foreground">
+                {avgWindshieldMinutes !== null ? `${avgWindshieldMinutes} min` : "—"}
+              </p>
+              <p className="text-sm text-muted-foreground">Windshield time (unbillable)</p>
+              <p className="text-xs text-muted-foreground">avg drive time between same-day stops</p>
+            </div>
+          </div>
+          {productivity && productivity.trend.length > 1 ? (
+            <div className="h-[200px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={productivity.trend.map(d => ({
+                    date: d.date.slice(5),
+                    units: d.units,
+                    target: productivity.targetUnitsPerDay,
+                  }))}
+                >
+                  <defs>
+                    <linearGradient id="colorNavDailyUnits" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="hsl(var(--chart-1))" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} allowDecimals={false} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "hsl(var(--popover))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "8px",
+                      color: "hsl(var(--popover-foreground))",
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="units"
+                    stroke="hsl(var(--chart-1))"
+                    strokeWidth={2}
+                    fill="url(#colorNavDailyUnits)"
+                    name="Daily units (charge slips)"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="target"
+                    stroke="hsl(var(--muted-foreground))"
+                    strokeWidth={1}
+                    strokeDasharray="5 5"
+                    fill="none"
+                    name="Level target"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              Not enough logged days in the window to chart a trend
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Tabs for Details */}
       <Tabs defaultValue="patients" className="space-y-4">

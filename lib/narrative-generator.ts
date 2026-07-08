@@ -1,10 +1,15 @@
-import type { NoteTemplate, TemplateField } from "./types"
+import type { NoteTemplate, Provider, TemplateField } from "./types"
+
+export interface NarrativeContext {
+  providers?: Provider[]
+}
 
 /**
  * Generate a clinical narrative from a template and user responses.
  *
- * Logic:
- * 1. Loop through the template fields
+ * Mirrors the context-level generator in lib/demo-data-context.tsx exactly so
+ * note-builder previews match saved narratives:
+ * 1. Loop through the template fields (skipping fields hidden by showIf gates)
  * 2. If a response exists for that field, construct the sentence segment:
  *    [Prefix] + [Response Value] + [Suffix]
  * 3. Join the segments into a cohesive paragraph string
@@ -12,11 +17,14 @@ import type { NoteTemplate, TemplateField } from "./types"
  *
  * @param template - The note template with field definitions
  * @param responses - Record of field IDs to their response values
+ * @param context - Optional providers so Gellert "provider" fields render
+ *   their full display string instead of a raw providerId
  * @returns The generated narrative string
  */
 export function generateNarrative(
   template: NoteTemplate,
-  responses: Record<string, unknown>
+  responses: Record<string, unknown>,
+  context?: NarrativeContext
 ): string {
   const parts: string[] = []
 
@@ -33,7 +41,12 @@ export function generateNarrative(
       return
     }
 
-    const segment = buildFieldSegment(field, value)
+    // Fields hidden by an unmet showIf gate contribute nothing
+    if (field.showIf && responses[field.showIf.fieldId] !== field.showIf.equals) {
+      return
+    }
+
+    const segment = buildFieldSegment(field, value, context)
     if (segment) {
       parts.push(segment)
     }
@@ -42,11 +55,16 @@ export function generateNarrative(
   return parts.join("")
 }
 
+/** Full provider display string ("Dr. Jane Smith, MD at Desert Family Medicine, 4045 W Main St, Phoenix, AZ 85004") */
+export function formatProviderDisplay(provider: Provider): string {
+  return `${provider.name}${provider.credential ? `, ${provider.credential}` : ""} at ${provider.practiceName}, ${provider.address.street}, ${provider.address.city}, ${provider.address.state} ${provider.address.zip}`
+}
+
 /**
  * Build a narrative segment for a single field.
  * Constructs: [Prefix] + [FormattedValue] + [Suffix]
  */
-function buildFieldSegment(field: TemplateField, value: unknown): string {
+function buildFieldSegment(field: TemplateField, value: unknown, context?: NarrativeContext): string {
   const prefix = field.narrativePrefix || ""
   const suffix = field.narrativeSuffix || ""
 
@@ -54,8 +72,22 @@ function buildFieldSegment(field: TemplateField, value: unknown): string {
     case "select":
     case "text":
     case "textarea":
+    case "time":
       // Simple text-based fields: directly insert the value
       return `${prefix}${value}${suffix}`
+
+    case "provider": {
+      const provider = context?.providers?.find((p) => p.id === value)
+      const display = provider ? formatProviderDisplay(provider) : String(value)
+      return `${prefix}${display}${suffix}`
+    }
+
+    case "attestation":
+      // Attestations insert the manual's exact language, verbatim, only when true
+      if (value === true && field.attestationText) {
+        return `${prefix}${field.attestationText}${suffix}`
+      }
+      return ""
 
     case "multi-select":
       // Join multiple selections with the specified joiner
@@ -67,9 +99,9 @@ function buildFieldSegment(field: TemplateField, value: unknown): string {
       return ""
 
     case "boolean":
-      // Boolean fields: handle true/false cases
-      if (value === true) {
-        // For true values, use a contextual phrase
+      // Prefix-less booleans are pure gates (e.g. transport-provided) and
+      // contribute no narrative of their own
+      if (value === true && prefix) {
         return `${prefix}reviewed and discussed${suffix}`
       } else if (value === false && prefix) {
         // Handle specific false cases based on field context
@@ -92,8 +124,12 @@ function buildFieldSegment(field: TemplateField, value: unknown): string {
   }
 }
 
+/** Canonical manual clock format: "3:03PM" — colon plus AM/PM, no space */
+const CLOCK_FORMAT = /^\d{1,2}:\d{2}(AM|PM)$/
+
 /**
  * Validate that all required fields have responses.
+ * Fields hidden by an unmet showIf gate are skipped entirely.
  * Returns an object with field IDs mapped to error messages.
  */
 export function validateResponses(
@@ -103,15 +139,30 @@ export function validateResponses(
   const errors: Record<string, string> = {}
 
   template.fields.forEach((field) => {
-    if (field.required) {
-      const value = responses[field.id]
+    if (field.showIf && responses[field.showIf.fieldId] !== field.showIf.equals) {
+      return
+    }
 
-      if (value === undefined || value === null || value === "") {
+    const value = responses[field.id]
+
+    if (field.type === "time" && typeof value === "string" && value !== "" && !CLOCK_FORMAT.test(value)) {
+      errors[field.id] = `${field.label} must use the H:MMAM/PM format (e.g. 3:03PM)`
+      return
+    }
+
+    if (field.required) {
+      if (field.type === "attestation") {
+        if (value !== true) {
+          errors[field.id] = `${field.label} must be attested`
+        }
+      } else if (value === undefined || value === null || value === "") {
         errors[field.id] = `${field.label} is required`
       } else if (field.type === "multi-select" && Array.isArray(value) && value.length === 0) {
         errors[field.id] = `Select at least one ${field.label.toLowerCase()}`
       } else if (field.type === "time-duration" && (typeof value !== "number" || value <= 0)) {
         errors[field.id] = `${field.label} must be greater than 0`
+      } else if (field.type === "boolean" && typeof value !== "boolean") {
+        errors[field.id] = `${field.label} is required`
       }
     }
   })

@@ -1,6 +1,6 @@
 "use client"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,16 +14,17 @@ import {
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { useState } from "react"
-import { 
-  FileText, 
-  Phone, 
-  Stethoscope, 
-  ClipboardList, 
+import {
+  FileText,
+  Phone,
+  Stethoscope,
+  ClipboardList,
   MessageSquare,
   Search,
   ChevronRight,
   Clock,
-  User
+  User,
+  Pin
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { PatientNote } from "@/lib/types"
@@ -34,7 +35,7 @@ const noteTypeConfig: Record<PatientNote["type"], { icon: typeof FileText; label
   phone: { icon: Phone, label: "Phone Call", color: "bg-chart-2/10 text-chart-2" },
   visit: { icon: ClipboardList, label: "Visit", color: "bg-chart-3/10 text-chart-3" },
   "follow-up": { icon: MessageSquare, label: "Follow-up", color: "bg-chart-4/10 text-chart-4" },
-  supervision: { icon: ClipboardList, label: "Supervision", color: "bg-chart-5/10 text-chart-5" },
+  supervision: { icon: Pin, label: "Supervision", color: "bg-amber-100 text-amber-700" },
 }
 
 export function ClinicalFeed() {
@@ -83,8 +84,12 @@ export function ClinicalFeed() {
     })
   }
 
+  // Supervision notes float above the feed, pinned
+  const pinnedSupervisionNotes = filteredNotes.filter(note => note.type === "supervision")
+  const feedNotes = filteredNotes.filter(note => note.type !== "supervision")
+
   // Group notes by date
-  const groupedNotes = filteredNotes.reduce((groups, note) => {
+  const groupedNotes = feedNotes.reduce((groups, note) => {
     const date = new Date(note.createdAt).toLocaleDateString('en-US', { 
       weekday: 'long', 
       month: 'long', 
@@ -131,7 +136,7 @@ export function ClinicalFeed() {
       </Card>
 
       {/* Stats */}
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-4 lg:grid-cols-7 gap-4">
         <Card>
           <CardContent className="p-4 flex items-center justify-between">
             <div>
@@ -144,7 +149,7 @@ export function ClinicalFeed() {
         {Object.entries(noteTypeConfig).map(([type, config]) => {
           const count = myNotes.filter(n => n.type === type).length
           return (
-            <Card key={type} className={cn("border-l-4", type === "clinical" ? "border-l-chart-1" : type === "phone" ? "border-l-chart-2" : type === "visit" ? "border-l-chart-3" : type === "follow-up" ? "border-l-chart-4" : "border-l-muted")}>
+            <Card key={type} className={cn("border-l-4", type === "clinical" ? "border-l-chart-1" : type === "phone" ? "border-l-chart-2" : type === "visit" ? "border-l-chart-3" : type === "follow-up" ? "border-l-chart-4" : type === "supervision" ? "border-l-amber-400" : "border-l-muted")}>
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">{config.label}</p>
@@ -159,9 +164,62 @@ export function ClinicalFeed() {
         })}
       </div>
 
+      {/* Pinned Supervision Notes */}
+      {pinnedSupervisionNotes.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium text-amber-700 mb-3 flex items-center gap-2">
+            <Pin className="h-4 w-4" />
+            Pinned — Supervision
+          </h3>
+          <div className="space-y-3">
+            {pinnedSupervisionNotes.map((note) => {
+              const patient = patients.find(p => p.id === note.patientId)
+              return (
+                <Card
+                  key={note.id}
+                  className="cursor-pointer transition-all hover:shadow-md border-l-4 border-l-amber-400 bg-amber-50/40"
+                  onClick={() => navigateTo("patient-detail", { patientId: note.patientId })}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg shrink-0 bg-amber-100 text-amber-700">
+                        <Pin className="h-5 w-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-medium text-foreground">{patient?.name || "Unknown"}</h4>
+                            <Badge variant="outline" className="text-xs bg-amber-100 text-amber-700 border-amber-200">
+                              Supervision
+                            </Badge>
+                          </div>
+                          <span className="text-xs text-muted-foreground">{formatTimeAgo(note.createdAt)}</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
+                          {note.content}
+                        </p>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <User className="h-3 w-3" />
+                            <span>{note.authorName}</span>
+                            <span>•</span>
+                            <span>{formatDate(note.createdAt)}</span>
+                          </div>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Notes Feed */}
       <div className="space-y-6">
-        {Object.entries(groupedNotes).length === 0 ? (
+        {Object.entries(groupedNotes).length === 0 && pinnedSupervisionNotes.length === 0 ? (
           <Card>
             <CardContent className="p-8 text-center">
               <FileText className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />

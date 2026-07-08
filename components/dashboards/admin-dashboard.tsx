@@ -53,7 +53,8 @@ import {
   RotateCcw,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { AuditAction, OrganizationSettings, Payer, RemarkCode } from "@/lib/types"
+import type { AuditAction, OrganizationSettings, Payer, RemarkClassification, RemarkCode } from "@/lib/types"
+import { classificationMeta } from "@/components/billing/denial-work-queue"
 
 // Action type configuration for audit log display
 const actionConfig: Record<AuditAction, { label: string; icon: typeof Edit2; color: string }> = {
@@ -160,6 +161,8 @@ export function AdminDashboard() {
   const [remarkDescriptionValue, setRemarkDescriptionValue] = useState("")
   const [addRemarkOpen, setAddRemarkOpen] = useState(false)
   const [newRemarkType, setNewRemarkType] = useState<"CARC" | "RARC">("CARC")
+  const [remarkClassificationValue, setRemarkClassificationValue] =
+    useState<RemarkClassification>("informational")
 
   // Organization settings dialog
   const [orgDialogOpen, setOrgDialogOpen] = useState(false)
@@ -228,6 +231,7 @@ export function AdminDashboard() {
     setEditingRemark(code)
     setRemarkCodeValue(code.code)
     setRemarkDescriptionValue(code.description)
+    setRemarkClassificationValue(code.classification ?? "informational")
   }
 
   const handleSaveRemark = () => {
@@ -242,7 +246,11 @@ export function AdminDashboard() {
     }
     updateRemarkCode(
       editingRemark.id,
-      { code: remarkCodeValue.trim(), description: remarkDescriptionValue.trim() },
+      {
+        code: remarkCodeValue.trim(),
+        description: remarkDescriptionValue.trim(),
+        classification: remarkClassificationValue,
+      },
       currentUser.id,
       currentUser.name
     )
@@ -257,6 +265,7 @@ export function AdminDashboard() {
     setNewRemarkType("CARC")
     setRemarkCodeValue("")
     setRemarkDescriptionValue("")
+    setRemarkClassificationValue("informational")
     setAddRemarkOpen(true)
   }
 
@@ -275,6 +284,7 @@ export function AdminDashboard() {
         type: newRemarkType,
         code: remarkCodeValue.trim(),
         description: remarkDescriptionValue.trim(),
+        classification: remarkClassificationValue,
       },
       currentUser.id,
       currentUser.name
@@ -496,13 +506,14 @@ export function AdminDashboard() {
                     <TableHead className="text-muted-foreground w-24">Type</TableHead>
                     <TableHead className="text-muted-foreground w-24">Code</TableHead>
                     <TableHead className="text-muted-foreground">Description</TableHead>
+                    <TableHead className="text-muted-foreground w-32">Classification</TableHead>
                     <TableHead className="text-right text-muted-foreground">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {remarkCodes.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                         No remark codes configured
                       </TableCell>
                     </TableRow>
@@ -526,6 +537,14 @@ export function AdminDashboard() {
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {code.description}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={cn(classificationMeta(code.classification).colorClasses)}
+                          >
+                            {classificationMeta(code.classification).label}
+                          </Badge>
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
@@ -800,6 +819,22 @@ export function AdminDashboard() {
                 placeholder="Description shown on remittance details"
               />
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Classification</label>
+              <Select
+                value={remarkClassificationValue}
+                onValueChange={(v) => setRemarkClassificationValue(v as RemarkClassification)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="informational">Informational</SelectItem>
+                  <SelectItem value="adjustment">Adjustment</SelectItem>
+                  <SelectItem value="denial">Denial</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingRemark(null)}>
@@ -854,6 +889,22 @@ export function AdminDashboard() {
                 onChange={(e) => setRemarkDescriptionValue(e.target.value)}
                 placeholder="Description shown on remittance details"
               />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Classification</label>
+              <Select
+                value={remarkClassificationValue}
+                onValueChange={(v) => setRemarkClassificationValue(v as RemarkClassification)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="informational">Informational</SelectItem>
+                  <SelectItem value="adjustment">Adjustment</SelectItem>
+                  <SelectItem value="denial">Denial</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>

@@ -41,6 +41,7 @@ import { useDemoData } from "@/lib/demo-data-context"
 import { useToast } from "@/hooks/use-toast"
 import { getCurrentPositionSafe } from "@/lib/geo"
 import { AMDSourceIndicator } from "@/components/amd-source-indicator"
+import { DayClosePanel } from "@/components/navigator/day-close-panel"
 import { daysSince, todayISO } from "@/lib/schedule-utils"
 import { ExternalLink } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -314,6 +315,9 @@ export function NavigatorDashboard() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Day-Close / Charge Slips */}
+      <DayClosePanel navigatorId={currentNavigator.id} navigatorName={currentNavigator.name} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Upcoming Schedule */}

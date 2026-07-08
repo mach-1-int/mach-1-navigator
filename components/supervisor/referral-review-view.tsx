@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useForm } from "react-hook-form"
+import { useForm, type UseFormReturn } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Select,
   SelectContent,
@@ -31,7 +32,6 @@ import {
   FileText,
   AlertTriangle,
   CheckCircle2,
-  X,
   Building2,
   User,
   Calendar,
@@ -42,15 +42,28 @@ import {
   ChevronRight,
   Users,
   Zap,
+  Send,
+  PhoneCall,
+  TrendingUp,
+  Filter,
 } from "lucide-react"
 import { toast } from "sonner"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { SimulatedHL7Feed } from "@/lib/referral-ingestion"
-import type { Patient } from "@/lib/types"
+import {
+  REFERRAL_PIPELINE_ORDER,
+  INELIGIBILITY_REASON_LABELS,
+  isTerminalReferralStatus,
+  referralStatusMeta,
+} from "@/lib/referral-pipeline"
+import type { Patient, Referral } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { AMDSourceIndicator } from "@/components/amd-source-indicator"
 import { HL7IngestDialog } from "@/components/supervisor/hl7-ingest-dialog"
+import { EligibilityChecklist } from "@/components/supervisor/eligibility-checklist"
+import { OutreachLog, OutreachSlaChip } from "@/components/supervisor/outreach-log"
+import { ReferralFunnelView } from "@/components/supervisor/referral-funnel"
 
 // Rotation state lives at module level in referral-ingestion, so a single
 // shared adapter instance is fine across re-renders.
@@ -86,17 +99,26 @@ function getRiskBadge(riskScore: 1 | 2 | 3) {
 }
 
 export function ReferralReviewView() {
-  const { getPendingReferrals, navigators, patients, referrals, acceptReferral, rejectReferral, ingestReferral } = useDemoData()
-  const { navigateTo, currentUser } = useRole()
-  const [selectedReferralId, setSelectedReferralId] = useState<string | null>(null)
+  const { navigators, patients, referrals, appointments, acceptReferral, ingestReferral } = useDemoData()
+  const { navigateTo, currentUser, navigation } = useRole()
+  const [selectedReferralId, setSelectedReferralId] = useState<string | null>(
+    navigation.params?.referralId ?? null
+  )
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [hl7DialogOpen, setHl7DialogOpen] = useState(false)
 
-  const pendingReferrals = getPendingReferrals()
-  // Derived selection: fall back to the first pending referral when nothing is
-  // explicitly selected (or the selection was accepted/rejected away)
+  // Status-grouped pipeline list (working stages first, then closes)
+  const groups = REFERRAL_PIPELINE_ORDER
+    .map((status) => ({ status, items: referrals.filter((r) => r.status === status) }))
+    .filter((g) => g.items.length > 0)
+  const workingReferrals = referrals.filter((r) => !isTerminalReferralStatus(r.status))
+
+  // Derived selection: fall back to the first working referral (pipeline order)
+  // when nothing is explicitly selected or the selection no longer exists
   const selectedReferral =
-    pendingReferrals.find(r => r.id === selectedReferralId) ?? pendingReferrals[0]
+    referrals.find((r) => r.id === selectedReferralId) ??
+    groups.flatMap((g) => g.items).find((r) => !isTerminalReferralStatus(r.status)) ??
+    groups[0]?.items[0]
 
   // Get navigators for the logged-in supervisor's team
   const teamNavigators = navigators.filter((nav) => nav.supervisorId === currentUser?.id)
@@ -174,13 +196,11 @@ export function ReferralReviewView() {
     if (newPatient) {
       // Navigate to the newly created patient profile
       navigateTo("patient-detail", { patientId: newPatient.id })
+    } else {
+      toast.error("Patient has not agreed to services yet", {
+        description: "Complete eligibility and outreach before conversion.",
+      })
     }
-  }
-
-  const handleReject = () => {
-    if (!selectedReferral) return
-    rejectReferral(selectedReferral.id)
-    setSelectedReferralId(null)
   }
 
   const handleSimulateIncoming = () => {
@@ -210,527 +230,824 @@ export function ReferralReviewView() {
     </div>
   )
 
-  // Empty state when no pending referrals
-  if (pendingReferrals.length === 0) {
-    return (
-      <div className="flex flex-col gap-4">
+  return (
+    <Tabs defaultValue="pipeline" className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-2">
+        <TabsList>
+          <TabsTrigger value="pipeline" className="gap-2">
+            <Filter className="h-4 w-4" />
+            Pipeline
+          </TabsTrigger>
+          <TabsTrigger value="funnel" className="gap-2">
+            <TrendingUp className="h-4 w-4" />
+            Funnel
+          </TabsTrigger>
+        </TabsList>
         {toolbar}
-        <div className="flex flex-col items-center justify-center py-12">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
-            <CheckCircle2 className="h-8 w-8 text-muted-foreground" />
-          </div>
-          <h3 className="text-lg font-semibold text-card-foreground">All Caught Up!</h3>
-          <p className="text-muted-foreground mt-2">No pending referrals to review.</p>
-        </div>
       </div>
-    )
-  }
 
-  const rawData = selectedReferral?.rawData
+      <TabsContent value="funnel" className="mt-0">
+        <ReferralFunnelView />
+      </TabsContent>
+
+      <TabsContent value="pipeline" className="mt-0">
+        {referrals.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
+              <CheckCircle2 className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <h3 className="text-lg font-semibold text-card-foreground">All Caught Up!</h3>
+            <p className="text-muted-foreground mt-2">No referrals in the pipeline.</p>
+          </div>
+        ) : (
+          <div className="grid gap-6 lg:grid-cols-[350px_1fr] h-[calc(100vh-230px)] min-h-0">
+            {/* Left Pane - Status-Grouped Referral List */}
+            <Card className="bg-card flex flex-col h-full">
+              <CardHeader className="pb-3 flex-shrink-0">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <UserPlus className="h-5 w-5 text-primary" />
+                    <CardTitle className="text-card-foreground">Referral Pipeline</CardTitle>
+                  </div>
+                  <Badge variant="secondary">{workingReferrals.length} working</Badge>
+                </div>
+                <CardDescription>Grouped by pipeline stage</CardDescription>
+              </CardHeader>
+              <div className="flex-1 overflow-hidden">
+                <ScrollArea className="h-full">
+                  <CardContent className="space-y-4 pt-0 pb-4">
+                    {groups.map(({ status, items }) => {
+                      const meta = referralStatusMeta(status)
+                      return (
+                        <div key={status} className="space-y-2">
+                          <div className="flex items-center justify-between sticky top-0 bg-card py-1">
+                            <Badge variant="outline" className={cn("text-xs", meta.colorClasses)}>
+                              {meta.label}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">{items.length}</span>
+                          </div>
+                          {items.map((referral) => (
+                            <ReferralListItem
+                              key={referral.id}
+                              referral={referral}
+                              isSelected={referral.id === selectedReferral?.id}
+                              onSelect={() => setSelectedReferralId(referral.id)}
+                              onMatchAssign={() => navigateTo("intake-workspace", { referralId: referral.id })}
+                            />
+                          ))}
+                        </div>
+                      )
+                    })}
+                  </CardContent>
+                </ScrollArea>
+              </div>
+            </Card>
+
+            {/* Right Pane - Raw Data + Per-Status Panel */}
+            {selectedReferral && selectedReferral.rawData ? (
+              <div className="grid gap-4 lg:grid-cols-2 overflow-hidden">
+                <RawReferralData referral={selectedReferral} />
+                <StatusPanel
+                  referral={selectedReferral}
+                  patients={patients}
+                  appointments={appointments}
+                  form={form}
+                  onSubmit={onSubmit}
+                  isSubmitting={isSubmitting}
+                  teamNavigators={teamNavigators}
+                  onMatchAssign={() => navigateTo("intake-workspace", { referralId: selectedReferral.id })}
+                  onViewPatient={(patientId) => navigateTo("patient-detail", { patientId })}
+                />
+              </div>
+            ) : (
+              <Card className="bg-card flex items-center justify-center">
+                <CardContent className="text-center py-12">
+                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-secondary mx-auto">
+                    <UserPlus className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <p className="text-muted-foreground">Select a referral from the list to review</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
+      </TabsContent>
+    </Tabs>
+  )
+}
+
+// ============================================================================
+// LIST ITEM
+// ============================================================================
+
+function ReferralListItem({
+  referral,
+  isSelected,
+  onSelect,
+  onMatchAssign,
+}: {
+  referral: Referral
+  isSelected: boolean
+  onSelect: () => void
+  onMatchAssign: () => void
+}) {
+  const risk = getRiskBadge(referral.riskScore)
+  const showSla = referral.status === "accepted" || (referral.status === "outreach" && referral.outreachAttempts.length === 0)
+  const readyToAssign = referral.status === "agreed" || referral.status === "intake_scheduled"
 
   return (
-    <div className="flex flex-col gap-4 h-[calc(100vh-180px)]">
-      {toolbar}
-      <div className="grid gap-6 lg:grid-cols-[350px_1fr] flex-1 min-h-0">
-      {/* Left Pane - Referral List */}
-      <Card className="bg-card flex flex-col h-full">
-        <CardHeader className="pb-3 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <UserPlus className="h-5 w-5 text-primary" />
-              <CardTitle className="text-card-foreground">Pending Referrals</CardTitle>
-            </div>
-            <Badge variant="secondary">{pendingReferrals.length}</Badge>
-          </div>
-          <CardDescription>Select a referral to review</CardDescription>
-        </CardHeader>
-        <div className="flex-1 overflow-hidden">
-          <ScrollArea className="h-full">
-            <CardContent className="space-y-2 pt-0 pb-4">
-            {pendingReferrals.map((referral) => {
-              const isSelected = referral.id === selectedReferral?.id
-              const risk = getRiskBadge(referral.riskScore)
-              return (
-                <div
-                  key={referral.id}
-                  className={cn(
-                    "w-full rounded-lg border transition-all p-4",
-                    isSelected
-                      ? "border-primary bg-primary/5 shadow-sm"
-                      : "border-border hover:border-primary/50 hover:bg-muted/50"
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setSelectedReferralId(referral.id)}
-                    className="w-full text-left"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-card-foreground truncate">
-                            {referral.patientName}
-                          </p>
-                          {isSelected && (
-                            <ChevronRight className="h-4 w-4 text-primary flex-shrink-0" />
-                          )}
-                        </div>
-                        <p className="text-sm text-muted-foreground truncate mt-0.5">
-                          {referral.diagnosis}
-                        </p>
-                        <div className="flex items-center gap-2 mt-2">
-                          <Badge variant="outline" className={cn("text-xs", risk.className)}>
-                            {referral.riskScore === 3 && <AlertTriangle className="h-3 w-3 mr-1" />}
-                            {risk.label}
-                          </Badge>
-                          <AMDSourceIndicator source={referral.source} />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
-                      <Building2 className="h-3 w-3" />
-                      <span className="truncate">{referral.referralSource}</span>
-                    </div>
-                  </button>
-                  <Button
-                    size="sm"
-                    variant="default"
-                    className="w-full mt-3 gap-2"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      navigateTo("intake-workspace", { referralId: referral.id })
-                    }}
-                  >
-                    <Users className="h-4 w-4" />
-                    Match & Assign
-                  </Button>
-                </div>
-              )
-            })}
-            </CardContent>
-          </ScrollArea>
-        </div>
-      </Card>
-
-      {/* Right Pane - Split View (Raw Data + Intake Form) */}
-      {selectedReferral && rawData ? (
-        <div className="grid gap-4 lg:grid-cols-2 overflow-hidden">
-          {/* Raw AMD Data */}
-          <Card className="bg-card overflow-hidden flex flex-col">
-            <CardHeader className="pb-3 flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <Database className="h-5 w-5 text-primary" />
-                <CardTitle className="text-card-foreground">Source: AMD Integration</CardTitle>
-              </div>
-              <CardDescription>Raw HL7 data from {selectedReferral.source}</CardDescription>
-            </CardHeader>
-            <ScrollArea className="flex-1">
-              <CardContent className="space-y-4 pt-0">
-                {/* Received timestamp */}
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Calendar className="h-4 w-4" />
-                  Received: {new Date(selectedReferral.receivedAt).toLocaleString()}
-                </div>
-
-                <Separator />
-
-                {/* Raw HL7v2 message (present when ingested via the HL7 adapter) */}
-                {selectedReferral.rawHL7 && (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-amber-500" />
-                      <span className="text-sm font-semibold text-card-foreground">Raw HL7v2 Message</span>
-                    </div>
-                    <pre className="text-xs font-mono bg-muted/50 rounded-lg p-4 overflow-x-auto max-h-48 overflow-y-auto whitespace-pre">
-                      {selectedReferral.rawHL7.split(/\r\n|\r|\n/).join("\n")}
-                    </pre>
-                  </div>
-                )}
-
-                {/* PID Segment */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <User className="h-4 w-4 text-blue-500" />
-                    <span className="text-sm font-semibold text-card-foreground">PID - Patient Identification</span>
-                  </div>
-                  <div className="bg-muted/50 rounded-lg p-4 font-mono text-sm space-y-1">
-                    <div><span className="text-muted-foreground">Name:</span> {rawData.PID.patientName}</div>
-                    <div><span className="text-muted-foreground">DOB:</span> {rawData.PID.dob}</div>
-                    <div><span className="text-muted-foreground">Gender:</span> {rawData.PID.gender}</div>
-                    {rawData.PID.ssn && <div><span className="text-muted-foreground">SSN:</span> {rawData.PID.ssn}</div>}
-                    <div><span className="text-muted-foreground">Address:</span> {rawData.PID.address.street}</div>
-                    <div className="pl-16">{rawData.PID.address.city}, {rawData.PID.address.state} {rawData.PID.address.zip}</div>
-                    <div><span className="text-muted-foreground">Phone:</span> {rawData.PID.phone}</div>
-                    {rawData.PID.email && <div><span className="text-muted-foreground">Email:</span> {rawData.PID.email}</div>}
-                  </div>
-                </div>
-
-                {/* DG1 Segment */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Stethoscope className="h-4 w-4 text-red-500" />
-                    <span className="text-sm font-semibold text-card-foreground">DG1 - Diagnosis</span>
-                  </div>
-                  <div className="bg-muted/50 rounded-lg p-4 font-mono text-sm space-y-1">
-                    <div><span className="text-muted-foreground">Primary:</span> {rawData.DG1.primaryDiagnosis}</div>
-                    <div><span className="text-muted-foreground">ICD Codes:</span> {rawData.DG1.icdCodes.join(", ")}</div>
-                    <div><span className="text-muted-foreground">Dx Date:</span> {rawData.DG1.diagnosisDate}</div>
-                  </div>
-                </div>
-
-                {/* IN1 Segment */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <CreditCard className="h-4 w-4 text-green-500" />
-                    <span className="text-sm font-semibold text-card-foreground">IN1 - Insurance</span>
-                  </div>
-                  <div className="bg-muted/50 rounded-lg p-4 font-mono text-sm space-y-1">
-                    <div><span className="text-muted-foreground">Payer:</span> {rawData.IN1.payerName}</div>
-                    <div><span className="text-muted-foreground">Payer ID:</span> {rawData.IN1.payerId}</div>
-                    <div><span className="text-muted-foreground">Member ID:</span> {rawData.IN1.memberId}</div>
-                    {rawData.IN1.groupNumber && <div><span className="text-muted-foreground">Group #:</span> {rawData.IN1.groupNumber}</div>}
-                  </div>
-                </div>
-
-                {/* PV1 Segment */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Building2 className="h-4 w-4 text-purple-500" />
-                    <span className="text-sm font-semibold text-card-foreground">PV1 - Visit Information</span>
-                  </div>
-                  <div className="bg-muted/50 rounded-lg p-4 font-mono text-sm space-y-1">
-                    <div><span className="text-muted-foreground">Facility:</span> {rawData.PV1.facilityName}</div>
-                    {rawData.PV1.admitDate && <div><span className="text-muted-foreground">Admit:</span> {rawData.PV1.admitDate}</div>}
-                    {rawData.PV1.dischargeDate && <div><span className="text-muted-foreground">Discharge:</span> {rawData.PV1.dischargeDate}</div>}
-                    {rawData.PV1.attendingPhysician && <div><span className="text-muted-foreground">Attending:</span> {rawData.PV1.attendingPhysician}</div>}
-                    <div><span className="text-muted-foreground">Referring:</span> {rawData.PV1.referringPhysician}</div>
-                  </div>
-                </div>
-              </CardContent>
-            </ScrollArea>
-          </Card>
-
-          {/* Intake Form */}
-          <Card className="bg-card overflow-hidden flex flex-col">
-            <CardHeader className="pb-3 flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <FileCheck className="h-5 w-5 text-primary" />
-                <CardTitle className="text-card-foreground">Mach 1 Intake Form</CardTitle>
-              </div>
-              <CardDescription>Review and edit before creating patient record</CardDescription>
-            </CardHeader>
-            <ScrollArea className="flex-1">
-              <CardContent className="pt-0">
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                    {/* Patient Information */}
-                    <div className="space-y-4">
-                      <h3 className="text-sm font-semibold text-card-foreground flex items-center gap-2">
-                        <User className="h-4 w-4" />
-                        Patient Information
-                      </h3>
-
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <FormField
-                          control={form.control}
-                          name="name"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Full Name</FormLabel>
-                              <FormControl>
-                                <Input {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="dob"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Date of Birth</FormLabel>
-                              <FormControl>
-                                <Input type="date" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <FormField
-                          control={form.control}
-                          name="phone"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Phone</FormLabel>
-                              <FormControl>
-                                <Input {...field} placeholder="(555) 555-5555" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="email"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Email (Optional)</FormLabel>
-                              <FormControl>
-                                <Input type="email" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    {/* Address */}
-                    <div className="space-y-4">
-                      <h3 className="text-sm font-semibold text-card-foreground flex items-center gap-2">
-                        <MapPin className="h-4 w-4" />
-                        Address
-                      </h3>
-
-                      <FormField
-                        control={form.control}
-                        name="street"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Street Address</FormLabel>
-                            <FormControl>
-                              <Input {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <div className="grid gap-4 sm:grid-cols-3">
-                        <FormField
-                          control={form.control}
-                          name="city"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>City</FormLabel>
-                              <FormControl>
-                                <Input {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="state"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>State</FormLabel>
-                              <FormControl>
-                                <Input {...field} maxLength={2} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="zip"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>ZIP</FormLabel>
-                              <FormControl>
-                                <Input {...field} maxLength={5} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    {/* Insurance */}
-                    <div className="space-y-4">
-                      <h3 className="text-sm font-semibold text-card-foreground flex items-center gap-2">
-                        <CreditCard className="h-4 w-4" />
-                        Insurance
-                      </h3>
-
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <FormField
-                          control={form.control}
-                          name="healthPlan"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Health Plan</FormLabel>
-                              <FormControl>
-                                <Input {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="memberId"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Member ID</FormLabel>
-                              <FormControl>
-                                <Input {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    {/* Clinical */}
-                    <div className="space-y-4">
-                      <h3 className="text-sm font-semibold text-card-foreground flex items-center gap-2">
-                        <Stethoscope className="h-4 w-4" />
-                        Clinical Information
-                      </h3>
-
-                      <FormField
-                        control={form.control}
-                        name="primaryDiagnosis"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Primary Diagnosis</FormLabel>
-                            <FormControl>
-                              <Input {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <FormField
-                          control={form.control}
-                          name="icdCodes"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>ICD Codes</FormLabel>
-                              <FormControl>
-                                <Input {...field} placeholder="I50.9, J44.9" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="riskLevel"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Risk Level</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value}>
-                                <FormControl>
-                                  <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="Select risk level" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="1">Level 1 - Low</SelectItem>
-                                  <SelectItem value="2">Level 2 - Medium</SelectItem>
-                                  <SelectItem value="3">Level 3 - High</SelectItem>
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    {/* Assignment */}
-                    <div className="space-y-4">
-                      <h3 className="text-sm font-semibold text-card-foreground">Navigator Assignment</h3>
-
-                      <FormField
-                        control={form.control}
-                        name="assignedNavigator"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Assign to Navigator</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value}>
-                              <FormControl>
-                                <SelectTrigger className="w-full">
-                                  <SelectValue placeholder="Select navigator..." />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {teamNavigators.map((nav) => (
-                                  <SelectItem key={nav.id} value={nav.id}>
-                                    {nav.name} ({nav.patientCount} patients)
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex gap-3 pt-4">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="flex-1 bg-transparent"
-                        onClick={handleReject}
-                      >
-                        <X className="h-4 w-4 mr-2" />
-                        Reject
-                      </Button>
-                      <Button
-                        type="submit"
-                        className="flex-1"
-                        disabled={isSubmitting}
-                      >
-                        {isSubmitting ? (
-                          "Creating..."
-                        ) : (
-                          <>
-                            <CheckCircle2 className="h-4 w-4 mr-2" />
-                            Create Patient
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </form>
-                </Form>
-              </CardContent>
-            </ScrollArea>
-          </Card>
-        </div>
-      ) : (
-        <Card className="bg-card flex items-center justify-center">
-          <CardContent className="text-center py-12">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-secondary mx-auto">
-              <UserPlus className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <p className="text-muted-foreground">Select a referral from the list to review</p>
-          </CardContent>
-        </Card>
+    <div
+      className={cn(
+        "w-full rounded-lg border transition-all p-4",
+        isSelected
+          ? "border-primary bg-primary/5 shadow-sm"
+          : "border-border hover:border-primary/50 hover:bg-muted/50",
+        isTerminalReferralStatus(referral.status) && !isSelected && "opacity-70"
       )}
-      </div>
+    >
+      <button type="button" onClick={onSelect} className="w-full text-left">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="font-medium text-card-foreground truncate">{referral.patientName}</p>
+              {isSelected && <ChevronRight className="h-4 w-4 text-primary flex-shrink-0" />}
+            </div>
+            <p className="text-sm text-muted-foreground truncate mt-0.5">{referral.diagnosis}</p>
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <Badge variant="outline" className={cn("text-xs", risk.className)}>
+                {referral.riskScore === 3 && <AlertTriangle className="h-3 w-3 mr-1" />}
+                {risk.label}
+              </Badge>
+              {showSla && <OutreachSlaChip referral={referral} />}
+              {referral.status === "outreach" && referral.outreachAttempts.length > 0 && (
+                <Badge variant="outline" className="text-xs gap-1">
+                  <PhoneCall className="h-3 w-3" />
+                  {referral.outreachAttempts.length}/7
+                </Badge>
+              )}
+              <AMDSourceIndicator source={referral.source} />
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+          <Building2 className="h-3 w-3" />
+          <span className="truncate">{referral.referralSource}</span>
+        </div>
+      </button>
+      {readyToAssign && (
+        <Button
+          size="sm"
+          variant="default"
+          className="w-full mt-3 gap-2"
+          onClick={(e) => {
+            e.stopPropagation()
+            onMatchAssign()
+          }}
+        >
+          <Users className="h-4 w-4" />
+          Match &amp; Assign
+        </Button>
+      )}
     </div>
+  )
+}
+
+// ============================================================================
+// RAW AMD DATA PANE
+// ============================================================================
+
+function RawReferralData({ referral }: { referral: Referral }) {
+  const rawData = referral.rawData
+  return (
+    <Card className="bg-card overflow-hidden flex flex-col">
+      <CardHeader className="pb-3 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <Database className="h-5 w-5 text-primary" />
+          <CardTitle className="text-card-foreground">Source: AMD Integration</CardTitle>
+        </div>
+        <CardDescription>Raw HL7 data from {referral.source}</CardDescription>
+      </CardHeader>
+      <ScrollArea className="flex-1">
+        <CardContent className="space-y-4 pt-0">
+          {/* Received timestamp */}
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Calendar className="h-4 w-4" />
+            Received: {new Date(referral.receivedAt).toLocaleString()}
+          </div>
+
+          <Separator />
+
+          {/* Raw HL7v2 message (present when ingested via the HL7 adapter) */}
+          {referral.rawHL7 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-amber-500" />
+                <span className="text-sm font-semibold text-card-foreground">Raw HL7v2 Message</span>
+              </div>
+              <pre className="text-xs font-mono bg-muted/50 rounded-lg p-4 overflow-x-auto max-h-48 overflow-y-auto whitespace-pre">
+                {referral.rawHL7.split(/\r\n|\r|\n/).join("\n")}
+              </pre>
+            </div>
+          )}
+
+          {/* PID Segment */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <User className="h-4 w-4 text-blue-500" />
+              <span className="text-sm font-semibold text-card-foreground">PID - Patient Identification</span>
+            </div>
+            <div className="bg-muted/50 rounded-lg p-4 font-mono text-sm space-y-1">
+              <div><span className="text-muted-foreground">Name:</span> {rawData.PID.patientName}</div>
+              <div><span className="text-muted-foreground">DOB:</span> {rawData.PID.dob}</div>
+              <div><span className="text-muted-foreground">Gender:</span> {rawData.PID.gender}</div>
+              {rawData.PID.ssn && <div><span className="text-muted-foreground">SSN:</span> {rawData.PID.ssn}</div>}
+              <div><span className="text-muted-foreground">Address:</span> {rawData.PID.address.street}</div>
+              <div className="pl-16">{rawData.PID.address.city}, {rawData.PID.address.state} {rawData.PID.address.zip}</div>
+              <div><span className="text-muted-foreground">Phone:</span> {rawData.PID.phone}</div>
+              {rawData.PID.email && <div><span className="text-muted-foreground">Email:</span> {rawData.PID.email}</div>}
+            </div>
+          </div>
+
+          {/* DG1 Segment */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Stethoscope className="h-4 w-4 text-red-500" />
+              <span className="text-sm font-semibold text-card-foreground">DG1 - Diagnosis</span>
+            </div>
+            <div className="bg-muted/50 rounded-lg p-4 font-mono text-sm space-y-1">
+              <div><span className="text-muted-foreground">Primary:</span> {rawData.DG1.primaryDiagnosis}</div>
+              <div><span className="text-muted-foreground">ICD Codes:</span> {rawData.DG1.icdCodes.join(", ")}</div>
+              <div><span className="text-muted-foreground">Dx Date:</span> {rawData.DG1.diagnosisDate}</div>
+            </div>
+          </div>
+
+          {/* IN1 Segment */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <CreditCard className="h-4 w-4 text-green-500" />
+              <span className="text-sm font-semibold text-card-foreground">IN1 - Insurance</span>
+            </div>
+            <div className="bg-muted/50 rounded-lg p-4 font-mono text-sm space-y-1">
+              <div><span className="text-muted-foreground">Payer:</span> {rawData.IN1.payerName}</div>
+              <div><span className="text-muted-foreground">Payer ID:</span> {rawData.IN1.payerId}</div>
+              <div><span className="text-muted-foreground">Member ID:</span> {rawData.IN1.memberId}</div>
+              {rawData.IN1.groupNumber && <div><span className="text-muted-foreground">Group #:</span> {rawData.IN1.groupNumber}</div>}
+            </div>
+          </div>
+
+          {/* PV1 Segment */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-purple-500" />
+              <span className="text-sm font-semibold text-card-foreground">PV1 - Visit Information</span>
+            </div>
+            <div className="bg-muted/50 rounded-lg p-4 font-mono text-sm space-y-1">
+              <div><span className="text-muted-foreground">Facility:</span> {rawData.PV1.facilityName}</div>
+              {rawData.PV1.admitDate && <div><span className="text-muted-foreground">Admit:</span> {rawData.PV1.admitDate}</div>}
+              {rawData.PV1.dischargeDate && <div><span className="text-muted-foreground">Discharge:</span> {rawData.PV1.dischargeDate}</div>}
+              {rawData.PV1.attendingPhysician && <div><span className="text-muted-foreground">Attending:</span> {rawData.PV1.attendingPhysician}</div>}
+              <div><span className="text-muted-foreground">Referring:</span> {rawData.PV1.referringPhysician}</div>
+            </div>
+          </div>
+        </CardContent>
+      </ScrollArea>
+    </Card>
+  )
+}
+
+// ============================================================================
+// PER-STATUS RIGHT PANEL
+// ============================================================================
+
+function StatusPanel({
+  referral,
+  patients,
+  appointments,
+  form,
+  onSubmit,
+  isSubmitting,
+  teamNavigators,
+  onMatchAssign,
+  onViewPatient,
+}: {
+  referral: Referral
+  patients: Patient[]
+  appointments: { id: string; date: string; time: string }[]
+  form: UseFormReturn<IntakeFormValues>
+  onSubmit: (data: IntakeFormValues) => Promise<void>
+  isSubmitting: boolean
+  teamNavigators: { id: string; name: string; patientCount: number }[]
+  onMatchAssign: () => void
+  onViewPatient: (patientId: string) => void
+}) {
+  switch (referral.status) {
+    case "received":
+      return <EligibilityChecklist referral={referral} />
+    case "accepted":
+    case "outreach":
+      return <OutreachLog referral={referral} />
+    case "agreed":
+    case "intake_scheduled":
+      return (
+        <IntakeConversionForm
+          referral={referral}
+          appointments={appointments}
+          form={form}
+          onSubmit={onSubmit}
+          isSubmitting={isSubmitting}
+          teamNavigators={teamNavigators}
+          onMatchAssign={onMatchAssign}
+        />
+      )
+    default:
+      return <ClosedReferralSummary referral={referral} patients={patients} onViewPatient={onViewPatient} />
+  }
+}
+
+// ============================================================================
+// TERMINAL STATUS — READ-ONLY SUMMARY
+// ============================================================================
+
+function ClosedReferralSummary({
+  referral,
+  patients,
+  onViewPatient,
+}: {
+  referral: Referral
+  patients: Patient[]
+  onViewPatient: (patientId: string) => void
+}) {
+  const meta = referralStatusMeta(referral.status)
+  const convertedPatient = referral.patientId ? patients.find((p) => p.id === referral.patientId) : undefined
+  const isSuccess = referral.status === "converted"
+
+  return (
+    <Card className="bg-card overflow-hidden flex flex-col">
+      <CardHeader className="pb-3 flex-shrink-0">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            {isSuccess ? (
+              <CheckCircle2 className="h-5 w-5 text-primary" />
+            ) : (
+              <FileCheck className="h-5 w-5 text-muted-foreground" />
+            )}
+            <CardTitle className="text-card-foreground">
+              {isSuccess ? "Converted to Patient" : "Referral Closed"}
+            </CardTitle>
+          </div>
+          <Badge variant="outline" className={cn("text-xs", meta.colorClasses)}>
+            {meta.label}
+          </Badge>
+        </div>
+        <CardDescription>Read-only pipeline record</CardDescription>
+      </CardHeader>
+      <ScrollArea className="flex-1">
+        <CardContent className="space-y-4 pt-0">
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Received</span>
+              <span className="text-card-foreground">{new Date(referral.receivedAt).toLocaleDateString()}</span>
+            </div>
+            {referral.acceptedAt && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Eligibility accepted</span>
+                <span className="text-card-foreground">{new Date(referral.acceptedAt).toLocaleDateString()}</span>
+              </div>
+            )}
+            {referral.agreedAt && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Patient agreed</span>
+                <span className="text-card-foreground">{new Date(referral.agreedAt).toLocaleDateString()}</span>
+              </div>
+            )}
+            {referral.closedAt && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Closed</span>
+                <span className="text-card-foreground">{new Date(referral.closedAt).toLocaleDateString()}</span>
+              </div>
+            )}
+          </div>
+
+          {referral.eligibility && (
+            <>
+              <Separator />
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-card-foreground">Eligibility Outcome</p>
+                <div className="flex items-center gap-2">
+                  {referral.eligibility.outcome === "eligible" ? (
+                    <Badge variant="outline" className="bg-emerald-100 text-emerald-700 border-emerald-200 text-xs">
+                      Eligible
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30 text-xs">
+                      Ineligible — {INELIGIBILITY_REASON_LABELS[referral.eligibility.ineligibilityReason ?? "insurance"]}
+                    </Badge>
+                  )}
+                </div>
+                {referral.eligibility.notes && (
+                  <p className="text-xs text-muted-foreground">{referral.eligibility.notes}</p>
+                )}
+              </div>
+            </>
+          )}
+
+          {referral.outreachAttempts.length > 0 && (
+            <>
+              <Separator />
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-card-foreground">Outreach</p>
+                <p className="text-xs text-muted-foreground">
+                  {referral.outreachAttempts.length} attempt{referral.outreachAttempts.length === 1 ? "" : "s"} logged
+                  {referral.status === "unreachable" && " — maximum reached, auto-closed"}
+                </p>
+              </div>
+            </>
+          )}
+
+          <Separator />
+
+          <div
+            className={cn(
+              "flex items-center gap-2 rounded-lg border p-3",
+              referral.providerNotifiedAt
+                ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/20"
+                : "border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-950/20"
+            )}
+          >
+            <Send className={cn("h-4 w-4 shrink-0", referral.providerNotifiedAt ? "text-emerald-600" : "text-amber-600")} />
+            <p className="text-xs text-muted-foreground">
+              {referral.providerNotifiedAt
+                ? `Referring provider notified ${new Date(referral.providerNotifiedAt).toLocaleString()}`
+                : "Referring provider notification pending"}
+            </p>
+          </div>
+
+          {isSuccess && (
+            <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
+              <p className="text-sm font-medium text-card-foreground">
+                {convertedPatient ? convertedPatient.name : referral.patientName} is now an active patient record
+              </p>
+              {convertedPatient && (
+                <Button size="sm" variant="outline" className="w-full gap-2 bg-transparent" onClick={() => onViewPatient(convertedPatient.id)}>
+                  <User className="h-4 w-4" />
+                  View Patient Profile
+                </Button>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </ScrollArea>
+    </Card>
+  )
+}
+
+// ============================================================================
+// AGREED / INTAKE_SCHEDULED — CONVERSION FORM (the golden thread)
+// ============================================================================
+
+function IntakeConversionForm({
+  referral,
+  appointments,
+  form,
+  onSubmit,
+  isSubmitting,
+  teamNavigators,
+  onMatchAssign,
+}: {
+  referral: Referral
+  appointments: { id: string; date: string; time: string }[]
+  form: UseFormReturn<IntakeFormValues>
+  onSubmit: (data: IntakeFormValues) => Promise<void>
+  isSubmitting: boolean
+  teamNavigators: { id: string; name: string; patientCount: number }[]
+  onMatchAssign: () => void
+}) {
+  // Seeded intake_scheduled referrals may carry no intakeAppointmentId —
+  // fall back to a generic "on the books" note when the link is missing
+  const intakeAppointment = referral.intakeAppointmentId
+    ? appointments.find((a) => a.id === referral.intakeAppointmentId)
+    : undefined
+
+  return (
+    <Card className="bg-card overflow-hidden flex flex-col">
+      <CardHeader className="pb-3 flex-shrink-0">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <FileCheck className="h-5 w-5 text-primary" />
+            <CardTitle className="text-card-foreground">Convert to Patient</CardTitle>
+          </div>
+          <Badge variant="outline" className={cn("text-xs", referralStatusMeta(referral.status).colorClasses)}>
+            {referralStatusMeta(referral.status).label}
+          </Badge>
+        </div>
+        <CardDescription>
+          Patient agreed to services — review and edit before creating the record
+        </CardDescription>
+      </CardHeader>
+      <ScrollArea className="flex-1">
+        <CardContent className="pt-0 space-y-4">
+          {referral.status === "intake_scheduled" && (
+            <div className="flex items-center gap-2 rounded-lg border border-cyan-200 bg-cyan-50/50 dark:border-cyan-900 dark:bg-cyan-950/20 p-3">
+              <Calendar className="h-4 w-4 text-cyan-600 shrink-0" />
+              <p className="text-xs text-muted-foreground">
+                {intakeAppointment
+                  ? `Intake 1 scheduled ${new Date(`${intakeAppointment.date}T12:00:00`).toLocaleDateString()} at ${intakeAppointment.time}`
+                  : "Intake 1 is on the books — appointment details pending sync"}
+              </p>
+            </div>
+          )}
+
+          <Button variant="outline" className="w-full gap-2 bg-transparent" onClick={onMatchAssign}>
+            <Users className="h-4 w-4" />
+            Match &amp; Assign (Smart Matching)
+          </Button>
+
+          <Separator />
+
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              {/* Patient Information */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  Patient Information
+                </h3>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Full Name</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="dob"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Date of Birth</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="phone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Phone</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="(555) 555-5555" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email (Optional)</FormLabel>
+                        <FormControl>
+                          <Input type="email" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Address */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+                  <MapPin className="h-4 w-4" />
+                  Address
+                </h3>
+
+                <FormField
+                  control={form.control}
+                  name="street"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Street Address</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <FormField
+                    control={form.control}
+                    name="city"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>City</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="state"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>State</FormLabel>
+                        <FormControl>
+                          <Input {...field} maxLength={2} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="zip"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>ZIP</FormLabel>
+                        <FormControl>
+                          <Input {...field} maxLength={5} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Insurance */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+                  <CreditCard className="h-4 w-4" />
+                  Insurance
+                </h3>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="healthPlan"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Health Plan</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="memberId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Member ID</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Clinical */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+                  <Stethoscope className="h-4 w-4" />
+                  Clinical Information
+                </h3>
+
+                <FormField
+                  control={form.control}
+                  name="primaryDiagnosis"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Primary Diagnosis</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="icdCodes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>ICD Codes</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="I50.9, J44.9" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="riskLevel"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Risk Level</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select risk level" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="1">Level 1 - Low</SelectItem>
+                            <SelectItem value="2">Level 2 - Medium</SelectItem>
+                            <SelectItem value="3">Level 3 - High</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Assignment */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-card-foreground">Navigator Assignment</h3>
+
+                <FormField
+                  control={form.control}
+                  name="assignedNavigator"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Assign to Navigator</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select navigator..." />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {teamNavigators.map((nav) => (
+                            <SelectItem key={nav.id} value={nav.id}>
+                              {nav.name} ({nav.patientCount} patients)
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="pt-4">
+                <Button type="submit" className="w-full" disabled={isSubmitting}>
+                  {isSubmitting ? (
+                    "Creating..."
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                      Create Patient
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </CardContent>
+      </ScrollArea>
+    </Card>
   )
 }

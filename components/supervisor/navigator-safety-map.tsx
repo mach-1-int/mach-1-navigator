@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   AlertTriangle,
   MapPin,
@@ -17,6 +18,7 @@ import {
   ChevronRight,
   Siren,
   Zap,
+  Layers,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDemoData } from "@/lib/demo-data-context"
@@ -166,6 +168,7 @@ export function NavigatorSafetyMap() {
     scheduleEvents,
     appointments,
     sosEvents,
+    zones,
     acknowledgeSOS,
     resolveSOS,
     getUser,
@@ -175,6 +178,8 @@ export function NavigatorSafetyMap() {
   const [lastRefresh, setLastRefresh] = useState(new Date())
   const [now, setNow] = useState(new Date())
   const [simulateActivity, setSimulateActivity] = useState(false)
+  const [zoneFilter, setZoneFilter] = useState<string>("all")
+  const [showZones, setShowZones] = useState(false)
 
   // Live movement simulator (defaults off; supervisor toggles it for demos)
   useSafetySimulation(simulateActivity)
@@ -225,6 +230,28 @@ export function NavigatorSafetyMap() {
       (a, b) => statusOrder[a.status] - statusOrder[b.status]
     )
   }, [derivedLocations])
+
+  // Zone per navigator (resolved from user attributes) for the zone filter
+  const navigatorZoneIds = useMemo(() => {
+    const result: Record<string, string | undefined> = {}
+    derivedLocations.forEach((loc) => {
+      result[loc.navigatorId] = getUser(loc.navigatorId)?.attributes?.zoneId
+    })
+    return result
+  }, [derivedLocations, getUser])
+
+  const filteredLocations = useMemo(
+    () =>
+      zoneFilter === "all"
+        ? sortedLocations
+        : sortedLocations.filter((loc) => navigatorZoneIds[loc.navigatorId] === zoneFilter),
+    [sortedLocations, zoneFilter, navigatorZoneIds]
+  )
+
+  const visibleZoneIds = useMemo(
+    () => (zoneFilter === "all" ? zones.map((z) => z.id) : [zoneFilter]),
+    [zones, zoneFilter]
+  )
 
   // Count by status
   const statusCounts = useMemo(() => {
@@ -377,15 +404,45 @@ export function NavigatorSafetyMap() {
 
         {/* Navigator List */}
         <Card className="flex-1 overflow-hidden">
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-2 space-y-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <MapPin className="h-4 w-4" />
-              Field Team ({derivedLocations.length})
+              Field Team ({filteredLocations.length})
             </CardTitle>
+            <div className="flex items-center gap-2">
+              <Select value={zoneFilter} onValueChange={setZoneFilter}>
+                <SelectTrigger className="h-8 flex-1 text-xs" aria-label="Filter by zone">
+                  <SelectValue placeholder="All zones" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All zones</SelectItem>
+                  {zones.map((zone) => (
+                    <SelectItem key={zone.id} value={zone.id}>
+                      <span className="flex items-center gap-2">
+                        <span
+                          className="h-2.5 w-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: zone.color }}
+                        />
+                        {zone.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer shrink-0">
+                <Layers className="h-3 w-3" />
+                Show zones
+                <Switch
+                  checked={showZones}
+                  onCheckedChange={setShowZones}
+                  aria-label="Show zone overlays"
+                />
+              </label>
+            </div>
           </CardHeader>
-          <ScrollArea className="h-[calc(100%-3.5rem)]">
+          <ScrollArea className="h-[calc(100%-6rem)]">
             <div className="p-3 pt-0 space-y-2">
-              {sortedLocations.map((location) => (
+              {filteredLocations.map((location) => (
                 <NavigatorCard
                   key={location.id}
                   location={location}
@@ -394,6 +451,11 @@ export function NavigatorSafetyMap() {
                   onViewPatient={handleViewPatient}
                 />
               ))}
+              {filteredLocations.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-4">
+                  No navigators assigned to this zone
+                </p>
+              )}
             </div>
           </ScrollArea>
         </Card>
@@ -415,6 +477,8 @@ export function NavigatorSafetyMap() {
             onSelectNavigator={setSelectedNavigatorId}
             sosNavigatorIds={sosNavigatorIds}
             phones={phones}
+            zones={showZones ? zones : undefined}
+            visibleZoneIds={visibleZoneIds}
           />
         </CardContent>
       </Card>

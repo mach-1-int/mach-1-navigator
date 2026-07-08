@@ -13,8 +13,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Mic, Square, Loader2, Wand2, AlertCircle, AlertTriangle, FlaskConical, History, RotateCcw } from 'lucide-react';
-import { parseEncounterTranscript, getMockScribeResult, type TemplateFieldContext } from '@/lib/gemini-scribe';
-import { SAMPLE_TRANSCRIPTS } from '@/lib/sample-transcripts';
+import { parseEncounterTranscript, getMockScribeResult, type TemplateFieldContext, type ScribeNoteContext } from '@/lib/gemini-scribe';
+import { SAMPLE_TRANSCRIPTS, type SampleTranscript } from '@/lib/sample-transcripts';
 import { useDemoData } from '@/lib/demo-data-context';
 import type { NoteDraft } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
@@ -85,6 +85,8 @@ interface AiRecorderProps {
   onDurationDetected?: (minutes: number) => void;
   currentDuration?: number;
   isTimerRunning?: boolean;
+  sampleFilter?: (sample: SampleTranscript) => boolean;
+  noteContext?: ScribeNoteContext;
 }
 
 // Browser capability detection (SSR-safe): true on the server, real support on the client
@@ -123,6 +125,8 @@ export function AiRecorder({
   templateId,
   onDurationDetected,
   currentDuration = 0,
+  sampleFilter,
+  noteContext,
 }: AiRecorderProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -329,7 +333,7 @@ export function AiRecorder({
       }
 
       // Call the Server Action
-      const result = await parseEncounterTranscript(transcript, templateFields);
+      const result = await parseEncounterTranscript(transcript, templateFields, noteContext);
 
       if (result.success) {
         onAutoFill({
@@ -409,7 +413,7 @@ export function AiRecorder({
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Sample transcripts</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {SAMPLE_TRANSCRIPTS.map((sample) => (
+              {(sampleFilter ? SAMPLE_TRANSCRIPTS.filter(sampleFilter) : SAMPLE_TRANSCRIPTS).map((sample) => (
                 <DropdownMenuItem
                   key={sample.label}
                   onSelect={() => handleLoadSample(sample.transcript)}
