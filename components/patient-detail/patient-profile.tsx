@@ -24,7 +24,6 @@ import {
   Building2,
   AlertTriangle,
   CheckCircle2,
-  Clock,
   Activity,
   User,
   Users,
@@ -65,7 +64,7 @@ import { GraduationPanel } from "@/components/journey/graduation-panel"
 import { IntakeChecklist } from "@/components/intake/intake-checklist"
 import { NotesSplitView } from "@/components/notes/notes-split-view"
 import { ExpandableNoteList } from "@/components/notes/expandable-note-card"
-import type { Patient, AdverseEvent, Appointment, PatientNote } from "@/lib/types"
+import type { Appointment, PatientNote } from "@/lib/types"
 
 // Extended patient data with contact info (mocked)
 interface PatientContactInfo {
@@ -145,6 +144,13 @@ const mockContactInfo: Record<string, PatientContactInfo> = {
   },
 }
 
+// Mock supervisor data (not in demo context)
+const supervisorData: Record<string, { id: string; name: string; region: string }> = {
+  sup1: { id: "sup1", name: "Maria Santos", region: "Phoenix Metro" },
+  sup2: { id: "sup2", name: "Michael Thompson", region: "Tucson" },
+  sup3: { id: "sup3", name: "Lisa Chen", region: "Mesa/Tempe" },
+}
+
 function getRiskLevelBadge(level: 1 | 2 | 3) {
   const variants = {
     1: { label: "L1 - Low Risk", className: "bg-emerald-100 text-emerald-700 hover:bg-emerald-100" },
@@ -199,7 +205,6 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
   const [intakeFormOpen, setIntakeFormOpen] = useState(false)
   const [selectedNote, setSelectedNote] = useState<PatientNote | null>(null)
   const [icdDialogOpen, setIcdDialogOpen] = useState(false)
-  const [newIcdCode, setNewIcdCode] = useState("")
   const [newDiagnosis, setNewDiagnosis] = useState("")
   const [healthPlanEditOpen, setHealthPlanEditOpen] = useState(false)
   const [healthPlanEditValue, setHealthPlanEditValue] = useState("")
@@ -214,14 +219,7 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
   const notes = getPatientNotes(patientId)
   const patientAdverseEvents = adverseEvents.filter((ae) => ae.patientId === patientId)
   const patientIntake = getPatientIntake(patientId)
-  
-  // Get supervisor from mock for now (not in demo context)
-  const supervisorData: Record<string, { id: string; name: string; region: string }> = {
-    sup1: { id: "sup1", name: "Maria Santos", region: "Phoenix Metro" },
-    sup2: { id: "sup2", name: "Michael Thompson", region: "Tucson" },
-    sup3: { id: "sup3", name: "Lisa Chen", region: "Mesa/Tempe" },
-  }
-  
+
   const handleAddNote = () => {
     if (noteText.trim() && patient) {
       const navigator = navigators.find((n) => n.id === patient.assignedNavigator)
@@ -256,7 +254,7 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
   const navigator = useMemo(() => {
     if (!patient) return null
     return navigators.find((n) => n.id === patient.assignedNavigator)
-  }, [patient])
+  }, [patient, navigators])
 
   const supervisor = useMemo(() => {
     if (!patient) return null
@@ -673,7 +671,7 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
                     <div className="space-y-2">
                       <Label className="text-sm font-medium">Add ICD-10 Code</Label>
                       <ICD10AddCombobox
-                        onAdd={(code, description) => {
+                        onAdd={(code) => {
                           const currentCodes = patient.icdCodes || []
                           if (!currentCodes.includes(code)) {
                             updatePatient(patient.id, {
@@ -711,7 +709,6 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
                   <DialogFooter>
                     <Button variant="outline" onClick={() => {
                       setIcdDialogOpen(false)
-                      setNewIcdCode("")
                       setNewDiagnosis("")
                     }}>
                       Cancel
@@ -721,7 +718,6 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
                         updatePatient(patient.id, { primaryDiagnosis: newDiagnosis.trim() })
                       }
                       setIcdDialogOpen(false)
-                      setNewIcdCode("")
                       setNewDiagnosis("")
                     }}>
                       Save Changes
@@ -1018,7 +1014,7 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
                     <div className="absolute left-[19px] top-0 bottom-0 w-px bg-border" />
 
                     <div className="space-y-6">
-                      {timelineEvents.map((event, index) => (
+                      {timelineEvents.map((event) => (
                         <div key={event.id} className="relative flex gap-4">
                           {/* Icon */}
                           <div
