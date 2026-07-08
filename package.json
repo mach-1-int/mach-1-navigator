@@ -23,7 +23,8 @@
     "verify:collection-helpers": "npx tsx scripts/verify-collection-helpers.ts",
     "verify:x12": "npx tsx scripts/verify-x12.ts",
     "verify:harness": "npx tsx scripts/verify-harness.test.ts",
-    "test": "npm run verify:harness && npm run verify:billing && npm run verify:safety-map && npm run verify:claims && npm run verify:referral-ingestion && npm run verify:utils && npm run verify:time-format && npm run verify:store && npm run verify:edi-835-parser && npm run verify:claims-engine && npm run verify:care-plan-helpers && npm run verify:schedule && npm run verify:schedule-conflicts && npm run verify:narrative-generator && npm run verify:collection-helpers && npm run verify:x12"
+    "verify:claim-validation": "npx tsx scripts/verify-claim-validation.ts",
+    "test": "npm run verify:harness && npm run verify:billing && npm run verify:safety-map && npm run verify:claims && npm run verify:referral-ingestion && npm run verify:utils && npm run verify:time-format && npm run verify:store && npm run verify:edi-835-parser && npm run verify:claims-engine && npm run verify:care-plan-helpers && npm run verify:schedule && npm run verify:schedule-conflicts && npm run verify:narrative-generator && npm run verify:collection-helpers && npm run verify:x12 && npm run verify:claim-validation"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

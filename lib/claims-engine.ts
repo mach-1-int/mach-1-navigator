@@ -123,10 +123,63 @@ interface ValidateClaimDataOptions {
   diagnosisCodes: string[]
 }
 
+/** Payer-specific minimum time threshold (8 min Medicaid, 60 min Medicare). */
+function checkMinimumTime(totalMinutes: number, payerConfig: PayerConfig): string | undefined {
+  if (totalMinutes < payerConfig.baseMinimum) {
+    return `Insufficient Time (${totalMinutes}/${payerConfig.baseMinimum} mins)`
+  }
+}
+
 /**
- * Validate claim data and return any errors
- *
- * Checks (in order):
+ * Only a real payer-issued ID satisfies this — a health plan NAME is not a
+ * subscriber ID, and fabricated IDs guarantee denials.
+ */
+function checkMemberId(patient: Patient): string | undefined {
+  if (!patient.memberId || patient.memberId.length === 0) return "Missing Member ID"
+}
+
+/** Diagnosis codes (ICD-10) on the patient record, falling back to primaryDiagnosis. */
+function checkDiagnosisCodes(patient: Patient): string | undefined {
+  if ((!patient.icdCodes || patient.icdCodes.length === 0) && !patient.primaryDiagnosis) {
+    return "Missing diagnosis codes (ICD-10)"
+  }
+}
+
+/** No intake on file, or intake without documented consent (CMS G-code requirement). */
+function checkConsent(intakeRecord: IntakeRecord | undefined): string | undefined {
+  if (!intakeRecord || !intakeRecord.consentObtained) return "Patient consent not documented"
+}
+
+/**
+ * Initiating visit date recorded, and within 12 months of the claim month
+ * (re-initiation rule). Cutoff = first day of the claim month, minus 12
+ * months (ISO compare). No intake on file is covered by {@link checkConsent}.
+ */
+function checkInitiatingVisit(intakeRecord: IntakeRecord | undefined, month: string): string | undefined {
+  if (!intakeRecord) return undefined
+  if (!intakeRecord.initiatingVisitDate) return "Initiating visit date not recorded"
+  const [yearStr, monthStr] = month.split("-")
+  const cutoff = `${parseInt(yearStr, 10) - 1}-${monthStr}-01`
+  if (intakeRecord.initiatingVisitDate < cutoff) {
+    return "Initiating visit older than 12 months — re-initiation required"
+  }
+}
+
+/** CHI claims must document at least one SDOH barrier (Z-code) in the combined diagnosis set. */
+function checkChiZCode(serviceType: ServiceType, diagnosisCodes: string[]): string | undefined {
+  if (serviceType === "CHI" && !diagnosisCodes.some((code) => code.startsWith("Z"))) {
+    return "CHI claim requires at least one SDOH Z-code"
+  }
+}
+
+/** Claims cannot be routed without an assigned payer (payerId FK). */
+function checkPayerAssignment(patient: Patient): string | undefined {
+  if (!patient.payerId) return "Missing payer assignment"
+}
+
+/**
+ * Validate claim data and return any errors, in the same order as the
+ * checks below:
  * - Payer-specific minimum time threshold (8 min Medicaid, 60 min Medicare)
  * - Member ID present (real memberId or legacy healthPlan-derived)
  * - Diagnosis codes (ICD-10) on the patient record
@@ -138,63 +191,20 @@ interface ValidateClaimDataOptions {
  */
 function validateClaimData(options: ValidateClaimDataOptions): string[] {
   const { patient, intakeRecord, totalMinutes, payerConfig, month, serviceType, diagnosisCodes } = options
-  const errors: string[] = []
 
   if (!patient) {
-    errors.push("Patient record not found")
-    return errors
+    return ["Patient record not found"]
   }
 
-  // Check for minimum time requirement (payer-specific threshold)
-  if (totalMinutes < payerConfig.baseMinimum) {
-    errors.push(`Insufficient Time (${totalMinutes}/${payerConfig.baseMinimum} mins)`)
-  }
-
-  // Check for member ID: only a real payer-issued ID satisfies this — a health
-  // plan NAME is not a subscriber ID, and fabricated IDs guarantee denials.
-  if (!patient.memberId || patient.memberId.length === 0) {
-    errors.push("Missing Member ID")
-  }
-
-  // Check for diagnosis codes
-  if (!patient.icdCodes || patient.icdCodes.length === 0) {
-    // Also check primaryDiagnosis as a fallback
-    if (!patient.primaryDiagnosis) {
-      errors.push("Missing diagnosis codes (ICD-10)")
-    }
-  }
-
-  // Consent guardrail: no intake on file, or intake without documented consent
-  if (!intakeRecord || !intakeRecord.consentObtained) {
-    errors.push("Patient consent not documented")
-  }
-
-  if (intakeRecord) {
-    if (!intakeRecord.initiatingVisitDate) {
-      errors.push("Initiating visit date not recorded")
-    } else {
-      // 12-month rule: initiating visit more than 12 months before the first
-      // day of the claim month requires re-initiation.
-      // Cutoff = first day of the claim month, minus 12 months (ISO compare).
-      const [yearStr, monthStr] = month.split("-")
-      const cutoff = `${parseInt(yearStr, 10) - 1}-${monthStr}-01`
-      if (intakeRecord.initiatingVisitDate < cutoff) {
-        errors.push("Initiating visit older than 12 months — re-initiation required")
-      }
-    }
-  }
-
-  // CHI claims must document at least one SDOH barrier (Z-code)
-  if (serviceType === "CHI" && !diagnosisCodes.some((code) => code.startsWith("Z"))) {
-    errors.push("CHI claim requires at least one SDOH Z-code")
-  }
-
-  // Payer identity: claims cannot be routed without an assigned payer
-  if (!patient.payerId) {
-    errors.push("Missing payer assignment")
-  }
-
-  return errors
+  return [
+    checkMinimumTime(totalMinutes, payerConfig),
+    checkMemberId(patient),
+    checkDiagnosisCodes(patient),
+    checkConsent(intakeRecord),
+    checkInitiatingVisit(intakeRecord, month),
+    checkChiZCode(serviceType, diagnosisCodes),
+    checkPayerAssignment(patient),
+  ].filter((error): error is string => error !== undefined)
 }
 
 /**
