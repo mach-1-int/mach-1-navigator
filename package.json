@@ -10,7 +10,7 @@
     "verify:billing": "npx tsx scripts/verify-payer-billing.ts",
     "verify:safety-map": "npx tsx scripts/verify-safety-map.ts",
     "verify:claims": "npx tsx scripts/verify-claims-lifecycle.ts",
-    "verify:journey": "npx tsx scripts/verify-journey.ts",
+    "verify:journey": "npx tsx scripts/verify-journey.ts && npx tsx scripts/verify-journey-lifecycle.ts",
     "verify:notes": "npx tsx scripts/verify-notes-compliance.ts",
     "verify:gellert": "npx tsx scripts/verify-gellert-billing.ts"
   },

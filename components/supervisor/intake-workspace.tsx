@@ -82,8 +82,8 @@ export function IntakeWorkspace({ referralId }: IntakeWorkspaceProps) {
   // Calculate and rank navigator matches using effective referral
   const rankedNavigators = useMemo((): RankedNavigator[] => {
     if (!effectiveReferral) return []
-    return rankNavigatorsForReferral(effectiveReferral, navigatorsWithAttributes)
-  }, [effectiveReferral, navigatorsWithAttributes])
+    return rankNavigatorsForReferral(effectiveReferral, navigatorsWithAttributes, zones)
+  }, [effectiveReferral, navigatorsWithAttributes, zones])
 
   // Handle assign referral
   const handleAssign = async (navigatorId: string, navigatorName: string) => {

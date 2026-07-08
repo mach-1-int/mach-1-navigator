@@ -33,6 +33,7 @@ import {
   Bell,
   Siren,
   X,
+  PhoneCall,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState } from "react"
@@ -43,6 +44,7 @@ import { getCurrentPositionSafe } from "@/lib/geo"
 import { AMDSourceIndicator } from "@/components/amd-source-indicator"
 import { DayClosePanel } from "@/components/navigator/day-close-panel"
 import { daysSince, todayISO } from "@/lib/schedule-utils"
+import { telenavCheckInStatus } from "@/lib/journey"
 import { ExternalLink } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { PatientNote } from "@/lib/types"
@@ -140,6 +142,13 @@ export function NavigatorDashboard() {
   const targetUnits = 280
   const progressPercentage = Math.min((currentNavigator.mtdUnits / (targetUnits / 2)) * 100, 100)
 
+  // Telenavigation check-ins due or overdue for this navigator's patients
+  const telenavAlerts = patients
+    .filter((p) => p.assignedNavigator === currentNavigator.id)
+    .map((p) => ({ p, s: telenavCheckInStatus(p) }))
+    .filter((x): x is { p: typeof x.p; s: NonNullable<typeof x.s> } => x.s !== null && x.s.status !== "ok")
+  const hasOverdueTelenav = telenavAlerts.some((x) => x.s.status === "overdue")
+
   // Check if there's a newly assigned patient for this navigator
   const newlyAssignedPatient = lastAssignedPatientId
     ? myPatients.find(p => p.id === lastAssignedPatientId)
@@ -179,6 +188,73 @@ export function NavigatorDashboard() {
           </AlertDialogContent>
         </AlertDialog>
       </div>
+
+      {/* Telenavigation Check-in Alerts */}
+      {telenavAlerts.length > 0 && (
+        <div
+          className={cn(
+            "rounded-lg border p-4",
+            hasOverdueTelenav ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"
+          )}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className={cn(
+                "flex h-10 w-10 items-center justify-center rounded-full text-white shrink-0",
+                hasOverdueTelenav ? "bg-red-500" : "bg-amber-500"
+              )}
+            >
+              <PhoneCall className="h-5 w-5" />
+            </div>
+            <p className={cn("font-semibold", hasOverdueTelenav ? "text-red-900" : "text-amber-900")}>
+              {telenavAlerts.length} telenavigation check-in{telenavAlerts.length === 1 ? "" : "s"}{" "}
+              {hasOverdueTelenav ? "overdue" : "due"}
+            </p>
+          </div>
+          <div className="mt-3 space-y-2">
+            {telenavAlerts.map(({ p, s }) => (
+              <div
+                key={p.id}
+                className={cn(
+                  "flex items-center justify-between rounded-md border bg-white/60 px-3 py-2",
+                  s.status === "overdue" ? "border-red-200" : "border-amber-200"
+                )}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm font-medium truncate">{p.name}</span>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "text-xs shrink-0",
+                      s.status === "overdue"
+                        ? "bg-red-50 text-red-700 border-red-200"
+                        : "bg-amber-50 text-amber-700 border-amber-200"
+                    )}
+                  >
+                    {s.status === "overdue"
+                      ? `Check-in ${Math.abs(s.daysUntilDue)}d overdue`
+                      : `due ${new Date(`${s.nextDue}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+                  </Badge>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    "shrink-0 ml-3",
+                    s.status === "overdue"
+                      ? "border-red-300 text-red-700 hover:bg-red-100"
+                      : "border-amber-300 text-amber-700 hover:bg-amber-100"
+                  )}
+                  onClick={() => navigateTo("patient-detail", { patientId: p.id })}
+                >
+                  Open Profile
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Supervisor Nudge Alerts */}
       {unreadNudges.length > 0 && (

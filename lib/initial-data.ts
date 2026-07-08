@@ -3073,6 +3073,104 @@ export const initialNavigatorShifts: NavigatorShift[] = [
 // ============================================================================
 
 import type { TimeLog } from "./types"
+import { calculateRuleOfEightsUnits } from "./payer-config"
+
+// ----------------------------------------------------------------------------
+// Demo-health trailing-week enrichment (executive Performance view)
+// Extra visit volume over the ~7 workdays before ANCHOR_DATE (2026-01-30) so
+// the per-navigator units/day attainment shows a realistic spread instead of
+// uniform 15-27%: nav2 and nav-sarah land >=70% of their level targets while
+// nav-maria and nav-john stay mid-range.
+//
+// Each visit becomes exactly one TimeLog plus a matching SAME-DAY signed
+// ChargeSlip (slip minutes = its TimeLog's minutes, one slip per
+// navigator-patient-day), so verify:gellert slip-integrity holds by
+// construction. Deliberately avoids: pt-billing and pt3 (frozen 45-minute
+// guardrail demos), pt4 (telenavigation phase; its 01-21/01-27 slips are
+// signed and frozen), and the pt-journey-* seeds.
+// ----------------------------------------------------------------------------
+interface DemoHealthVisit {
+  nav: string
+  pt: string
+  date: string
+  start: string // HH:MM local (America/Phoenix)
+  minutes: number
+  modality: TimeLog["modality"]
+}
+
+const demoHealthVisits: DemoHealthVisit[] = [
+  // nav2 (David Chen, L3, target 20/day) — 5 worked days at 15-17 units
+  { nav: "nav2", pt: "pt2", date: "2026-01-16", start: "09:00", minutes: 90, modality: "In-Person" },
+  { nav: "nav2", pt: "pt5", date: "2026-01-16", start: "13:00", minutes: 100, modality: "In-Person" },
+  { nav: "nav2", pt: "pt2", date: "2026-01-21", start: "08:30", minutes: 105, modality: "In-Person" },
+  { nav: "nav2", pt: "pt5", date: "2026-01-21", start: "14:00", minutes: 75, modality: "In-Person" },
+  { nav: "nav2", pt: "pt2", date: "2026-01-23", start: "09:00", minutes: 60, modality: "Phone" },
+  { nav: "nav2", pt: "pt5", date: "2026-01-23", start: "11:00", minutes: 100, modality: "In-Person" },
+  { nav: "nav2", pt: "pt-elena", date: "2026-01-23", start: "14:30", minutes: 90, modality: "In-Person" },
+  { nav: "nav2", pt: "pt2", date: "2026-01-27", start: "09:00", minutes: 105, modality: "In-Person" },
+  { nav: "nav2", pt: "pt5", date: "2026-01-27", start: "13:30", minutes: 100, modality: "In-Person" },
+  { nav: "nav2", pt: "pt2", date: "2026-01-29", start: "08:30", minutes: 40, modality: "Phone" },
+  { nav: "nav2", pt: "pt5", date: "2026-01-29", start: "10:00", minutes: 90, modality: "In-Person" },
+  { nav: "nav2", pt: "pt-elena", date: "2026-01-29", start: "14:00", minutes: 90, modality: "In-Person" },
+  // nav-sarah (Sarah Thompson, L1, target 16/day) — 4 worked days at 11-12 units
+  { nav: "nav-sarah", pt: "pt-elena", date: "2026-01-20", start: "09:00", minutes: 90, modality: "In-Person" },
+  { nav: "nav-sarah", pt: "pt1", date: "2026-01-20", start: "13:00", minutes: 90, modality: "In-Person" },
+  { nav: "nav-sarah", pt: "pt-elena", date: "2026-01-22", start: "09:30", minutes: 100, modality: "In-Person" },
+  { nav: "nav-sarah", pt: "pt5", date: "2026-01-22", start: "14:00", minutes: 75, modality: "In-Person" },
+  { nav: "nav-sarah", pt: "pt5", date: "2026-01-26", start: "09:00", minutes: 105, modality: "In-Person" },
+  { nav: "nav-sarah", pt: "pt-elena", date: "2026-01-26", start: "14:30", minutes: 60, modality: "Phone" },
+  { nav: "nav-sarah", pt: "pt1", date: "2026-01-28", start: "10:00", minutes: 100, modality: "In-Person" },
+  { nav: "nav-sarah", pt: "pt5", date: "2026-01-28", start: "14:00", minutes: 75, modality: "In-Person" },
+  // nav-maria (L1, target 16/day) — tops up her existing 8 worked days to ~50%
+  { nav: "nav-maria", pt: "pt2", date: "2026-01-19", start: "10:00", minutes: 105, modality: "In-Person" },
+  { nav: "nav-maria", pt: "pt1", date: "2026-01-20", start: "11:00", minutes: 90, modality: "In-Person" },
+  { nav: "nav-maria", pt: "pt2", date: "2026-01-22", start: "10:00", minutes: 90, modality: "In-Person" },
+  { nav: "nav-maria", pt: "pt-elena", date: "2026-01-24", start: "10:00", minutes: 75, modality: "In-Person" },
+  { nav: "nav-maria", pt: "pt2", date: "2026-01-26", start: "11:00", minutes: 100, modality: "In-Person" },
+  { nav: "nav-maria", pt: "pt1", date: "2026-01-28", start: "11:30", minutes: 60, modality: "Phone" },
+  { nav: "nav-maria", pt: "pt2", date: "2026-01-29", start: "13:00", minutes: 60, modality: "Phone" },
+  // nav-john (L2, target 18/day) — 2 worked days at ~7 units (~39%)
+  { nav: "nav-john", pt: "pt2", date: "2026-01-20", start: "14:00", minutes: 60, modality: "Phone" },
+  { nav: "nav-john", pt: "pt-elena", date: "2026-01-27", start: "10:00", minutes: 100, modality: "In-Person" },
+]
+
+function demoHealthTime(date: string, hhmm: string, addMinutes: number): string {
+  const [h, m] = hhmm.split(":").map(Number)
+  const total = h * 60 + m + addMinutes
+  const hh = String(Math.floor(total / 60)).padStart(2, "0")
+  const mm = String(total % 60).padStart(2, "0")
+  return `${date}T${hh}:${mm}:00-07:00`
+}
+
+const demoHealthTimeLogs: TimeLog[] = demoHealthVisits.map((v) => ({
+  id: `tl-dh-${v.nav}-${v.pt}-${v.date}`,
+  patientId: v.pt,
+  date: v.date,
+  startTime: demoHealthTime(v.date, v.start, 0),
+  endTime: demoHealthTime(v.date, v.start, v.minutes),
+  durationMinutes: v.minutes,
+  modality: v.modality,
+  serviceType: "CHI",
+  navigatorId: v.nav,
+  verified: true,
+  verifiedBy: "sup-sarah",
+  verifiedAt: `${v.date}T17:00:00-07:00`,
+  billingPeriod: "2026-01",
+  activityType: "PEER_SUPPORT", // -> H0038
+}))
+
+const demoHealthChargeSlips: ChargeSlip[] = demoHealthVisits.map((v) => ({
+  id: `slip-${v.nav}-${v.pt}-${v.date}`,
+  navigatorId: v.nav,
+  patientId: v.pt,
+  date: v.date,
+  timeLogIds: [`tl-dh-${v.nav}-${v.pt}-${v.date}`],
+  totalMinutes: v.minutes,
+  units: calculateRuleOfEightsUnits(v.minutes),
+  code: "H0038",
+  signedAt: `${v.date}T17:05:00Z`,
+  signedBy: v.nav,
+}))
 
 /**
  * Sample time logs for demonstrating billing aggregation
@@ -3905,6 +4003,8 @@ export const initialTimeLogs: TimeLog[] = [
     billingPeriod: "2026-01",
     activityType: "PEER_SUPPORT", // -> H0038
   },
+  // Demo-health trailing-week enrichment (see demoHealthVisits above)
+  ...demoHealthTimeLogs,
 ]
 
 // ============================================================================
@@ -4087,6 +4187,8 @@ export const initialChargeSlips: ChargeSlip[] = [
   { id: "slip-nav-maria-pt-elena-2026-01-28", navigatorId: "nav-maria", patientId: "pt-elena", date: "2026-01-28", timeLogIds: ["tl-026"], totalMinutes: 60, units: 4, code: "H0038", signedAt: "2026-01-28T17:05:00Z", signedBy: "nav-maria" },
   { id: "slip-nav-maria-pt1-2026-01-29", navigatorId: "nav-maria", patientId: "pt1", date: "2026-01-29", timeLogIds: ["tl-016"], totalMinutes: 20, units: 1, code: "H0038", signedAt: "2026-01-29T17:05:00Z", signedBy: "nav-maria" },
   { id: "slip-nav-maria-pt-elena-2026-01-29", navigatorId: "nav-maria", patientId: "pt-elena", date: "2026-01-29", timeLogIds: ["tl-027"], totalMinutes: 30, units: 2, code: "H0038", signedAt: "2026-01-29T17:05:00Z", signedBy: "nav-maria" },
+  // Demo-health trailing-week enrichment: same-day signed slips matching demoHealthTimeLogs
+  ...demoHealthChargeSlips,
 ]
 
 // ============================================================================

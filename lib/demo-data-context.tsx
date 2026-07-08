@@ -152,7 +152,6 @@ interface DemoDataContextType {
   // Conversion: patient is created ONLY once the referral is agreed/intake_scheduled
   // (encodes Gellert's "not entered into AMD until they accept services" rule)
   acceptReferral: (referralId: string, patientData: Partial<Patient>, navigatorId: string) => Patient | null
-  rejectReferral: (referralId: string) => void
   submitAssessment: (patientId: string, assessmentData: Omit<RiskAssessmentData, 'riskScore' | 'calculatedTier' | 'completedAt'>, navigatorId: string) => void
 
   // Nudges (unified Messages with type "nudge")
@@ -820,30 +819,6 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
 
     return { ...newPatient, upcomingAppointments: [initialAppointment] }
   }, [referrals, navigators, payers, makeAudit, makeJourneyEvent])
-
-  /**
-   * Reject a referral (legacy entry point) — maps to the pipeline's terminal
-   * "ineligible" close (legacy rejected -> ineligible).
-   */
-  const rejectReferral = useCallback((referralId: string) => {
-    const now = new Date().toISOString()
-    setState(prev => {
-      const referral = prev.referrals.find(r => r.id === referralId)
-      if (!referral || isTerminalReferralStatus(referral.status)) return prev
-      const auditEntry = makeAudit("sup1", "Supervisor", "supervisor", "referral_rejected",
-        `Referral for ${referral.patientName} closed as ineligible`,
-        "referral", referralId)
-      return {
-        ...prev,
-        referrals: prev.referrals.map(r =>
-          r.id === referralId
-            ? { ...r, status: "ineligible" as const, closedAt: now, closeReason: "ineligible" as const, providerNotifiedAt: now }
-            : r
-        ),
-        auditLogs: [auditEntry, ...prev.auditLogs],
-      }
-    })
-  }, [makeAudit])
 
   // ============================================================================
   // JOURNEY ACTIONS (post-conversion — intake protocol, graduation,
@@ -2996,7 +2971,6 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
 
       // Intake & Assessment (Phase 2)
       acceptReferral,
-      rejectReferral,
       submitAssessment,
 
       // Nudges (unified messaging)

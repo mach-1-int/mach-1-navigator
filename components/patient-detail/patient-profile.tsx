@@ -38,6 +38,7 @@ import {
   X,
   Stethoscope,
   Edit,
+  Pin,
 } from "lucide-react"
 import {
   Dialog,
@@ -194,6 +195,7 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
   const [nudgeOpen, setNudgeOpen] = useState(false)
   const [nudgeText, setNudgeText] = useState("")
   const [noteBuilderOpen, setNoteBuilderOpen] = useState(false)
+  const [noteBuilderTemplateId, setNoteBuilderTemplateId] = useState<string | undefined>(undefined)
   const [intakeFormOpen, setIntakeFormOpen] = useState(false)
   const [selectedNote, setSelectedNote] = useState<PatientNote | null>(null)
   const [icdDialogOpen, setIcdDialogOpen] = useState(false)
@@ -204,6 +206,7 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
 
   // Check if user is a supervisor
   const isSupervisor = currentUser?.role === "supervisor"
+  const canWriteSupervisionNotes = currentUser?.role === "supervisor" || currentUser?.role === "admin"
   
   // Get data from demo context
   const patient = patients.find((p) => p.id === patientId)
@@ -265,7 +268,8 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
     const visitNotes = notes.filter(n => n.type === "visit")
     const clinicalNotes = notes.filter(n => n.type === "clinical")
     const otherNotes = notes.filter(n => ["phone", "follow-up", "general"].includes(n.type))
-    return { visitNotes, clinicalNotes, otherNotes }
+    const supervisionNotes = notes.filter(n => n.type === "supervision")
+    return { visitNotes, clinicalNotes, otherNotes, supervisionNotes }
   }, [notes])
 
   // Build timeline events
@@ -769,6 +773,33 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="mt-4 space-y-4">
+            {/* Pinned Supervision Notes (compact) */}
+            {groupedNotes.supervisionNotes.length > 0 && (
+              <Card className="border-l-4 border-l-amber-400 bg-amber-50/40">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <Pin className="h-4 w-4 text-amber-600" />
+                    Supervision Notes ({groupedNotes.supervisionNotes.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {groupedNotes.supervisionNotes.slice(0, 2).map((note) => (
+                      <div key={note.id} className="p-2 rounded-md bg-amber-50/60 border border-amber-100">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium">{note.authorName}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(note.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          </span>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{note.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Quick Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <Card>
@@ -1041,7 +1072,10 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
               <CardContent className="space-y-4">
                 {/* Note Builder Button */}
                 <Button
-                  onClick={() => setNoteBuilderOpen(true)}
+                  onClick={() => {
+                    setNoteBuilderTemplateId(undefined)
+                    setNoteBuilderOpen(true)
+                  }}
                   className="w-full"
                   variant="default"
                 >
@@ -1070,6 +1104,9 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
                       <SelectItem value="phone">Phone Call</SelectItem>
                       <SelectItem value="visit">Visit Note</SelectItem>
                       <SelectItem value="follow-up">Follow-up</SelectItem>
+                      {canWriteSupervisionNotes && (
+                        <SelectItem value="supervision">Supervision</SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                   <Textarea
@@ -1093,9 +1130,40 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
               patientName={patient.name}
               open={noteBuilderOpen}
               onOpenChange={setNoteBuilderOpen}
+              defaultTemplateId={noteBuilderTemplateId}
             />
 
             {/* Notes Display - Three Approaches by Type */}
+            {groupedNotes.supervisionNotes.length > 0 && (
+              <Card className="border-l-4 border-l-amber-400 bg-amber-50/40">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <Pin className="h-4 w-4 text-amber-600" />
+                    Supervision Notes ({groupedNotes.supervisionNotes.length})
+                    {canWriteSupervisionNotes && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="ml-auto h-7 text-xs"
+                        onClick={() => {
+                          setNoteBuilderTemplateId("template-gellert-supervision")
+                          setNoteBuilderOpen(true)
+                        }}
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        New Supervision Note
+                      </Button>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ExpandableNoteList
+                    notes={groupedNotes.supervisionNotes}
+                    emptyMessage="No supervision notes"
+                  />
+                </CardContent>
+              </Card>
+            )}
             {notes.length === 0 ? (
               <Card>
                 <CardContent className="py-8">
