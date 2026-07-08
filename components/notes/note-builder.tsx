@@ -58,10 +58,15 @@ interface NoteBuilderProps {
   onNoteCreated?: () => void
 }
 
+// Union of every shape a template field's response value can take, keyed
+// off NoteFieldType: select/text/textarea -> string, multi-select ->
+// string[], boolean -> boolean, time-duration -> number.
+type FieldValue = string | string[] | boolean | number
+
 interface FieldRendererProps {
   field: TemplateField
-  value: unknown
-  onChange: (value: unknown) => void
+  value: FieldValue | undefined
+  onChange: (value: FieldValue) => void
   error?: string
 }
 
@@ -937,7 +942,7 @@ export function NoteBuilder({
                           )}
                           <FieldRenderer
                             field={field}
-                            value={responses[field.id]}
+                            value={responses[field.id] as FieldValue | undefined}
                             onChange={(value) => handleFieldChange(field.id, value)}
                             error={errors[field.id]}
                           />
