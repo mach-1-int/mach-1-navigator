@@ -37,7 +37,7 @@ import { useRole } from "@/lib/role-context"
 import { useToast } from "@/hooks/use-toast"
 import { getCurrentPositionSafe } from "@/lib/geo"
 import { Plus, Home, Phone, Video, Building, ChevronLeft, ChevronRight, AlertTriangle, Calendar, Clock, Map, List, LogIn, LogOut, MapPin, BadgeCheck, CalendarClock, Info, Users, Siren } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, getInitials } from "@/lib/utils"
 import type { Appointment, NavigatorShift, DayOfWeek } from "@/lib/types"
 import { RouteMap } from "./route-map"
 import { appointmentDraftToEvent, todayISO } from "@/lib/schedule-utils"
@@ -620,7 +620,7 @@ export function NavigatorSchedule() {
                   <div key={nav.id} className={cn("p-4", navColor)}>
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium text-primary">
-                        {nav.name.split(" ").map(n => n[0]).join("")}
+                        {getInitials(nav.name)}
                       </div>
                       <div>
                         <p className="font-medium">{nav.name}</p>

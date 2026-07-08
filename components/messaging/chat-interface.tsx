@@ -19,7 +19,7 @@ import {
   Clock,
   ExternalLink,
 } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, getInitials } from "@/lib/utils"
 import { useRole } from "@/lib/role-context"
 import { useDemoData } from "@/lib/demo-data-context"
 import type { Message, UserRole } from "@/lib/types"
@@ -274,15 +274,6 @@ export function ChatInterface() {
     } else {
       return date.toLocaleDateString([], { month: "short", day: "numeric" })
     }
-  }
-
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2)
   }
 
   const getRoleBadgeVariant = (role: UserRole) => {

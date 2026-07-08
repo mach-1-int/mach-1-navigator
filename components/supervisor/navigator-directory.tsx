@@ -9,7 +9,7 @@ import { Users, ChevronRight, TrendingUp, TrendingDown, Minus } from "lucide-rea
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { calculateDurationMinutes } from "@/lib/store"
-import { cn } from "@/lib/utils"
+import { cn, getInitials } from "@/lib/utils"
 
 export function NavigatorDirectory() {
   const { navigators, patients, appointments, timeLogs, getNudgesForNavigator } = useDemoData()
@@ -172,7 +172,7 @@ export function NavigatorDirectory() {
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary text-sm font-medium text-card-foreground">
-                          {navigator.name.split(" ").map(n => n[0]).join("")}
+                          {getInitials(navigator.name)}
                         </div>
                         <div>
                           <p className="font-medium text-card-foreground">{navigator.name}</p>

@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Heart, BarChart3, Users, Stethoscope, UserCircle, Sparkles, ArrowRight, Shield } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, getInitials } from "@/lib/utils"
 
 const roleConfig: Record<UserRole, { icon: typeof BarChart3; description: string; color: string }> = {
   executive: {
@@ -191,7 +191,7 @@ export function RoleSelector() {
                     "flex h-10 w-10 items-center justify-center rounded-full text-sm font-medium",
                     isNewPatientAssigned ? "bg-emerald-500 text-white" : "bg-primary/10 text-primary"
                   )}>
-                    {navUser.name.split(" ").map(n => n[0]).join("")}
+                    {getInitials(navUser.name)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">

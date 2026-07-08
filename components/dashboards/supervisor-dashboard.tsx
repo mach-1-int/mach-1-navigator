@@ -11,7 +11,7 @@ import { PROGRAM_TARGETS } from "@/lib/executive-metrics"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { ReferralQueue } from "@/components/dashboards/referral-queue"
-import { cn } from "@/lib/utils"
+import { cn, getInitials } from "@/lib/utils"
 
 export function SupervisorDashboard() {
   const { patients, navigators, adverseEvents } = useDemoData()
@@ -140,7 +140,7 @@ export function SupervisorDashboard() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-sm font-medium text-card-foreground">
-                          {navigator.name.split(" ").map((n) => n[0]).join("")}
+                          {getInitials(navigator.name)}
                         </div>
                         <div>
                           <p className="font-medium text-card-foreground">{navigator.name}</p>
