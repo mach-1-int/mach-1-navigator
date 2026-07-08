@@ -160,6 +160,42 @@ Return strictly valid JSON with ALL fields:`;
           missingFieldIds.push(field.id);
         }
       }
+    } else if (field.type === "boolean") {
+      // The model can return a natural-language string ("Yes") instead of a
+      // real boolean; buildFieldSegment() only recognizes true/false, so an
+      // unvalidated string would silently drop out of the narrative.
+      if (typeof rawValue === "boolean") {
+        validatedData[field.id] = rawValue;
+        fieldConfidence[field.id] = "high";
+        fieldsMatched++;
+        console.log(`  ✅ Added boolean: ${rawValue}`);
+      } else {
+        console.log(`  ❌ Expected boolean for "${field.id}", got:`, rawValue);
+        missingFieldIds.push(field.id);
+      }
+    } else if (field.type === "multi-select") {
+      // Same shape risk as booleans: buildFieldSegment() only joins real
+      // arrays, so a comma-separated string from the model would be dropped.
+      if (Array.isArray(rawValue) && rawValue.every((v) => typeof v === "string")) {
+        validatedData[field.id] = rawValue;
+        fieldConfidence[field.id] = "high";
+        fieldsMatched++;
+        console.log(`  ✅ Added multi-select:`, rawValue);
+      } else {
+        console.log(`  ❌ Expected string[] for "${field.id}", got:`, rawValue);
+        missingFieldIds.push(field.id);
+      }
+    } else if (field.type === "time-duration") {
+      // buildFieldSegment() only accepts a real number for durations.
+      if (typeof rawValue === "number") {
+        validatedData[field.id] = rawValue;
+        fieldConfidence[field.id] = "high";
+        fieldsMatched++;
+        console.log(`  ✅ Added time-duration: ${rawValue}`);
+      } else {
+        console.log(`  ❌ Expected number for "${field.id}", got:`, rawValue);
+        missingFieldIds.push(field.id);
+      }
     } else {
       validatedData[field.id] = rawValue;
       fieldConfidence[field.id] = "high";
