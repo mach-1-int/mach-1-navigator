@@ -54,6 +54,32 @@ export function generateNarrative(
  */
 type NoteFieldValue = string | string[] | boolean | number
 
+/** Simple text-based fields (select/text/textarea): directly insert the value. */
+function buildTextSegment(prefix: string, suffix: string, value: NoteFieldValue): string {
+  return `${prefix}${value}${suffix}`
+}
+
+/** Multi-select fields: join the selected values with the field's joiner (default ", "). */
+function buildMultiSelectSegment(field: TemplateField, prefix: string, suffix: string, value: NoteFieldValue): string {
+  if (!Array.isArray(value) || value.length === 0) return ""
+  const joiner = field.narrativeJoiner || ", "
+  return `${prefix}${value.join(joiner)}${suffix}`
+}
+
+/** Boolean fields: a contextual phrase for true, and a field-specific phrase for false. */
+function buildBooleanSegment(field: TemplateField, prefix: string, suffix: string, value: NoteFieldValue): string {
+  if (value === true) return `${prefix}reviewed and discussed${suffix}`
+  if (value !== false || !prefix) return ""
+  if (field.id === "supervisor-notified") return `${prefix}was not notified${suffix}`
+  return `${prefix}not reviewed${suffix}`
+}
+
+/** Duration fields: only included when the value is a positive number. */
+function buildDurationSegment(prefix: string, suffix: string, value: NoteFieldValue): string {
+  if (typeof value !== "number" || value <= 0) return ""
+  return `${prefix}${value}${suffix}`
+}
+
 /**
  * Build a narrative segment for a single field.
  * Constructs: [Prefix] + [FormattedValue] + [Suffix]
@@ -66,39 +92,13 @@ function buildFieldSegment(field: TemplateField, value: NoteFieldValue): string 
     case "select":
     case "text":
     case "textarea":
-      // Simple text-based fields: directly insert the value
-      return `${prefix}${value}${suffix}`
-
+      return buildTextSegment(prefix, suffix, value)
     case "multi-select":
-      // Join multiple selections with the specified joiner
-      if (Array.isArray(value) && value.length > 0) {
-        const joiner = field.narrativeJoiner || ", "
-        const joined = value.join(joiner)
-        return `${prefix}${joined}${suffix}`
-      }
-      return ""
-
+      return buildMultiSelectSegment(field, prefix, suffix, value)
     case "boolean":
-      // Boolean fields: handle true/false cases
-      if (value === true) {
-        // For true values, use a contextual phrase
-        return `${prefix}reviewed and discussed${suffix}`
-      } else if (value === false && prefix) {
-        // Handle specific false cases based on field context
-        if (field.id === "supervisor-notified") {
-          return `${prefix}was not notified${suffix}`
-        }
-        return `${prefix}not reviewed${suffix}`
-      }
-      return ""
-
+      return buildBooleanSegment(field, prefix, suffix, value)
     case "time-duration":
-      // Duration fields: only include if positive value
-      if (typeof value === "number" && value > 0) {
-        return `${prefix}${value}${suffix}`
-      }
-      return ""
-
+      return buildDurationSegment(prefix, suffix, value)
     default:
       return ""
   }
