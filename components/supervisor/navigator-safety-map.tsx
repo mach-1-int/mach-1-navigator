@@ -23,6 +23,7 @@ import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { useSafetySimulation } from "@/hooks/use-safety-simulation"
 import { deriveSafetyStatus, SAFETY_RULES } from "@/lib/safety-status"
+import { formatTimeAgo } from "@/lib/time-format"
 import type { NavigatorLocation, SafetyStatus } from "@/lib/types"
 import dynamic from "next/dynamic"
 
@@ -58,21 +59,6 @@ const STATUS_CONFIG: Record<SafetyStatus, { label: string; color: string; bgColo
     bgColor: "bg-red-100",
     borderColor: "border-red-300",
   },
-}
-
-function formatTimeAgo(isoTimestamp: string): string {
-  const now = new Date()
-  const then = new Date(isoTimestamp)
-  const diffMs = now.getTime() - then.getTime()
-  const diffMins = Math.floor(diffMs / 60000)
-
-  if (diffMins < 1) return "Just now"
-  if (diffMins === 1) return "1 min ago"
-  if (diffMins < 60) return `${diffMins} mins ago`
-
-  const diffHours = Math.floor(diffMins / 60)
-  if (diffHours === 1) return "1 hour ago"
-  return `${diffHours} hours ago`
 }
 
 interface NavigatorCardProps {

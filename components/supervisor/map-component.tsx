@@ -5,20 +5,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet"
 import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import type { NavigatorLocation, SafetyStatus } from "@/lib/types"
-
-// Relative time for popup (QA: "Last Check-in: 2 hours ago")
-function formatLastCheckIn(isoString: string): string {
-  const now = Date.now()
-  const then = new Date(isoString).getTime()
-  const diffMs = now - then
-  const diffMins = Math.floor(diffMs / 60000)
-  if (diffMins < 1) return "Just now"
-  if (diffMins === 1) return "1 min ago"
-  if (diffMins < 60) return `${diffMins} mins ago`
-  const diffHours = Math.floor(diffMins / 60)
-  if (diffHours === 1) return "1 hour ago"
-  return `${diffHours} hours ago`
-}
+import { formatTimeAgo } from "@/lib/time-format"
 
 // Icons are cached per (status, isSOS) — only 6 combinations exist. Building
 // a fresh divIcon per marker per render would make react-leaflet tear down
@@ -338,7 +325,7 @@ export default function MapComponent({
                     <p className="text-xs text-gray-600 mb-2">{location.currentTask}</p>
                   )}
                   <p className="text-xs text-gray-500">
-                    Last Check-in: {formatLastCheckIn(location.lastCheckIn)}
+                    Last Check-in: {formatTimeAgo(location.lastCheckIn)}
                   </p>
                   {location.batteryLevel !== undefined && (
                     <p className="text-xs text-gray-500 mb-1">Battery: {location.batteryLevel}%</p>

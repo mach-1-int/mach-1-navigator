@@ -12,7 +12,8 @@
     "verify:claims": "npx tsx scripts/verify-claims-lifecycle.ts",
     "verify:referral-ingestion": "npx tsx scripts/verify-referral-ingestion.ts",
     "verify:utils": "npx tsx scripts/verify-utils.ts",
-    "test": "npm run verify:billing && npm run verify:safety-map && npm run verify:claims && npm run verify:referral-ingestion && npm run verify:utils"
+    "verify:time-format": "npx tsx scripts/verify-time-format.ts",
+    "test": "npm run verify:billing && npm run verify:safety-map && npm run verify:claims && npm run verify:referral-ingestion && npm run verify:utils && npm run verify:time-format"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
