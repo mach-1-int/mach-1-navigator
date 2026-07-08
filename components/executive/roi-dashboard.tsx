@@ -260,7 +260,7 @@ export function ROIDashboard() {
                       }}
                     />
                     <Legend
-                      formatter={(value) => (
+                      formatter={(value: string) => (
                         <span className="text-muted-foreground text-sm">{value}</span>
                       )}
                     />
