@@ -1,5 +1,6 @@
 "use client"
 
+import dynamic from "next/dynamic"
 import { RoleProvider, useRole, type ViewType } from "@/lib/role-context"
 import { DemoDataProvider } from "@/lib/demo-data-context"
 import { RoleSelector } from "@/components/role-selector"
@@ -25,11 +26,24 @@ import { ReferralReviewView } from "@/components/supervisor/referral-review-view
 import { IntakeWorkspace } from "@/components/supervisor/intake-workspace"
 import { ChatInterface } from "@/components/messaging/chat-interface"
 import { AdminDashboard } from "@/components/dashboards/admin-dashboard"
-import { ClaimsManager } from "@/components/billing/claims-manager"
 import { SchedulingView } from "@/components/schedule/scheduling-view"
 import { NavigatorSafetyMap } from "@/components/supervisor/navigator-safety-map"
 import { InDevelopment } from "@/components/in-development"
 import { Toaster } from "@/components/ui/sonner"
+
+// Claims Manager (billing/EDI/CSV export) is only reachable behind the biller
+// dashboard or the admin/executive "revenue-cycle" view, so it's split into
+// its own chunk instead of loading for every role up front.
+const ClaimsManager = dynamic(
+  () => import("@/components/billing/claims-manager").then((mod) => mod.ClaimsManager),
+  {
+    loading: () => (
+      <div className="flex items-center justify-center py-24 text-sm text-muted-foreground">
+        Loading revenue cycle manager…
+      </div>
+    ),
+  },
+)
 
 // Define which views are implemented for each role
 const implementedViews: Record<string, ViewType[]> = {
