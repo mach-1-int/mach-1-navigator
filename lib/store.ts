@@ -131,7 +131,7 @@ export interface StoreState {
 // Current schema version - bump this when seed data changes to force refresh.
 // MUST be defined above createInitialState so fresh state is stamped with it;
 // a stale literal here once caused every reload to wipe localStorage.
-const CURRENT_VERSION = 12 // Production-hardening blitz: payers/claims/SOS/identity slices + enriched time logs
+const CURRENT_VERSION = 13 // TimeLog.billingPeriod is now reliably populated (was optional; see migrateV12ToV13)
 
 // ============================================================================
 // INITIAL STATE
@@ -179,13 +179,86 @@ export const createInitialState = (): StoreState => ({
 })
 
 // ============================================================================
+// MIGRATIONS
+// ============================================================================
+//
+// Each entry migrates the *persisted* shape at version N to version N + 1.
+// Keyed by the version being migrated FROM. When a user's stored state is
+// behind CURRENT_VERSION, loadState() walks this chain step by step instead
+// of discarding their data. If any step in the walk is missing (the gap is
+// older than we have a documented transform for) or a step throws, the
+// caller falls back to the original behavior: wipe and reseed. That keeps
+// the app resilient to shapes we truly can't reason about while preserving
+// data for the common case of "you're one or two versions behind."
+
+type PersistedState = Record<string, unknown>
+type Migration = (state: PersistedState) => PersistedState
+
+/**
+ * v12 -> v13: TimeLog.billingPeriod becomes reliably populated.
+ *
+ * The field has always been optional on TimeLog, and not every write path
+ * set it — billing code has quietly compensated ever since by falling back
+ * to `log.date.slice(0, 7)` at read time (see groupTimeLogsByPatientAndMonth
+ * in claims-engine.ts and the analogous helper in executive-metrics.ts).
+ * This migration performs that same derivation once, at load time, so every
+ * persisted time log carries a real billingPeriod going forward. Logs that
+ * already have one are left untouched; nothing is removed or reordered.
+ */
+export function migrateV12ToV13(state: PersistedState): PersistedState {
+  const timeLogs = Array.isArray(state.timeLogs) ? state.timeLogs : []
+
+  const migratedTimeLogs = timeLogs.map((entry) => {
+    const log = entry as Record<string, unknown>
+    if (
+      log &&
+      typeof log === "object" &&
+      !log.billingPeriod &&
+      typeof log.date === "string"
+    ) {
+      return { ...log, billingPeriod: log.date.slice(0, 7) }
+    }
+    return log
+  })
+
+  return {
+    ...state,
+    timeLogs: migratedTimeLogs,
+    _version: 13,
+  }
+}
+
+const MIGRATIONS: Record<number, Migration> = {
+  12: migrateV12ToV13,
+}
+
+/**
+ * Walk the migration chain from `fromVersion` up to CURRENT_VERSION.
+ * Throws (rather than guessing) the moment a step is undocumented, so the
+ * caller can decide to fall back to a reset instead of persisting a
+ * half-migrated shape.
+ */
+export function migrateState(state: PersistedState, fromVersion: number): PersistedState {
+  let migrated = state
+  for (let v = fromVersion; v < CURRENT_VERSION; v++) {
+    const step = MIGRATIONS[v]
+    if (!step) {
+      throw new Error(`No migration path from store v${v} to v${v + 1}`)
+    }
+    migrated = step(migrated)
+  }
+  return migrated
+}
+
+// ============================================================================
 // PERSISTENCE HELPERS
 // ============================================================================
 
 /**
  * Load state from localStorage, falling back to initial state if not found
  * Merges with initial state to ensure new fields are always present
- * Forces refresh when version changes to ensure users get updated seed data
+ * Migrates forward when the persisted version is behind CURRENT_VERSION;
+ * only resets to fresh seed data if no migration path exists or one throws.
  */
 export function loadState(): StoreState {
   if (typeof window === "undefined") {
@@ -197,13 +270,21 @@ export function loadState(): StoreState {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
-      const parsed = JSON.parse(saved) as Partial<StoreState>
+      let parsed = JSON.parse(saved) as Partial<StoreState>
 
-      // Force refresh if version is outdated - ensures users get new seed data
+      // Migrate forward if version is outdated, instead of discarding data.
       if (!parsed._version || parsed._version < CURRENT_VERSION) {
-        console.log(`[Store] Version mismatch (${parsed._version || 0} < ${CURRENT_VERSION}), resetting to fresh seed data`)
-        localStorage.removeItem(STORAGE_KEY)
-        return initialState
+        const fromVersion = parsed._version || 0
+        try {
+          parsed = migrateState(parsed, fromVersion) as Partial<StoreState>
+          console.log(`[Store] Migrated persisted state from v${fromVersion} to v${CURRENT_VERSION}`)
+        } catch (migrationError) {
+          console.warn(
+            `[Store] No safe migration from v${fromVersion} to v${CURRENT_VERSION} (${(migrationError as Error).message}), resetting to fresh seed data`
+          )
+          localStorage.removeItem(STORAGE_KEY)
+          return initialState
+        }
       }
 
       // Validate the structure has required fields
