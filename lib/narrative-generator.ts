@@ -33,7 +33,12 @@ export function generateNarrative(
       return
     }
 
-    const segment = buildFieldSegment(field, value)
+    // Cast: `responses` is keyed by arbitrary field IDs typed as `unknown`.
+    // The AI-scribe autofill path (lib/gemini-scribe.ts) does not currently
+    // validate that AI-extracted values match the field's expected shape
+    // before merging them into responses, so this assumption isn't
+    // runtime-enforced today (see follow-up PR for the validation gap).
+    const segment = buildFieldSegment(field, value as NoteFieldValue)
     if (segment) {
       parts.push(segment)
     }
@@ -43,10 +48,17 @@ export function generateNarrative(
 }
 
 /**
+ * The runtime shape a response value takes, keyed by the field's type:
+ * select/text/textarea -> string, multi-select -> string[],
+ * boolean -> boolean, time-duration -> number.
+ */
+type NoteFieldValue = string | string[] | boolean | number
+
+/**
  * Build a narrative segment for a single field.
  * Constructs: [Prefix] + [FormattedValue] + [Suffix]
  */
-function buildFieldSegment(field: TemplateField, value: unknown): string {
+function buildFieldSegment(field: TemplateField, value: NoteFieldValue): string {
   const prefix = field.narrativePrefix || ""
   const suffix = field.narrativeSuffix || ""
 
