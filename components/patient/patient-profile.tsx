@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
+import { getInitials } from "@/lib/utils"
 import type { GoalTracking } from "@/lib/types"
 
 // Direction-aware progress toward a goal target, based on the latest logged value
@@ -23,15 +24,6 @@ function getGoalProgress(goal: GoalTracking): number {
   // "above" (and "between" approximated the same way)
   if (goal.targetValue <= 0) return 100
   return clamp((latest / goal.targetValue) * 100)
-}
-
-function getInitials(name: string): string {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2)
 }
 
 function CareTeamCard({

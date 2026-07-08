@@ -54,42 +54,25 @@ function minutesBetween(earlier: Date, later: Date): number {
   return Math.round((later.getTime() - earlier.getTime()) / 1000 / 60)
 }
 
+type NewEvent = Omit<ScheduleEvent, "id">
+
 /**
- * Validate a new event against existing events for a navigator
+ * Check 1/2: for each of the navigator's same-day events, flag a direct time
+ * overlap, or (absent overlap) insufficient travel buffer on either side.
  */
-export function validateScheduleEvent(
-  newEvent: Omit<ScheduleEvent, "id">,
-  existingEvents: ScheduleEvent[],
-  options: {
-    travelBufferMinutes?: number // Extra buffer for travel (default: 15)
-    allowDoubleBooking?: boolean // Allow same navigator at two places (default: false)
-    checkHighRiskConflicts?: boolean // Extra scrutiny for high-risk patients (default: true)
-  } = {}
-): ValidationResult {
-  const {
-    travelBufferMinutes = 15,
-    allowDoubleBooking = false,
-    checkHighRiskConflicts = true,
-  } = options
-
+function checkSameDayConflicts(
+  newEvent: NewEvent,
+  newStart: Date,
+  newEnd: Date,
+  sameDayEvents: ScheduleEvent[],
+  travelBufferMinutes: number
+): ScheduleConflict[] {
   const conflicts: ScheduleConflict[] = []
-
-  const newStart = new Date(newEvent.startTime)
-  const newEnd = new Date(newEvent.endTime)
-
-  // Filter to same navigator's events on the same day
-  const sameDayEvents = existingEvents.filter((event) => {
-    if (event.navigatorId !== newEvent.navigatorId) return false
-    const eventDate = new Date(event.startTime).toDateString()
-    const newDate = newStart.toDateString()
-    return eventDate === newDate && event.status !== "CANCELLED"
-  })
 
   for (const existingEvent of sameDayEvents) {
     const existingStart = new Date(existingEvent.startTime)
     const existingEnd = new Date(existingEvent.endTime)
 
-    // Check 1: Direct time overlap
     if (doTimesOverlap(newStart, newEnd, existingStart, existingEnd)) {
       conflicts.push({
         type: "OVERLAP",
@@ -98,16 +81,12 @@ export function validateScheduleEvent(
         conflictingEventId: existingEvent.id,
         suggestedResolution: `Reschedule to avoid overlap with existing ${existingEvent.type === "MEDICAL_VISIT" ? "medical appointment" : "navigator visit"}`,
       })
-      continue // Skip other checks for this event if there's direct overlap
+      continue // Skip travel checks for this event if there's direct overlap
     }
 
-    // Check 2: Insufficient travel time
     // If new event is AFTER existing event
     if (newStart >= existingEnd) {
-      const travelTime = getEstimatedTravelTime(
-        existingEvent.location.zipCode,
-        newEvent.location.zipCode
-      )
+      const travelTime = getEstimatedTravelTime(existingEvent.location.zipCode, newEvent.location.zipCode)
       const requiredBuffer = travelTime + travelBufferMinutes
       const actualGap = minutesBetween(existingEnd, newStart)
 
@@ -124,10 +103,7 @@ export function validateScheduleEvent(
 
     // If new event is BEFORE existing event
     if (newEnd <= existingStart) {
-      const travelTime = getEstimatedTravelTime(
-        newEvent.location.zipCode,
-        existingEvent.location.zipCode
-      )
+      const travelTime = getEstimatedTravelTime(newEvent.location.zipCode, existingEvent.location.zipCode)
       const requiredBuffer = travelTime + travelBufferMinutes
       const actualGap = minutesBetween(newEnd, existingStart)
 
@@ -143,55 +119,103 @@ export function validateScheduleEvent(
     }
   }
 
-  // Check 3: Double booking (same patient, different events)
-  if (!allowDoubleBooking) {
-    const samePatientEvents = existingEvents.filter(
-      (event) =>
-        event.patientId === newEvent.patientId &&
-        event.status !== "CANCELLED" &&
-        doTimesOverlap(
-          newStart,
-          newEnd,
-          new Date(event.startTime),
-          new Date(event.endTime)
-        )
-    )
+  return conflicts
+}
 
-    for (const event of samePatientEvents) {
-      conflicts.push({
-        type: "DOUBLE_BOOKING",
-        severity: "ERROR",
-        message: `Patient already has "${event.title}" scheduled at this time`,
-        conflictingEventId: event.id,
-        suggestedResolution: "Choose a different time slot for this patient",
-      })
-    }
+/** Check 3: same patient double-booked into two overlapping events. */
+function checkDoubleBooking(
+  newEvent: NewEvent,
+  newStart: Date,
+  newEnd: Date,
+  existingEvents: ScheduleEvent[]
+): ScheduleConflict[] {
+  const samePatientEvents = existingEvents.filter(
+    (event) =>
+      event.patientId === newEvent.patientId &&
+      event.status !== "CANCELLED" &&
+      doTimesOverlap(newStart, newEnd, new Date(event.startTime), new Date(event.endTime))
+  )
+
+  return samePatientEvents.map((event) => ({
+    type: "DOUBLE_BOOKING",
+    severity: "ERROR",
+    message: `Patient already has "${event.title}" scheduled at this time`,
+    conflictingEventId: event.id,
+    suggestedResolution: "Choose a different time slot for this patient",
+  }))
+}
+
+/**
+ * Check 4: high-risk patients need adequate appointment duration, and a
+ * navigator shouldn't be overloaded with high-risk patients on one day.
+ */
+function checkHighSafetyRisk(
+  newEvent: NewEvent,
+  newStart: Date,
+  newEnd: Date,
+  sameDayEvents: ScheduleEvent[]
+): ScheduleConflict[] {
+  if (!newEvent.isHighSafetyRisk) return []
+
+  const conflicts: ScheduleConflict[] = []
+
+  const eventDuration = minutesBetween(newStart, newEnd)
+  if (eventDuration < 45) {
+    conflicts.push({
+      type: "SAFETY_RISK",
+      severity: "WARNING",
+      message: "High-risk patient appointment may need more time (minimum 45 min recommended)",
+      suggestedResolution: "Consider extending appointment duration for thorough care",
+    })
   }
 
-  // Check 4: High safety risk validation
-  if (checkHighRiskConflicts && newEvent.isHighSafetyRisk) {
-    // High-risk patients should have adequate time for their appointments
-    const eventDuration = minutesBetween(newStart, newEnd)
-    if (eventDuration < 45) {
-      conflicts.push({
-        type: "SAFETY_RISK",
-        severity: "WARNING",
-        message: "High-risk patient appointment may need more time (minimum 45 min recommended)",
-        suggestedResolution: "Consider extending appointment duration for thorough care",
-      })
-    }
-
-    // Check if navigator has too many high-risk patients on the same day
-    const highRiskSameDay = sameDayEvents.filter((e) => e.isHighSafetyRisk).length
-    if (highRiskSameDay >= 3) {
-      conflicts.push({
-        type: "SAFETY_RISK",
-        severity: "WARNING",
-        message: `Navigator already has ${highRiskSameDay} high-risk appointments this day`,
-        suggestedResolution: "Consider redistributing high-risk patients across navigators",
-      })
-    }
+  const highRiskSameDay = sameDayEvents.filter((e) => e.isHighSafetyRisk).length
+  if (highRiskSameDay >= 3) {
+    conflicts.push({
+      type: "SAFETY_RISK",
+      severity: "WARNING",
+      message: `Navigator already has ${highRiskSameDay} high-risk appointments this day`,
+      suggestedResolution: "Consider redistributing high-risk patients across navigators",
+    })
   }
+
+  return conflicts
+}
+
+/**
+ * Validate a new event against existing events for a navigator
+ */
+export function validateScheduleEvent(
+  newEvent: NewEvent,
+  existingEvents: ScheduleEvent[],
+  options: {
+    travelBufferMinutes?: number // Extra buffer for travel (default: 15)
+    allowDoubleBooking?: boolean // Allow same navigator at two places (default: false)
+    checkHighRiskConflicts?: boolean // Extra scrutiny for high-risk patients (default: true)
+  } = {}
+): ValidationResult {
+  const {
+    travelBufferMinutes = 15,
+    allowDoubleBooking = false,
+    checkHighRiskConflicts = true,
+  } = options
+
+  const newStart = new Date(newEvent.startTime)
+  const newEnd = new Date(newEvent.endTime)
+
+  // Filter to same navigator's events on the same day
+  const sameDayEvents = existingEvents.filter((event) => {
+    if (event.navigatorId !== newEvent.navigatorId) return false
+    const eventDate = new Date(event.startTime).toDateString()
+    const newDate = newStart.toDateString()
+    return eventDate === newDate && event.status !== "CANCELLED"
+  })
+
+  const conflicts: ScheduleConflict[] = [
+    ...checkSameDayConflicts(newEvent, newStart, newEnd, sameDayEvents, travelBufferMinutes),
+    ...(allowDoubleBooking ? [] : checkDoubleBooking(newEvent, newStart, newEnd, existingEvents)),
+    ...(checkHighRiskConflicts ? checkHighSafetyRisk(newEvent, newStart, newEnd, sameDayEvents) : []),
+  ]
 
   return {
     isValid: !conflicts.some((c) => c.severity === "ERROR"),
@@ -304,6 +328,13 @@ function formatTime(date: Date): string {
 }
 
 /**
+ * Extract the YYYY-MM-DD calendar date (UTC) an event's ISO startTime falls on.
+ */
+export function getEventDateISO(startTime: string): string {
+  return new Date(startTime).toISOString().split("T")[0]
+}
+
+/**
  * Get available time slots for a navigator on a given day
  */
 export function getAvailableSlots(
@@ -333,7 +364,7 @@ export function getAvailableSlots(
     .filter((event) => {
       if (event.navigatorId !== navigatorId) return false
       if (event.status === "CANCELLED") return false
-      const eventDate = new Date(event.startTime).toISOString().split("T")[0]
+      const eventDate = getEventDateISO(event.startTime)
       return eventDate === date
     })
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
@@ -420,12 +451,12 @@ export function getPatientSchedule(
       if (event.status === "CANCELLED") return false
 
       if (startDate) {
-        const eventDate = new Date(event.startTime).toISOString().split("T")[0]
+        const eventDate = getEventDateISO(event.startTime)
         if (eventDate < startDate) return false
       }
 
       if (endDate) {
-        const eventDate = new Date(event.startTime).toISOString().split("T")[0]
+        const eventDate = getEventDateISO(event.startTime)
         if (eventDate > endDate) return false
       }
 
@@ -446,7 +477,7 @@ export function getNavigatorDailySchedule(
     .filter((event) => {
       if (event.navigatorId !== navigatorId) return false
       if (event.status === "CANCELLED") return false
-      const eventDate = new Date(event.startTime).toISOString().split("T")[0]
+      const eventDate = getEventDateISO(event.startTime)
       return eventDate === date
     })
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
@@ -464,7 +495,7 @@ export function calculateScheduledHours(
   const relevantEvents = events.filter((event) => {
     if (event.navigatorId !== navigatorId) return false
     if (event.status === "CANCELLED") return false
-    const eventDate = new Date(event.startTime).toISOString().split("T")[0]
+    const eventDate = getEventDateISO(event.startTime)
     return eventDate >= startDate && eventDate <= endDate
   })
 

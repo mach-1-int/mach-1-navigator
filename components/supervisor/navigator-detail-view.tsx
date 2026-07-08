@@ -19,7 +19,7 @@ import {
 } from "lucide-react"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
-import { cn } from "@/lib/utils"
+import { cn, getInitials } from "@/lib/utils"
 
 interface NavigatorDetailViewProps {
   navigatorId: string
@@ -74,7 +74,7 @@ export function NavigatorDetailView({ navigatorId }: NavigatorDetailViewProps) {
           <div className="flex items-start gap-6">
             <Avatar className="h-20 w-20">
               <AvatarFallback className="bg-primary/10 text-primary text-2xl">
-                {navigator.name.split(" ").map(n => n[0]).join("")}
+                {getInitials(navigator.name)}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1">

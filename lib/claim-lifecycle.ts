@@ -85,19 +85,27 @@ export function getActiveClaimMonthKeys(records: ClaimRecord[]): Set<string> {
   )
 }
 
+export interface CreateClaimRecordsOptions {
+  claims: BillableClaim[]
+  payers: Payer[]
+  payerConfig: PayerConfig
+  format: "CSV" | "837P"
+  by: string
+  existing: ClaimRecord[]
+}
+
 /**
  * Create persisted ClaimRecords from derived claims at export time.
  * Rebills of the same patient-month get versioned ids (-v2, -v3, ...) based on
  * how many prior records (voided or not) exist for that source claim.
  */
-export function createClaimRecords(
-  claims: BillableClaim[],
-  payers: Payer[],
-  payerConfig: PayerConfig,
-  format: "CSV" | "837P",
-  by: string,
-  existing: ClaimRecord[]
-): ClaimRecord[] {
+export function createClaimRecords({
+  claims,
+  payerConfig,
+  format,
+  by,
+  existing,
+}: CreateClaimRecordsOptions): ClaimRecord[] {
   const now = new Date().toISOString()
   const exportBatchId = `batch-${now.replace(/[-:.TZ]/g, "").slice(0, 14)}`
 

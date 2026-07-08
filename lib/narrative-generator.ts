@@ -33,7 +33,12 @@ export function generateNarrative(
       return
     }
 
-    const segment = buildFieldSegment(field, value)
+    // Cast: `responses` is keyed by arbitrary field IDs typed as `unknown`.
+    // The AI-scribe autofill path (lib/gemini-scribe.ts) does not currently
+    // validate that AI-extracted values match the field's expected shape
+    // before merging them into responses, so this assumption isn't
+    // runtime-enforced today (see follow-up PR for the validation gap).
+    const segment = buildFieldSegment(field, value as NoteFieldValue)
     if (segment) {
       parts.push(segment)
     }
@@ -43,10 +48,43 @@ export function generateNarrative(
 }
 
 /**
+ * The runtime shape a response value takes, keyed by the field's type:
+ * select/text/textarea -> string, multi-select -> string[],
+ * boolean -> boolean, time-duration -> number.
+ */
+type NoteFieldValue = string | string[] | boolean | number
+
+/** Simple text-based fields (select/text/textarea): directly insert the value. */
+function buildTextSegment(prefix: string, suffix: string, value: NoteFieldValue): string {
+  return `${prefix}${value}${suffix}`
+}
+
+/** Multi-select fields: join the selected values with the field's joiner (default ", "). */
+function buildMultiSelectSegment(field: TemplateField, prefix: string, suffix: string, value: NoteFieldValue): string {
+  if (!Array.isArray(value) || value.length === 0) return ""
+  const joiner = field.narrativeJoiner || ", "
+  return `${prefix}${value.join(joiner)}${suffix}`
+}
+
+/** Boolean fields: a contextual phrase for true, and a field-specific phrase for false. */
+function buildBooleanSegment(field: TemplateField, prefix: string, suffix: string, value: NoteFieldValue): string {
+  if (value === true) return `${prefix}reviewed and discussed${suffix}`
+  if (value !== false || !prefix) return ""
+  if (field.id === "supervisor-notified") return `${prefix}was not notified${suffix}`
+  return `${prefix}not reviewed${suffix}`
+}
+
+/** Duration fields: only included when the value is a positive number. */
+function buildDurationSegment(prefix: string, suffix: string, value: NoteFieldValue): string {
+  if (typeof value !== "number" || value <= 0) return ""
+  return `${prefix}${value}${suffix}`
+}
+
+/**
  * Build a narrative segment for a single field.
  * Constructs: [Prefix] + [FormattedValue] + [Suffix]
  */
-function buildFieldSegment(field: TemplateField, value: unknown): string {
+function buildFieldSegment(field: TemplateField, value: NoteFieldValue): string {
   const prefix = field.narrativePrefix || ""
   const suffix = field.narrativeSuffix || ""
 
@@ -54,39 +92,13 @@ function buildFieldSegment(field: TemplateField, value: unknown): string {
     case "select":
     case "text":
     case "textarea":
-      // Simple text-based fields: directly insert the value
-      return `${prefix}${value}${suffix}`
-
+      return buildTextSegment(prefix, suffix, value)
     case "multi-select":
-      // Join multiple selections with the specified joiner
-      if (Array.isArray(value) && value.length > 0) {
-        const joiner = field.narrativeJoiner || ", "
-        const joined = value.join(joiner)
-        return `${prefix}${joined}${suffix}`
-      }
-      return ""
-
+      return buildMultiSelectSegment(field, prefix, suffix, value)
     case "boolean":
-      // Boolean fields: handle true/false cases
-      if (value === true) {
-        // For true values, use a contextual phrase
-        return `${prefix}reviewed and discussed${suffix}`
-      } else if (value === false && prefix) {
-        // Handle specific false cases based on field context
-        if (field.id === "supervisor-notified") {
-          return `${prefix}was not notified${suffix}`
-        }
-        return `${prefix}not reviewed${suffix}`
-      }
-      return ""
-
+      return buildBooleanSegment(field, prefix, suffix, value)
     case "time-duration":
-      // Duration fields: only include if positive value
-      if (typeof value === "number" && value > 0) {
-        return `${prefix}${value}${suffix}`
-      }
-      return ""
-
+      return buildDurationSegment(prefix, suffix, value)
     default:
       return ""
   }

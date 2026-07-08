@@ -99,20 +99,30 @@ export interface RevenueBreakdown {
   claimCount: number
 }
 
+export interface ComputeRevenueOptions {
+  navigators: Navigator[]
+  patients: Patient[]
+  timeLogs: TimeLog[]
+  intakeRecords: IntakeRecord[]
+  payerConfig: PayerConfig
+  appointments: Appointment[]
+  payers: Payer[]
+}
+
 /**
  * Compute estimated revenue for the current billing month:
  * claims value (generateMonthlyClaims + calculateTotalRevenue) plus
  * appointment-driven revenue (completed appointments × payer ratePerUnit).
  */
-export function computeRevenue(
-  navigators: Navigator[],
-  patients: Patient[],
-  timeLogs: TimeLog[],
-  intakeRecords: IntakeRecord[],
-  payerConfig: PayerConfig,
-  appointments: Appointment[],
-  payers: Payer[]
-): RevenueBreakdown {
+export function computeRevenue({
+  navigators,
+  patients,
+  timeLogs,
+  intakeRecords,
+  payerConfig,
+  appointments,
+  payers,
+}: ComputeRevenueOptions): RevenueBreakdown {
   const claims = generateMonthlyClaims(
     navigators,
     patients,

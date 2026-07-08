@@ -329,7 +329,7 @@ export interface DashboardSummary {
 }
 
 /**
- * Calculate summary statistics for dashboard cards
+ * Options for {@link getDashboardSummary}
  *
  * @param navigators - Array of navigators (for claim generation)
  * @param patients - Array of patients
@@ -337,16 +337,29 @@ export interface DashboardSummary {
  * @param intakeRecords - Intake records (consent, initiating visit, Z-codes)
  * @param payerConfig - Active payer configuration
  * @param navigatorUsers - Array of users with navigator role (for caseload stats)
+ */
+interface GetDashboardSummaryOptions {
+  navigators: Navigator[]
+  patients: Patient[]
+  timeLogs: TimeLog[]
+  intakeRecords: IntakeRecord[]
+  payerConfig: PayerConfig
+  navigatorUsers: User[]
+}
+
+/**
+ * Calculate summary statistics for dashboard cards
+ *
  * @returns Summary statistics object
  */
-export function getDashboardSummary(
-  navigators: Navigator[],
-  patients: Patient[],
-  timeLogs: TimeLog[],
-  intakeRecords: IntakeRecord[],
-  payerConfig: PayerConfig,
-  navigatorUsers: User[]
-): DashboardSummary {
+export function getDashboardSummary({
+  navigators,
+  patients,
+  timeLogs,
+  intakeRecords,
+  payerConfig,
+  navigatorUsers,
+}: GetDashboardSummaryOptions): DashboardSummary {
   const activePatients = patients.filter((p) => p.survivalStatus === "active")
   const totalActivePatients = activePatients.length
 

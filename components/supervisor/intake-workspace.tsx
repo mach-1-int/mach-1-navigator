@@ -29,7 +29,7 @@ import {
   ArrowLeft,
   Loader2,
 } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, getInitials } from "@/lib/utils"
 import { useRole } from "@/lib/role-context"
 import { useDemoData } from "@/lib/demo-data-context"
 import {
@@ -215,7 +215,7 @@ function ReferralDocument({
           <div className="flex items-start gap-4">
             <Avatar className="h-14 w-14">
               <AvatarFallback className="bg-blue-100 text-blue-700 text-lg">
-                {referral.patientName.split(" ").map(n => n[0]).join("")}
+                {getInitials(referral.patientName)}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1">
@@ -473,7 +473,7 @@ function NavigatorMatchCard({
                 <AvatarFallback className={cn(
                   isTopMatch && isViableMatch ? "bg-emerald-100 text-emerald-700" : "bg-muted"
                 )}>
-                  {navigator.navigatorName.split(" ").map(n => n[0]).join("")}
+                  {getInitials(navigator.navigatorName)}
                 </AvatarFallback>
               </Avatar>
               <div>

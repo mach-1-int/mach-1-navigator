@@ -1283,7 +1283,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
     by: string
   ): ClaimRecord[] => {
     const payerConfig = getPayerConfig(state.activePayerConfigId)
-    const newRecords = createClaimRecords(claims, payers, payerConfig, format, by, claimRecords)
+    const newRecords = createClaimRecords({ claims, payers, payerConfig, format, by, existing: claimRecords })
 
     const auditEntry: AuditLog = {
       id: generateId(),

@@ -5,24 +5,12 @@
 
 import { initialNavigatorLocations, initialScheduleEvents, initialAppointments } from "../lib/initial-data"
 import { deriveSafetyStatus, SAFETY_RULES } from "../lib/safety-status"
+import { formatTimeAgo } from "../lib/time-format"
 import type { NavigatorLocation, SOSEvent } from "../lib/types"
 
 const assert = (condition: boolean, message: string) => {
   if (!condition) throw new Error(`FAIL: ${message}`)
   console.log(`  ✓ ${message}`)
-}
-
-function formatLastCheckIn(isoString: string): string {
-  const now = Date.now()
-  const then = new Date(isoString).getTime()
-  const diffMs = now - then
-  const diffMins = Math.floor(diffMs / 60000)
-  if (diffMins < 1) return "Just now"
-  if (diffMins === 1) return "1 min ago"
-  if (diffMins < 60) return `${diffMins} mins ago`
-  const diffHours = Math.floor(diffMins / 60)
-  if (diffHours === 1) return "1 hour ago"
-  return `${diffHours} hours ago`
 }
 
 let passed = 0
@@ -79,7 +67,7 @@ run("Scenario 2: Red pin is John with RISK_ALERT", () => {
 run("Scenario 2: John's Last Check-in shows '2 hours ago'", () => {
   const john = initialNavigatorLocations.find((loc) => loc.navigatorId === "nav-john")
   assert(!!john, "John exists")
-  const label = formatLastCheckIn(john!.lastCheckIn)
+  const label = formatTimeAgo(john!.lastCheckIn)
   assert(label === "2 hours ago", `Last Check-in label is '2 hours ago' (got: ${label})`)
 })
 

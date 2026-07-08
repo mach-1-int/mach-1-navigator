@@ -9,7 +9,10 @@ import { Users, ChevronRight, TrendingUp, TrendingDown, Minus } from "lucide-rea
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { calculateDurationMinutes } from "@/lib/store"
-import { cn } from "@/lib/utils"
+import { cn, getInitials } from "@/lib/utils"
+
+/** A navigator's caseload tier, derived from their patient count. */
+type LoadStatus = "high" | "medium" | "low"
 
 export function NavigatorDirectory() {
   const { navigators, patients, appointments, timeLogs, getNudgesForNavigator } = useDemoData()
@@ -39,7 +42,7 @@ export function NavigatorDirectory() {
         : null
 
     // Determine load status
-    const loadStatus = nav.patientCount > 50 ? "high" : nav.patientCount > 35 ? "medium" : "low"
+    const loadStatus: LoadStatus = nav.patientCount > 50 ? "high" : nav.patientCount > 35 ? "medium" : "low"
     
     return {
       ...nav,
@@ -57,7 +60,7 @@ export function NavigatorDirectory() {
     ? Math.round(navigatorsWithVisitTime.reduce((sum, n) => sum + (n.avgVisitTime ?? 0), 0) / navigatorsWithVisitTime.length)
     : null
 
-  const getLoadBadge = (status: string) => {
+  const getLoadBadge = (status: LoadStatus) => {
     switch (status) {
       case "high":
         return { label: "High Load", className: "bg-red-100 text-red-700" }
@@ -172,7 +175,7 @@ export function NavigatorDirectory() {
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary text-sm font-medium text-card-foreground">
-                          {navigator.name.split(" ").map(n => n[0]).join("")}
+                          {getInitials(navigator.name)}
                         </div>
                         <div>
                           <p className="font-medium text-card-foreground">{navigator.name}</p>

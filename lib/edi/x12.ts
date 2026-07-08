@@ -61,18 +61,14 @@ export const DEFAULT_SEPARATORS: X12Separators = {
 // ============================================================================
 
 /**
- * Tokenize a raw X12 interchange into segments.
- *
- * Separators are read from the ISA segment itself: the element separator is
- * the character at index 3, the component separator is ISA16 (the single
- * character after the 16th element separator), and the segment terminator is
- * the character immediately following ISA16. Newlines (\n or \r\n) after
- * segment terminators are tolerated and stripped.
+ * Locate the separators an ISA header declares for itself: the element
+ * separator (index 3), the component separator (ISA16, the character
+ * immediately after the 16th element separator), the segment terminator
+ * (the character after that), and the ISA11 repetition separator (5010).
  *
  * @throws X12ParseError when the text is not a well-formed interchange
  */
-export function parseX12(text: string): ParsedX12 {
-  const raw = text.replace(/^\uFEFF/, "").replace(/^\s+/, "")
+function locateSeparators(raw: string): X12Separators {
   if (!raw.startsWith("ISA")) {
     throw new X12ParseError("Not an X12 interchange: missing ISA header")
   }
@@ -104,17 +100,38 @@ export function parseX12(text: string): ParsedX12 {
   const isaElements = raw.slice(4, lastSepIdx + 2).split(element)
   const repetition = isaElements[10] && isaElements[10].length === 1 ? isaElements[10] : "^"
 
-  const separators: X12Separators = { element, component, segment, repetition }
+  return { element, component, segment, repetition }
+}
 
+/**
+ * Split a raw interchange into segments using the given separators.
+ * Newlines (\n or \r\n) after segment terminators are tolerated and stripped;
+ * empty chunks (trailing terminator, blank lines) are skipped.
+ */
+function tokenizeSegments(raw: string, seps: X12Separators): X12Segment[] {
   const segments: X12Segment[] = []
-  for (const chunk of raw.split(segment)) {
+  for (const chunk of raw.split(seps.segment)) {
     const trimmed = chunk.replace(/^[\r\n\s]+/, "")
     if (!trimmed) continue
-    const parts = trimmed.split(element)
+    const parts = trimmed.split(seps.element)
     const id = parts.shift() ?? ""
     if (!id) continue
     segments.push({ id, elements: parts })
   }
+  return segments
+}
+
+/**
+ * Tokenize a raw X12 interchange into segments.
+ *
+ * Separators are read from the ISA segment itself (see locateSeparators).
+ *
+ * @throws X12ParseError when the text is not a well-formed interchange
+ */
+export function parseX12(text: string): ParsedX12 {
+  const raw = text.replace(/^\uFEFF/, "").replace(/^\s+/, "")
+  const separators = locateSeparators(raw)
+  const segments = tokenizeSegments(raw, separators)
 
   if (segments.length === 0 || segments[0].id !== "ISA") {
     throw new X12ParseError("Malformed interchange: ISA segment did not tokenize")

@@ -1,11 +1,12 @@
 'use server';
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import type { NoteFieldType } from "./types";
 
 export interface TemplateFieldContext {
   id: string
   label: string
-  type: string
+  type: NoteFieldType
   options?: string[]
   required?: boolean
 }
