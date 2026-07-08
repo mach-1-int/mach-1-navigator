@@ -2,13 +2,15 @@
 
 **Objective:** Verify that the Supervisor can identify risks immediately.
 
+> **Automated gate first:** `npm run verify:safety-map` (12 checks — seed/derivation consistency, SOS-forces-alert) must be green before any hands-on pass here.
+
 ---
 
 ## Test Scenario 1: The "Bird's Eye" View
 
 **Goal:** Confirm the map shows Phoenix metro with at least three distinct pins (Glendale, Mesa, Downtown).
 
-- [ ] **1. Action:** Log in as **Supervisor** (Vivian). Open the **Safety Map** tab from the sidebar.
+- [ ] **1. Action:** Log in as **Supervisor** (Marcus Williams). Open the **Safety Map** tab from the sidebar.
 - [ ] **2. Verify:**
   - Do you see a **map of Phoenix** (OpenStreetMap tiles, Phoenix metro area)?
   - Do you see **at least 3 distinct pins**?
@@ -85,6 +87,25 @@
 
 ---
 
+## Test Scenario 7: Zone Overlays & Zone Filter
+
+**Goal:** Verify Gellert's coverage zones render on the map and the Field Team list filters by zone.
+
+- [ ] **1. Action:** In the **Field Team** card header (left panel), flip the **"Show zones"** switch (layers icon).
+- [ ] **2. Verify:**
+  - Semi-transparent colored **circles** appear over the metro — one per seeded zone: **Central Phoenix, North Phoenix, West Valley, East Valley, Tempe / Scottsdale, South Phoenix** (6 zones seeded; Gellert runs 11).
+  - A **"Coverage Zones"** legend renders on the map with each zone's color and name.
+  - Shapes are honest **circle approximations** (zip-centroid + padded radius) — real polygons come with a real geo provider. This is a talking point, not a bug.
+- [ ] **3. Action:** Use the zone dropdown next to the switch (default **"All zones"**) and pick **West Valley**.
+- [ ] **4. Verify:**
+  - The **Field Team list narrows to Maria Gonzalez** (the only seeded field navigator in West Valley); with zones shown, only the **West Valley circle** stays on the map.
+  - Map **pins are NOT hidden** by the filter — it scopes the sidebar list and the zone shapes, never the live safety picture.
+  - Pick **East Valley** → the list shows only **John Mitchell**; **Central Phoenix** → only **Sarah Thompson**. A zone with no located navigator shows **"No navigators assigned to this zone"**.
+- [ ] **5. Reset:** Set the filter back to **All zones** and flip **Show zones** off — the map returns to Scenario 1's baseline.
+- [ ] **6. Demo Talk Track:** *"Mitch, these are your coverage zones drawn onto the live safety picture — who covers where, and who's actually out there right now. The weekly manual join of zones to people is now a toggle."*
+
+---
+
 ## Troubleshooting: Maps
 
 | Issue | What to check |
@@ -107,6 +128,8 @@ Statuses below are **derived live** by `deriveSafetyStatus` (`lib/safety-status.
 | John Mitchell  | Mesa       | RISK_ALERT | 2 hours ago    | Red       |
 | Sarah Thompson | Downtown   | IDLE       | 20 mins ago    | Gray      |
 
-**Role:** Supervisor (Vivian) → Sidebar → **Safety Map**.
+**Role:** Supervisor (Marcus Williams) → Sidebar → **Safety Map**.
+
+**Zones:** Maria — West Valley · John — East Valley · Sarah — Central Phoenix (`zoneId` on their user attributes; overlays/filter in Scenario 7).
 
 **Note:** The **"Call Now"** button in a pin's popup is a real `tel:` link — it opens the device dialer with the navigator's phone number (hidden when no phone is on file).
