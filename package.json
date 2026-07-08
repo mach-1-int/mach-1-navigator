@@ -15,7 +15,8 @@
     "verify:time-format": "npx tsx scripts/verify-time-format.ts",
     "verify:store": "npx tsx scripts/verify-store-load-state.ts",
     "verify:edi-835-parser": "npx tsx scripts/verify-edi-835-parser.ts",
-    "test": "npm run verify:billing && npm run verify:safety-map && npm run verify:claims && npm run verify:referral-ingestion && npm run verify:utils && npm run verify:time-format && npm run verify:store && npm run verify:edi-835-parser"
+    "verify:claims-engine": "npx tsx scripts/verify-claims-engine.ts",
+    "test": "npm run verify:billing && npm run verify:safety-map && npm run verify:claims && npm run verify:referral-ingestion && npm run verify:utils && npm run verify:time-format && npm run verify:store && npm run verify:edi-835-parser && npm run verify:claims-engine"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

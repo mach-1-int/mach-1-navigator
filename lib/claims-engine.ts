@@ -198,6 +198,131 @@ function validateClaimData(options: ValidateClaimDataOptions): string[] {
 }
 
 /**
+ * Determine primary/add-on billing codes from the payer's billing model.
+ * Medicaid H-codes bill under the dominant activity's H-code and have no
+ * add-on code; Medicare G-codes use the payer config's fixed base + add-on.
+ */
+function selectBillingCodes(
+  logs: TimeLog[],
+  payerConfig: PayerConfig
+): { primaryCode: string; addOnCode: string | undefined } {
+  if (payerConfig.useRuleOfEights) {
+    return { primaryCode: getDominantHCode(logs), addOnCode: undefined }
+  }
+  return { primaryCode: payerConfig.codes.base, addOnCode: payerConfig.codes.addOn }
+}
+
+/**
+ * Collect the combined, deduplicated diagnosis code set for a claim: patient
+ * ICD codes, an ICD code embedded in the free-text primary diagnosis (e.g.
+ * "Cancer (C50.9)"), and intake-identified SDOH Z-codes.
+ */
+function collectDiagnosisCodes(patient: Patient | undefined, intakeRecord: IntakeRecord | undefined): string[] {
+  const diagnosisCodes: string[] = []
+  if (patient?.icdCodes) {
+    diagnosisCodes.push(...patient.icdCodes)
+  }
+  if (patient?.primaryDiagnosis) {
+    const icdMatch = patient.primaryDiagnosis.match(/\(([A-Z]\d+\.?\d*)\)/)
+    if (icdMatch && !diagnosisCodes.includes(icdMatch[1])) {
+      diagnosisCodes.push(icdMatch[1])
+    }
+  }
+  if (intakeRecord) {
+    for (const barrier of intakeRecord.identifiedBarriers) {
+      diagnosisCodes.push(barrier.code)
+    }
+  }
+  return [...new Set(diagnosisCodes)]
+}
+
+/**
+ * Supervisor-verification guardrail: unverified minutes are never exportable.
+ * The claim still surfaces (in Needs Attention) so the pending time is
+ * visible, but it cannot reach VALIDATED until every log is verified.
+ */
+function appendUnverifiedTimeError(validationErrors: string[], logs: TimeLog[]): string[] {
+  const unverifiedMinutes = logs
+    .filter((log) => !log.verified)
+    .reduce((sum, log) => sum + log.durationMinutes, 0)
+  if (unverifiedMinutes > 0) {
+    validationErrors.push(`Unverified time (${unverifiedMinutes} min) — supervisor review required`)
+  }
+  return validationErrors
+}
+
+/** Current billing month is compared on the LOCAL calendar (matches date-rebase semantics). */
+function determineClaimStatus(validationErrors: string[], month: string): BillableClaim["status"] {
+  if (validationErrors.length > 0) return "NEEDS_ATTENTION"
+  return month === localCurrentMonth() ? "DRAFT" : "VALIDATED"
+}
+
+/** Build a single claim from one patient+month group of time logs. */
+function buildClaimForGroup(
+  key: string,
+  logs: TimeLog[],
+  patientMap: Map<string, Patient>,
+  intakeMap: Map<string, IntakeRecord>,
+  payerConfig: PayerConfig
+): BillableClaim {
+  const [patientId, month] = key.split(":")
+  const patient = patientMap.get(patientId)
+  const intakeRecord = intakeMap.get(patientId)
+
+  const totalMinutes = logs.reduce((sum, log) => sum + log.durationMinutes, 0)
+  const serviceType = logs[0]?.serviceType || "CHI"
+
+  const { primaryCode, addOnCode } = selectBillingCodes(logs, payerConfig)
+  const { primaryUnits, addOnUnits } = calculateBillingUnits(totalMinutes, payerConfig)
+  const uniqueDiagnosisCodes = collectDiagnosisCodes(patient, intakeRecord)
+
+  const validationErrors = appendUnverifiedTimeError(
+    validateClaimData({
+      patient,
+      intakeRecord,
+      totalMinutes,
+      payerConfig,
+      month,
+      serviceType,
+      diagnosisCodes: uniqueDiagnosisCodes,
+    }),
+    logs
+  )
+
+  const status = determineClaimStatus(validationErrors, month)
+  const navigatorId = getPrimaryNavigator(logs)
+
+  // Member ID: the real payer-issued ID only. The UNK- synthesis is a marked
+  // placeholder that validation flags and the clearinghouse rejects — it can
+  // never silently reach an accepted claim.
+  const memberId = patient?.memberId || `UNK-${patientId.toUpperCase()}`
+
+  return {
+    id: generateClaimId(patientId, month),
+    patientId,
+    patientName: patient?.name || "Unknown Patient",
+    memberId,
+    month,
+    totalMinutes,
+    primaryCode,
+    primaryUnits,
+    addOnCode: addOnUnits > 0 ? addOnCode : undefined,
+    addOnUnits,
+    diagnosisCodes: uniqueDiagnosisCodes,
+    status,
+    validationErrors: validationErrors.length > 0 ? validationErrors : undefined,
+    timeLogIds: logs.map((log) => log.id),
+    serviceType,
+    navigatorId,
+    createdAt: new Date().toISOString(),
+    // Payer-agnostic billing fields
+    billingModel: payerConfig.billingModel,
+    payerConfigId: payerConfig.id,
+    payerId: patient?.payerId,
+  }
+}
+
+/**
  * Get the primary navigator from time logs (most minutes logged)
  */
 function getPrimaryNavigator(timeLogs: TimeLog[]): string {
@@ -239,128 +364,13 @@ export function generateMonthlyClaims(
   payerConfig: PayerConfig,
   intakeRecords: IntakeRecord[]
 ): BillableClaim[] {
-  // Create patient and intake lookup maps
   const patientMap = new Map(patients.map((p) => [p.id, p]))
   const intakeMap = new Map(intakeRecords.map((r) => [r.patientId, r]))
-
-  // Group time logs by patient and month
   const grouped = groupTimeLogsByPatientAndMonth(timeLogs)
 
-  // Generate claims for each group
-  const claims: BillableClaim[] = []
-
-  for (const [key, logs] of grouped) {
-    const [patientId, month] = key.split(":")
-    const patient = patientMap.get(patientId)
-    const intakeRecord = intakeMap.get(patientId)
-
-    // Calculate total minutes
-    const totalMinutes = logs.reduce((sum, log) => sum + log.durationMinutes, 0)
-
-    // Determine service type (from first log, should be consistent)
-    const serviceType = logs[0]?.serviceType || "CHI"
-
-    // Determine codes based on payer config
-    let primaryCode: string
-    let addOnCode: string | undefined
-
-    if (payerConfig.useRuleOfEights) {
-      // Medicaid H-codes: bill under the dominant activity's H-code
-      primaryCode = getDominantHCode(logs)
-      addOnCode = undefined // H-codes don't have add-on codes
-    } else {
-      // Medicare G-codes: base + add-on from the payer config's code set
-      primaryCode = payerConfig.codes.base
-      addOnCode = payerConfig.codes.addOn
-    }
-
-    // Calculate billing units using payer-specific logic
-    const { primaryUnits, addOnUnits } = calculateBillingUnits(totalMinutes, payerConfig)
-
-    // Collect diagnosis codes (patient ICD + intake-identified SDOH Z-codes)
-    const diagnosisCodes: string[] = []
-    if (patient?.icdCodes) {
-      diagnosisCodes.push(...patient.icdCodes)
-    }
-    // Add primary diagnosis if available and not already included
-    if (patient?.primaryDiagnosis) {
-      // Extract ICD code if present in diagnosis string (e.g., "Cancer (C50.9)")
-      const icdMatch = patient.primaryDiagnosis.match(/\(([A-Z]\d+\.?\d*)\)/)
-      if (icdMatch && !diagnosisCodes.includes(icdMatch[1])) {
-        diagnosisCodes.push(icdMatch[1])
-      }
-    }
-    // Merge intake barrier Z-codes (SDOH documentation)
-    if (intakeRecord) {
-      for (const barrier of intakeRecord.identifiedBarriers) {
-        diagnosisCodes.push(barrier.code)
-      }
-    }
-    const uniqueDiagnosisCodes = [...new Set(diagnosisCodes)]
-
-    // Validate the claim with payer-specific thresholds and intake guardrails
-    const validationErrors = validateClaimData({
-      patient,
-      intakeRecord,
-      totalMinutes,
-      payerConfig,
-      month,
-      serviceType,
-      diagnosisCodes: uniqueDiagnosisCodes,
-    })
-
-    // Supervisor-verification guardrail: unverified minutes are never exportable.
-    // The claim still surfaces (in Needs Attention) so the pending time is
-    // visible, but it cannot reach VALIDATED until every log is verified.
-    const unverifiedMinutes = logs
-      .filter((log) => !log.verified)
-      .reduce((sum, log) => sum + log.durationMinutes, 0)
-    if (unverifiedMinutes > 0) {
-      validationErrors.push(
-        `Unverified time (${unverifiedMinutes} min) — supervisor review required`
-      )
-    }
-
-    // Current billing month on the LOCAL calendar (matches date-rebase semantics)
-    const currentMonth = localCurrentMonth()
-    const status: BillableClaim["status"] =
-      validationErrors.length > 0 ? "NEEDS_ATTENTION" : month === currentMonth ? "DRAFT" : "VALIDATED"
-
-    // Get primary navigator
-    const navigatorId = getPrimaryNavigator(logs)
-
-    // Member ID: the real payer-issued ID only. The UNK- synthesis is a marked
-    // placeholder that validation flags and the clearinghouse rejects — it can
-    // never silently reach an accepted claim.
-    const memberId = patient?.memberId || `UNK-${patientId.toUpperCase()}`
-
-    // Create the claim
-    const claim: BillableClaim = {
-      id: generateClaimId(patientId, month),
-      patientId,
-      patientName: patient?.name || "Unknown Patient",
-      memberId,
-      month,
-      totalMinutes,
-      primaryCode,
-      primaryUnits,
-      addOnCode: addOnUnits > 0 ? addOnCode : undefined,
-      addOnUnits,
-      diagnosisCodes: uniqueDiagnosisCodes,
-      status,
-      validationErrors: validationErrors.length > 0 ? validationErrors : undefined,
-      timeLogIds: logs.map((log) => log.id),
-      serviceType,
-      navigatorId,
-      createdAt: new Date().toISOString(),
-      // Payer-agnostic billing fields
-      billingModel: payerConfig.billingModel,
-      payerConfigId: payerConfig.id,
-      payerId: patient?.payerId,
-    }
-
-    claims.push(claim)
-  }
+  const claims = Array.from(grouped.entries()).map(([key, logs]) =>
+    buildClaimForGroup(key, logs, patientMap, intakeMap, payerConfig)
+  )
 
   // Sort by month descending, then by patient name
   claims.sort((a, b) => {
