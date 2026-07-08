@@ -11,6 +11,9 @@ import { useRole } from "@/lib/role-context"
 import { calculateDurationMinutes } from "@/lib/store"
 import { cn, getInitials } from "@/lib/utils"
 
+/** A navigator's caseload tier, derived from their patient count. */
+type LoadStatus = "high" | "medium" | "low"
+
 export function NavigatorDirectory() {
   const { navigators, patients, appointments, timeLogs, getNudgesForNavigator } = useDemoData()
   const { navigateTo, currentUser } = useRole()
@@ -39,7 +42,7 @@ export function NavigatorDirectory() {
         : null
 
     // Determine load status
-    const loadStatus = nav.patientCount > 50 ? "high" : nav.patientCount > 35 ? "medium" : "low"
+    const loadStatus: LoadStatus = nav.patientCount > 50 ? "high" : nav.patientCount > 35 ? "medium" : "low"
     
     return {
       ...nav,
@@ -57,7 +60,7 @@ export function NavigatorDirectory() {
     ? Math.round(navigatorsWithVisitTime.reduce((sum, n) => sum + (n.avgVisitTime ?? 0), 0) / navigatorsWithVisitTime.length)
     : null
 
-  const getLoadBadge = (status: string) => {
+  const getLoadBadge = (status: LoadStatus) => {
     switch (status) {
       case "high":
         return { label: "High Load", className: "bg-red-100 text-red-700" }
