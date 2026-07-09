@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { PhoneCall, AlertTriangle, CheckCircle2, Clock, PlusCircle } from "lucide-react"
+import { PhoneCall, AlertTriangle, CheckCircle2, Clock, PlusCircle, Send } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
@@ -25,6 +25,7 @@ import {
   outreachSla,
 } from "@/lib/referral-pipeline"
 import type { OutreachAttempt, Referral } from "@/lib/types"
+import { ProviderCommDialog } from "@/components/supervisor/provider-comm-dialog"
 
 interface OutreachLogProps {
   referral: Referral
@@ -59,16 +60,21 @@ export function OutreachSlaChip({ referral }: { referral: Referral }) {
 }
 
 export function OutreachLog({ referral }: OutreachLogProps) {
-  const { logOutreachAttempt } = useDemoData()
+  const { logOutreachAttempt, providerCommunications } = useDemoData()
   const { currentUser } = useRole()
   const [channel, setChannel] = useState<OutreachAttempt["channel"]>("phone")
   const [disposition, setDisposition] = useState<OutreachAttempt["disposition"]>("no_answer")
   const [note, setNote] = useState("")
+  const [commDialogOpen, setCommDialogOpen] = useState(false)
 
   const attempts = referral.outreachAttempts
   const remaining = attemptsRemaining(referral)
   const firstContactMade = attempts.length > 0
   const onLastAttempt = remaining === 1
+  const autoClosedUnreachable = referral.status === "unreachable"
+  const alreadyNotified = providerCommunications.some(
+    (c) => c.referralId === referral.id && c.type === "unreachable_notification"
+  )
 
   const log = (dispositionOverride?: OutreachAttempt["disposition"]) => {
     if (!currentUser) return
@@ -128,14 +134,40 @@ export function OutreachLog({ referral }: OutreachLogProps) {
           </span>
         </div>
 
-        {onLastAttempt && (
-          <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-950/20 p-3">
-            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-            <p className="text-xs text-amber-700 dark:text-amber-300">
-              Final attempt — if the patient can&apos;t be reached, the referral auto-closes as unreachable and the
-              referring provider is notified.
-            </p>
+        {autoClosedUnreachable ? (
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20 p-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
+              <p className="text-xs text-red-700 dark:text-red-300">
+                Maximum attempts reached — auto-closed as unreachable.
+                {alreadyNotified && " Referring provider notified."}
+              </p>
+            </div>
+            <Button size="sm" variant="outline" className="gap-1.5 shrink-0 bg-transparent" onClick={() => setCommDialogOpen(true)}>
+              <Send className="h-3.5 w-3.5" />
+              Send provider notification
+            </Button>
           </div>
+        ) : (
+          onLastAttempt && (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-950/20 p-3">
+              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                Final attempt — if the patient can&apos;t be reached, the referral auto-closes as unreachable and the
+                referring provider is notified.
+              </p>
+            </div>
+          )
+        )}
+
+        {autoClosedUnreachable && (
+          <ProviderCommDialog
+            open={commDialogOpen}
+            onOpenChange={setCommDialogOpen}
+            type="unreachable_notification"
+            entity={{ referralId: referral.id }}
+            referral={referral}
+          />
         )}
 
         {/* Attempt history */}

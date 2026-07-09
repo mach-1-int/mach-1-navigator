@@ -22,13 +22,20 @@ import { useDemoData } from "@/lib/demo-data-context"
 import { PhaseChip } from "@/components/journey/phase-chip"
 import { JOURNEY_PHASE_CONFIG } from "@/lib/journey"
 import type { JourneyPhase, PatientNote } from "@/lib/types"
+import { weeklyContactCounts, cadenceStatus, type CadenceStatus } from "@/lib/engagement"
 
 type RiskFilter = "all" | "1" | "2" | "3"
 type PhaseFilter = "all" | JourneyPhase
 
+const CADENCE_CHIP: Record<CadenceStatus, { label: string; className: string }> = {
+  multiple: { label: "2+ contacts this week", className: "border-emerald-300 bg-emerald-50 text-emerald-700" },
+  single: { label: "1 contact this week", className: "border-amber-300 bg-amber-50 text-amber-700" },
+  none: { label: "No contact this week", className: "border-destructive/40 text-destructive" },
+}
+
 export function NavigatorPatients() {
   const { navigateTo, currentUser } = useRole()
-  const { patients, navigators, addNote, getPatientNotes, lastAssignedPatientId } = useDemoData()
+  const { patients, navigators, addNote, getPatientNotes, lastAssignedPatientId, notes, timeLogs, appointments } = useDemoData()
 
   // Resolve the logged-in navigator (fall back to first for safety)
   const currentNavigator = navigators.find((n) => n.id === currentUser?.id) || navigators[0]
@@ -194,6 +201,10 @@ export function NavigatorPatients() {
                     ),
                   )
                   const contactWarning = daysSinceContact > 14
+                  const cadence = cadenceStatus(
+                    weeklyContactCounts(patient.id, notes, timeLogs, appointments, 1, new Date(now)),
+                  )
+                  const cadenceChip = CADENCE_CHIP[cadence]
 
                   return (
                     <div
@@ -232,7 +243,12 @@ export function NavigatorPatients() {
                           <p className="text-xs text-muted-foreground">
                             {patient.chartNumber} · {patient.healthPlan}
                           </p>
-                          <PhaseChip patient={patient} compact className="mt-1" />
+                          <div className="mt-1 flex flex-wrap items-center gap-1">
+                            <PhaseChip patient={patient} compact />
+                            <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", cadenceChip.className)}>
+                              {cadenceChip.label}
+                            </Badge>
+                          </div>
                         </div>
                       </div>
 

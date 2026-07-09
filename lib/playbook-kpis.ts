@@ -10,7 +10,9 @@ import type {
   ChargeSlip,
   IntakeRecord,
   Navigator,
+  NavigatorTask,
   Patient,
+  PatientNote,
   Payer,
   PayerConfig,
   Referral,
@@ -19,6 +21,8 @@ import type {
 import { dailyBillingSubmittedRate } from "./charge-slips"
 import { computeNavigatorProductivity } from "./navigator-productivity"
 import { computeRevenue } from "./executive-metrics"
+import { localDateOf } from "./task-engine"
+import { weeklyContactCounts, cadenceStatus } from "./engagement"
 
 export interface PlaybookKpi {
   id: string
@@ -47,6 +51,9 @@ export interface PlaybookKpiInput {
   payers?: Payer[]
   /** Optional Patient-Agreement billing gate set (playbook §4) */
   signedContractPatientIds?: Set<string>
+  /** Gellert ops blitz — enables the missed-appointment-recovery + weekly-contact KPIs */
+  navigatorTasks?: NavigatorTask[]
+  notes?: PatientNote[]
 }
 
 const KPI_WINDOW_DAYS = 14
@@ -71,6 +78,8 @@ export function computePlaybookKpis(input: PlaybookKpiInput): PlaybookKpi[] {
     intakeRecords,
     payers,
     signedContractPatientIds,
+    navigatorTasks,
+    notes,
   } = input
 
   const kpis: PlaybookKpi[] = []
@@ -157,6 +166,29 @@ export function computePlaybookKpis(input: PlaybookKpiInput): PlaybookKpi[] {
     detail: `${noShows} of ${appointments.length} appointments`,
   })
 
+  if (navigatorTasks) {
+    const recoveryTasks = navigatorTasks.filter((t) => t.type === "no_show_recovery")
+    const doneRecoveryTasks = recoveryTasks.filter((t) => t.status === "done")
+    const sameDayRecovered = doneRecoveryTasks.filter(
+      (t) => t.completedAt && localDateOf(t.completedAt) === localDateOf(t.dueAt)
+    )
+    kpis.push({
+      id: "missed-appointment-recovery",
+      label: "Missed-appointment same-day recovery",
+      status: "computable",
+      value: doneRecoveryTasks.length > 0 ? pct(sameDayRecovered.length, doneRecoveryTasks.length) : "—",
+      unit: doneRecoveryTasks.length > 0 ? "%" : undefined,
+      detail: `${sameDayRecovered.length} of ${doneRecoveryTasks.length} completed no-show recovery tasks closed same-day (SOP 3.10)`,
+    })
+  } else {
+    kpis.push({
+      id: "missed-appointment-recovery",
+      label: "Missed-appointment same-day recovery",
+      status: "placeholder",
+      dependency: "navigatorTasks — pass the navigatorTasks slice to compute",
+    })
+  }
+
   const now = Date.now()
   const last30 = adverseEvents.filter((e) => now - Date.parse(e.startDate) <= 30 * MS_DAY).length
   const prior30 = adverseEvents.filter((e) => {
@@ -172,6 +204,29 @@ export function computePlaybookKpis(input: PlaybookKpiInput): PlaybookKpi[] {
     value: last30,
     detail: `${delta >= 0 ? "+" : ""}${delta} vs prior 30 days · ${currentlyEd} currently in ED`,
   })
+
+  if (notes) {
+    const nowDate = new Date(now)
+    const multiple = activePatients.filter(
+      (p) =>
+        cadenceStatus(weeklyContactCounts(p.id, notes, timeLogs, appointments, 1, nowDate)) === "multiple"
+    )
+    kpis.push({
+      id: "weekly-contact",
+      label: "Weekly-contact cadence",
+      status: "computable",
+      value: activePatients.length > 0 ? pct(multiple.length, activePatients.length) : "—",
+      unit: activePatients.length > 0 ? "%" : undefined,
+      detail: `${multiple.length} of ${activePatients.length} active patients with 2+ contact days this week — no target set — playbook ⚑`,
+    })
+  } else {
+    kpis.push({
+      id: "weekly-contact",
+      label: "Weekly-contact cadence",
+      status: "placeholder",
+      dependency: "notes — pass the notes slice to compute (no target % set — playbook ⚑)",
+    })
+  }
 
   if (intakeRecords && payers) {
     const revenue = computeRevenue(

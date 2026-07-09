@@ -233,6 +233,23 @@ const medicalAppointmentTemplate: NoteTemplate = {
   manualSection: "Manual §3 — Medical Appointments",
   fields: [
     ...transitFields(),
+    {
+      id: "in-transit-coaching",
+      label: "In-transit coaching delivered",
+      type: "multi-select",
+      options: [
+        "Connection — rapport check-in",
+        "Preparation — what to expect",
+        "Education — condition basics",
+        "Reinforcement — adherence importance",
+      ],
+      required: false,
+      section: "Transit",
+      showIf: { fieldId: "transport-provided", equals: true },
+      narrativePrefix: " In-transit coaching included: ",
+      narrativeJoiner: "; ",
+      narrativeSuffix: ".",
+    },
     // --- Encounter ----------------------------------------------------------
     {
       id: "arrival-time",
@@ -319,6 +336,23 @@ const behavioralHealthTemplate: NoteTemplate = {
   manualSection: "Manual §4 — Behavioral Health Appointments",
   fields: [
     ...transitFields(),
+    {
+      id: "in-transit-coaching",
+      label: "In-transit coaching delivered",
+      type: "multi-select",
+      options: [
+        "Connection — rapport check-in",
+        "Preparation — what to expect",
+        "Education — condition basics",
+        "Reinforcement — adherence importance",
+      ],
+      required: false,
+      section: "Transit",
+      showIf: { fieldId: "transport-provided", equals: true },
+      narrativePrefix: " In-transit coaching included: ",
+      narrativeJoiner: "; ",
+      narrativeSuffix: ".",
+    },
     // --- Encounter ----------------------------------------------------------
     {
       id: "arrival-time",

@@ -4,9 +4,10 @@ import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { 
-  AlertTriangle, 
+import {
+  AlertTriangle,
   CheckCircle2,
   Clock,
   ChevronDown,
@@ -15,17 +16,51 @@ import {
   User,
   Users,
   Building2,
-  Phone
+  Phone,
+  PhoneCall,
+  CalendarCheck,
+  MessageCircle,
+  HeartPulse,
+  Stethoscope,
+  Pill,
+  BookOpen,
+  ListChecks,
+  XCircle,
+  Sparkles,
+  type LucideIcon,
 } from "lucide-react"
+import { toast } from "sonner"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { cn } from "@/lib/utils"
-import type { AdverseEvent } from "@/lib/types"
+import { TASK_TYPE_CONFIG } from "@/lib/task-engine"
+import { pcpDueStatus } from "@/lib/journey"
+import { localDateOf } from "@/lib/task-engine"
+import type { AdverseEvent, NavigatorTask } from "@/lib/types"
+
+const TASK_ICONS: Record<string, LucideIcon> = {
+  PhoneCall,
+  CalendarCheck,
+  AlertTriangle,
+  MessageCircle,
+  HeartPulse,
+  Stethoscope,
+  Pill,
+  BookOpen,
+}
+
+const PCP_STATUS_STYLE: Record<string, string> = {
+  ok: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  due_soon: "bg-amber-100 text-amber-700 border-amber-200",
+  overdue: "bg-destructive/10 text-destructive border-destructive/20",
+}
 
 export function AdverseEventsView() {
-  const { patients, navigators, adverseEvents, getUser, getSupervisor } = useDemoData()
+  const { patients, navigators, adverseEvents, navigatorTasks, getUser, getSupervisor, generateAdverseEventTasks, completeTask, dismissTask } = useDemoData()
   const { navigateTo, currentUser } = useRole()
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set())
+  const [dismissingTaskId, setDismissingTaskId] = useState<string | null>(null)
+  const [dismissNote, setDismissNote] = useState("")
 
   // Filter to the current supervisor's team patients
   const teamNavigators = navigators.filter(nav => nav.supervisorId === currentUser?.id)
@@ -81,6 +116,140 @@ export function AdverseEventsView() {
     const patient = patients.find(p => p.id === patientId)
     const navigator = patient ? navigators.find(n => n.id === patient.assignedNavigator) : null
     return { patient, navigator }
+  }
+
+  const handleGenerateTasks = (event: AdverseEvent, patientName: string) => {
+    if (!currentUser) return
+    const count = generateAdverseEventTasks(event.id, currentUser.id, currentUser.name)
+    if (count > 0) {
+      toast.success(`Generated ${count} response task${count === 1 ? "" : "s"} for ${patientName}`)
+    } else {
+      toast.info("No new response tasks to generate", { description: "This event's task set is already up to date." })
+    }
+  }
+
+  const handleCompleteTask = (task: NavigatorTask, patientName: string) => {
+    if (!currentUser) return
+    completeTask(task.id, currentUser.id)
+    toast.success(`${TASK_TYPE_CONFIG[task.type].label} marked done for ${patientName}`)
+  }
+
+  const handleDismissTask = (task: NavigatorTask) => {
+    if (!currentUser || dismissNote.trim().length === 0) return
+    dismissTask(task.id, currentUser.id, dismissNote.trim())
+    toast.success(`${TASK_TYPE_CONFIG[task.type].label} dismissed`)
+    setDismissingTaskId(null)
+    setDismissNote("")
+  }
+
+  const renderResponseTasks = (event: AdverseEvent, patientName: string) => {
+    const eventTasks = navigatorTasks
+      .filter(t => t.adverseEventId === event.id)
+      .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime())
+
+    return (
+      <div className="space-y-3">
+        <h4 className="font-semibold text-card-foreground flex items-center gap-2">
+          <ListChecks className="h-4 w-4" />
+          Response Tasks
+        </h4>
+        {eventTasks.length === 0 ? (
+          <div className="flex items-center justify-between rounded-lg border border-dashed border-border p-3">
+            <p className="text-sm text-muted-foreground">No response tasks generated yet for this event.</p>
+            <Button
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                handleGenerateTasks(event, patientName)
+              }}
+            >
+              <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+              Generate response tasks
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {eventTasks.map((task) => {
+              const config = TASK_TYPE_CONFIG[task.type]
+              const Icon = TASK_ICONS[config.icon] ?? ListChecks
+              const isPcp = task.type === "post_discharge_pcp"
+              const pcp = isPcp ? pcpDueStatus(localDateOf(task.dueAt)) : null
+              const isDismissing = dismissingTaskId === task.id
+
+              return (
+                <div key={task.id} className="rounded-lg border border-border p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", config.color)}>
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-card-foreground truncate">{config.label}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Due {new Date(task.dueAt).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isPcp && pcp && (
+                        <Badge variant="outline" className={cn("text-xs", PCP_STATUS_STYLE[pcp.status])}>
+                          {pcp.status === "overdue"
+                            ? `${Math.abs(pcp.businessDaysRemaining)}bd overdue`
+                            : `${pcp.businessDaysRemaining}bd left`}
+                        </Badge>
+                      )}
+                      <Badge
+                        variant={task.status === "open" ? "outline" : task.status === "done" ? "default" : "secondary"}
+                        className="text-xs capitalize"
+                      >
+                        {task.status}
+                      </Badge>
+                      {task.status === "open" && (
+                        <>
+                          <Button size="sm" variant="outline" onClick={() => handleCompleteTask(task, patientName)}>
+                            <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                            Complete
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setDismissingTaskId(isDismissing ? null : task.id)
+                              setDismissNote("")
+                            }}
+                          >
+                            <XCircle className="h-3.5 w-3.5 mr-1" />
+                            Dismiss
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {task.note && task.status !== "open" && (
+                    <p className="text-xs text-muted-foreground pl-10">{task.note}</p>
+                  )}
+                  {isDismissing && (
+                    <div className="space-y-2 rounded-md border border-border bg-muted/30 p-2.5">
+                      <Textarea
+                        placeholder="Reason for dismissing (required)..."
+                        value={dismissNote}
+                        onChange={(e) => setDismissNote(e.target.value)}
+                        className="min-h-[60px] resize-none bg-card"
+                      />
+                      <div className="flex justify-end">
+                        <Button size="sm" onClick={() => handleDismissTask(task)} disabled={dismissNote.trim().length === 0}>
+                          Confirm Dismiss
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
   }
 
   const renderEventCard = (event: AdverseEvent) => {
@@ -272,6 +441,11 @@ export function AdverseEventsView() {
                       </Button>
                     )}
                   </div>
+                </div>
+
+                {/* Response Tasks */}
+                <div className="mt-6 border-t border-border pt-4">
+                  {renderResponseTasks(event, patient?.name ?? "the patient")}
                 </div>
               </div>
             </CardContent>

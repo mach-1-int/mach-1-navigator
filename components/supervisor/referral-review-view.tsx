@@ -26,6 +26,7 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Separator } from "@/components/ui/separator"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Database,
   FileCheck,
@@ -46,6 +47,9 @@ import {
   PhoneCall,
   TrendingUp,
   Filter,
+  ShieldCheck,
+  MessageSquare,
+  CalendarClock,
 } from "lucide-react"
 import { toast } from "sonner"
 import { useDemoData } from "@/lib/demo-data-context"
@@ -57,13 +61,14 @@ import {
   isTerminalReferralStatus,
   referralStatusMeta,
 } from "@/lib/referral-pipeline"
-import type { Patient, Referral } from "@/lib/types"
+import type { Patient, ProviderCommunication, Referral } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { AMDSourceIndicator } from "@/components/amd-source-indicator"
 import { HL7IngestDialog } from "@/components/supervisor/hl7-ingest-dialog"
 import { EligibilityChecklist } from "@/components/supervisor/eligibility-checklist"
 import { OutreachLog, OutreachSlaChip } from "@/components/supervisor/outreach-log"
 import { ReferralFunnelView } from "@/components/supervisor/referral-funnel"
+import { ProviderCommDialog } from "@/components/supervisor/provider-comm-dialog"
 
 // Rotation state lives at module level in referral-ingestion, so a single
 // shared adapter instance is fine across re-renders.
@@ -99,7 +104,17 @@ function getRiskBadge(riskScore: 1 | 2 | 3) {
 }
 
 export function ReferralReviewView() {
-  const { navigators, patients, referrals, appointments, acceptReferral, ingestReferral } = useDemoData()
+  const {
+    navigators,
+    patients,
+    referrals,
+    appointments,
+    providerCommunications,
+    acceptReferral,
+    ingestReferral,
+    confirmDecisionCapacity,
+    scheduleIntakeVisit,
+  } = useDemoData()
   const { navigateTo, currentUser, navigation } = useRole()
   const [selectedReferralId, setSelectedReferralId] = useState<string | null>(
     navigation.params?.referralId ?? null
@@ -311,12 +326,15 @@ export function ReferralReviewView() {
                   referral={selectedReferral}
                   patients={patients}
                   appointments={appointments}
+                  providerCommunications={providerCommunications}
                   form={form}
                   onSubmit={onSubmit}
                   isSubmitting={isSubmitting}
                   teamNavigators={teamNavigators}
                   onMatchAssign={() => navigateTo("intake-workspace", { referralId: selectedReferral.id })}
                   onViewPatient={(patientId) => navigateTo("patient-detail", { patientId })}
+                  confirmDecisionCapacity={confirmDecisionCapacity}
+                  scheduleIntakeVisit={scheduleIntakeVisit}
                 />
               </div>
             ) : (
@@ -523,22 +541,28 @@ function StatusPanel({
   referral,
   patients,
   appointments,
+  providerCommunications,
   form,
   onSubmit,
   isSubmitting,
   teamNavigators,
   onMatchAssign,
   onViewPatient,
+  confirmDecisionCapacity,
+  scheduleIntakeVisit,
 }: {
   referral: Referral
   patients: Patient[]
   appointments: { id: string; date: string; time: string }[]
+  providerCommunications: ProviderCommunication[]
   form: UseFormReturn<IntakeFormValues>
   onSubmit: (data: IntakeFormValues) => Promise<void>
   isSubmitting: boolean
   teamNavigators: { id: string; name: string; patientCount: number }[]
   onMatchAssign: () => void
   onViewPatient: (patientId: string) => void
+  confirmDecisionCapacity: (referralId: string, by: string) => void
+  scheduleIntakeVisit: (referralId: string, date: string, time: string, navigatorId: string) => void
 }) {
   switch (referral.status) {
     case "received":
@@ -552,34 +576,106 @@ function StatusPanel({
         <IntakeConversionForm
           referral={referral}
           appointments={appointments}
+          providerCommunications={providerCommunications}
           form={form}
           onSubmit={onSubmit}
           isSubmitting={isSubmitting}
           teamNavigators={teamNavigators}
           onMatchAssign={onMatchAssign}
+          confirmDecisionCapacity={confirmDecisionCapacity}
+          scheduleIntakeVisit={scheduleIntakeVisit}
         />
       )
     default:
-      return <ClosedReferralSummary referral={referral} patients={patients} onViewPatient={onViewPatient} />
+      return (
+        <ClosedReferralSummary
+          referral={referral}
+          patients={patients}
+          providerCommunications={providerCommunications}
+          onViewPatient={onViewPatient}
+        />
+      )
   }
+}
+
+// ============================================================================
+// COMMUNICATIONS HISTORY STRIP
+// ============================================================================
+
+const COMM_TYPE_SHORT_LABELS: Record<ProviderCommunication["type"], string> = {
+  intake_notification: "Intake",
+  exit_notification: "Exit",
+  ineligible_notification: "Ineligible",
+  unreachable_notification: "Unreachable",
+}
+
+function CommunicationsHistoryStrip({
+  referral,
+  providerCommunications,
+}: {
+  referral: Referral
+  providerCommunications: ProviderCommunication[]
+}) {
+  const comms = providerCommunications
+    .filter((c) => c.referralId === referral.id || (referral.patientId && c.patientId === referral.patientId))
+    .sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime())
+
+  if (comms.length === 0) return null
+
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+        <MessageSquare className="h-4 w-4" />
+        Communications
+      </p>
+      <div className="space-y-1.5">
+        {comms.map((comm) => (
+          <div key={comm.id} className="rounded-lg bg-muted/50 p-2.5 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium text-card-foreground truncate">{comm.subject}</span>
+              <Badge variant="outline" className="text-[10px] shrink-0">
+                {COMM_TYPE_SHORT_LABELS[comm.type]}
+              </Badge>
+            </div>
+            <p className="text-muted-foreground mt-0.5">
+              {new Date(comm.sentAt).toLocaleString()} · {comm.sentByName}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 // ============================================================================
 // TERMINAL STATUS — READ-ONLY SUMMARY
 // ============================================================================
 
+function closedReferralCommType(referral: Referral): ProviderCommunication["type"] {
+  if (referral.closeReason === "ineligible") return "ineligible_notification"
+  if (referral.closeReason === "unreachable") return "unreachable_notification"
+  return "exit_notification"
+}
+
 function ClosedReferralSummary({
   referral,
   patients,
+  providerCommunications,
   onViewPatient,
 }: {
   referral: Referral
   patients: Patient[]
+  providerCommunications: ProviderCommunication[]
   onViewPatient: (patientId: string) => void
 }) {
   const meta = referralStatusMeta(referral.status)
   const convertedPatient = referral.patientId ? patients.find((p) => p.id === referral.patientId) : undefined
   const isSuccess = referral.status === "converted"
+  const [commDialogOpen, setCommDialogOpen] = useState(false)
+  const commType = closedReferralCommType(referral)
+  // declined referrals aren't a defined ProviderCommunication type — the dialog
+  // only applies to ineligible/unreachable (playbook Phase-1 closes)
+  const canNotify = referral.closeReason === "ineligible" || referral.closeReason === "unreachable"
 
   return (
     <Card className="bg-card overflow-hidden flex flex-col">
@@ -668,19 +764,39 @@ function ClosedReferralSummary({
 
           <div
             className={cn(
-              "flex items-center gap-2 rounded-lg border p-3",
+              "flex items-center justify-between gap-2 rounded-lg border p-3",
               referral.providerNotifiedAt
                 ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/20"
                 : "border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-950/20"
             )}
           >
-            <Send className={cn("h-4 w-4 shrink-0", referral.providerNotifiedAt ? "text-emerald-600" : "text-amber-600")} />
-            <p className="text-xs text-muted-foreground">
-              {referral.providerNotifiedAt
-                ? `Referring provider notified ${new Date(referral.providerNotifiedAt).toLocaleString()}`
-                : "Referring provider notification pending"}
-            </p>
+            <div className="flex items-center gap-2">
+              <Send className={cn("h-4 w-4 shrink-0", referral.providerNotifiedAt ? "text-emerald-600" : "text-amber-600")} />
+              <p className="text-xs text-muted-foreground">
+                {referral.providerNotifiedAt
+                  ? `Referring provider notified ${new Date(referral.providerNotifiedAt).toLocaleString()}`
+                  : "Referring provider notification pending"}
+              </p>
+            </div>
+            {canNotify && (
+              <Button size="sm" variant="outline" className="gap-1.5 shrink-0 bg-transparent" onClick={() => setCommDialogOpen(true)}>
+                <Send className="h-3.5 w-3.5" />
+                {referral.providerNotifiedAt ? "Resend" : "Notify"}
+              </Button>
+            )}
           </div>
+
+          {canNotify && (
+            <ProviderCommDialog
+              open={commDialogOpen}
+              onOpenChange={setCommDialogOpen}
+              type={commType}
+              entity={{ referralId: referral.id }}
+              referral={referral}
+            />
+          )}
+
+          <CommunicationsHistoryStrip referral={referral} providerCommunications={providerCommunications} />
 
           {isSuccess && (
             <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
@@ -708,25 +824,54 @@ function ClosedReferralSummary({
 function IntakeConversionForm({
   referral,
   appointments,
+  providerCommunications,
   form,
   onSubmit,
   isSubmitting,
   teamNavigators,
   onMatchAssign,
+  confirmDecisionCapacity,
+  scheduleIntakeVisit,
 }: {
   referral: Referral
   appointments: { id: string; date: string; time: string }[]
+  providerCommunications: ProviderCommunication[]
   form: UseFormReturn<IntakeFormValues>
   onSubmit: (data: IntakeFormValues) => Promise<void>
   isSubmitting: boolean
   teamNavigators: { id: string; name: string; patientCount: number }[]
   onMatchAssign: () => void
+  confirmDecisionCapacity: (referralId: string, by: string) => void
+  scheduleIntakeVisit: (referralId: string, date: string, time: string, navigatorId: string) => void
 }) {
+  const { currentUser } = useRole()
   // Seeded intake_scheduled referrals may carry no intakeAppointmentId —
   // fall back to a generic "on the books" note when the link is missing
   const intakeAppointment = referral.intakeAppointmentId
     ? appointments.find((a) => a.id === referral.intakeAppointmentId)
     : undefined
+
+  const [scheduleDate, setScheduleDate] = useState("")
+  const [scheduleTime, setScheduleTime] = useState("")
+  const [scheduleNavigator, setScheduleNavigator] = useState("")
+
+  const capacityConfirmed = !!referral.decisionCapacityConfirmed
+
+  const handleConfirmCapacity = () => {
+    if (!currentUser) return
+    confirmDecisionCapacity(referral.id, currentUser.id)
+    toast.success("Decision-making capacity confirmed", {
+      description: "SOP 1.7 — Intake 1 can now be scheduled.",
+    })
+  }
+
+  const handleScheduleIntake = () => {
+    if (!scheduleDate || !scheduleTime || !scheduleNavigator) {
+      toast.error("Date, time, and navigator are required to schedule Intake 1")
+      return
+    }
+    scheduleIntakeVisit(referral.id, scheduleDate, scheduleTime, scheduleNavigator)
+  }
 
   return (
     <Card className="bg-card overflow-hidden flex flex-col">
@@ -746,7 +891,35 @@ function IntakeConversionForm({
       </CardHeader>
       <ScrollArea className="flex-1">
         <CardContent className="pt-0 space-y-4">
-          {referral.status === "intake_scheduled" && (
+          {/* SOP 1.7 — decision-making capacity gate, required before Intake 1 scheduling */}
+          <div
+            className={cn(
+              "rounded-lg border p-3 space-y-2",
+              capacityConfirmed
+                ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/20"
+                : "border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-950/20"
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id={`capacity-${referral.id}`}
+                checked={capacityConfirmed}
+                disabled={capacityConfirmed}
+                onCheckedChange={(checked) => checked && handleConfirmCapacity()}
+              />
+              <label htmlFor={`capacity-${referral.id}`} className="text-sm font-medium text-card-foreground flex items-center gap-1.5">
+                <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
+                Confirm decision-making capacity (SOP 1.7)
+              </label>
+            </div>
+            <p className="text-xs text-muted-foreground pl-6">
+              {capacityConfirmed
+                ? `Confirmed ${new Date(referral.decisionCapacityConfirmed!.confirmedAt).toLocaleString()}`
+                : "Required before Intake 1 can be scheduled."}
+            </p>
+          </div>
+
+          {referral.status === "intake_scheduled" ? (
             <div className="flex items-center gap-2 rounded-lg border border-cyan-200 bg-cyan-50/50 dark:border-cyan-900 dark:bg-cyan-950/20 p-3">
               <Calendar className="h-4 w-4 text-cyan-600 shrink-0" />
               <p className="text-xs text-muted-foreground">
@@ -755,12 +928,46 @@ function IntakeConversionForm({
                   : "Intake 1 is on the books — appointment details pending sync"}
               </p>
             </div>
+          ) : (
+            <div className={cn("rounded-lg border p-3 space-y-2", !capacityConfirmed && "opacity-60")}>
+              <p className="text-sm font-semibold text-card-foreground flex items-center gap-1.5">
+                <CalendarClock className="h-4 w-4" />
+                Schedule Intake 1
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <Input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} disabled={!capacityConfirmed} />
+                <Input type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} disabled={!capacityConfirmed} />
+              </div>
+              <Select value={scheduleNavigator} onValueChange={setScheduleNavigator} disabled={!capacityConfirmed}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Assign navigator…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {teamNavigators.map((nav) => (
+                    <SelectItem key={nav.id} value={nav.id}>
+                      {nav.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                className="w-full gap-2 bg-transparent"
+                disabled={!capacityConfirmed}
+                onClick={handleScheduleIntake}
+              >
+                <CalendarClock className="h-4 w-4" />
+                Schedule Intake 1
+              </Button>
+            </div>
           )}
 
           <Button variant="outline" className="w-full gap-2 bg-transparent" onClick={onMatchAssign}>
             <Users className="h-4 w-4" />
             Match &amp; Assign (Smart Matching)
           </Button>
+
+          <CommunicationsHistoryStrip referral={referral} providerCommunications={providerCommunications} />
 
           <Separator />
 

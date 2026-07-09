@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { StatCard } from "@/components/dashboard/stat-card"
 import { Badge } from "@/components/ui/badge"
@@ -34,6 +35,7 @@ import {
   Siren,
   X,
   PhoneCall,
+  ListChecks,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState } from "react"
@@ -48,13 +50,19 @@ import { telenavCheckInStatus } from "@/lib/journey"
 import { ExternalLink } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { PatientNote } from "@/lib/types"
+import { overdueTasks, localDateOf, TASK_TYPE_CONFIG } from "@/lib/task-engine"
 
 export function NavigatorDashboard() {
   const { navigateTo, currentUser } = useRole()
-  const { patients, navigators, addNote, getPatientNotes, lastAssignedPatientId, getNudgesForNavigator, markDirectMessageRead, triggerSOS } = useDemoData()
+  const { patients, navigators, navigatorTasks, addNote, getPatientNotes, lastAssignedPatientId, getNudgesForNavigator, markDirectMessageRead, triggerSOS, generateDueTasks } = useDemoData()
   const { toast } = useToast()
   // Use the logged-in user if available, otherwise fall back to first navigator
   const currentNavigator = navigators.find(n => n.id === currentUser?.id) || navigators[0]
+
+  useEffect(() => {
+    generateDueTasks()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   // Sort patients to show newly assigned first
   const myPatients = patients
     .filter((p) => p.assignedNavigator === currentNavigator.id)
@@ -153,6 +161,16 @@ export function NavigatorDashboard() {
   const newlyAssignedPatient = lastAssignedPatientId
     ? myPatients.find(p => p.id === lastAssignedPatientId)
     : null
+
+  // Tasks due today (Gellert ops blitz — overdue is DATE-based, never dueAt < now)
+  const myOpenTasks = navigatorTasks.filter((t) => t.navigatorId === currentNavigator.id && t.status === "open")
+  const myOverdueTasks = overdueTasks(myOpenTasks)
+  const overdueTaskIds = new Set(myOverdueTasks.map((t) => t.id))
+  const today = localDateOf(new Date())
+  const tasksDueToday = [
+    ...myOverdueTasks,
+    ...myOpenTasks.filter((t) => !overdueTaskIds.has(t.id) && localDateOf(t.dueAt) === today),
+  ].sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt))
 
   return (
     <div className="space-y-6">
@@ -391,6 +409,49 @@ export function NavigatorDashboard() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Tasks due today strip */}
+      {tasksDueToday.length > 0 && (
+        <div className="rounded-lg border border-border bg-secondary/30 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ListChecks className="h-4 w-4 text-primary" />
+              <p className="font-medium text-card-foreground">
+                {tasksDueToday.length} task{tasksDueToday.length === 1 ? "" : "s"} due today
+                {myOverdueTasks.length > 0 ? ` — ${myOverdueTasks.length} overdue` : ""}
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => navigateTo("tasks")}>
+              View all
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
+          <div className="mt-3 space-y-1.5">
+            {tasksDueToday.slice(0, 3).map((task) => {
+              const patient = patients.find((p) => p.id === task.patientId)
+              const config = TASK_TYPE_CONFIG[task.type]
+              const isOverdue = overdueTaskIds.has(task.id)
+              return (
+                <div
+                  key={task.id}
+                  onClick={() => navigateTo("patient-detail", { patientId: task.patientId })}
+                  className="flex cursor-pointer items-center justify-between rounded-md border bg-card px-3 py-2 text-sm hover:bg-secondary/50"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-medium truncate">{patient?.name ?? task.patientId}</span>
+                    <span className="text-xs text-muted-foreground truncate">{config.label}</span>
+                  </div>
+                  {isOverdue && (
+                    <Badge variant="destructive" className="text-[10px] shrink-0">
+                      Overdue
+                    </Badge>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Day-Close / Charge Slips */}
       <DayClosePanel navigatorId={currentNavigator.id} navigatorName={currentNavigator.name} />

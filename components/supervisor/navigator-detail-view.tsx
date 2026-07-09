@@ -34,6 +34,7 @@ import { computeNavigatorProductivity, computeDayCloseStreak } from "@/lib/navig
 import { computeWindshieldTime } from "@/lib/zones"
 import { geo } from "@/lib/geo"
 import { cn } from "@/lib/utils"
+import { NavigatorOnboardingCard } from "@/components/supervisor/navigator-onboarding-card"
 
 const PRODUCTIVITY_WINDOW_DAYS = 14
 
@@ -291,6 +292,9 @@ export function NavigatorDetailView({ navigatorId }: NavigatorDetailViewProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* Developmental Record (onboarding, shadowing, certification) */}
+      <NavigatorOnboardingCard navigatorId={navigatorId} />
 
       {/* Tabs for Details */}
       <Tabs defaultValue="patients" className="space-y-4">

@@ -46,6 +46,12 @@ const PROVIDER_TYPES_BY_ENCOUNTER: Partial<Record<EncounterType, Provider["type"
   medication_assistance: ["pharmacy"],
 }
 
+/** "Name Dose — frequency" joined list, for the med-assist template's current-med recall */
+function formatCurrentMedications(patient: Patient | undefined): string | undefined {
+  if (!patient || patient.medications.length === 0) return undefined
+  return patient.medications.map((m) => `${m.name} ${m.dosage} — ${m.frequency}`).join("; ")
+}
+
 function formatProviderAddress(provider: Provider): string {
   const { street, city, state, zip } = provider.address
   return `${street}, ${city}, ${state} ${zip}`
@@ -165,6 +171,19 @@ export function resolveTemplateAutoFill(
 
     if (value === undefined || value === null || value === "") continue
     resolved[field.id] = { value, source }
+  }
+
+  // Additive: medication-assistance template's activity field recalls the
+  // patient's CURRENT medication list ("Name Dose — frequency", joined) so
+  // the navigator starts from what's on chart instead of a blank narrative.
+  if (template.id === "template-gellert-med-assist" && !resolved["pillbox-activity"]) {
+    const currentMeds = formatCurrentMedications(ctx.patient)
+    if (currentMeds) {
+      resolved["pillbox-activity"] = {
+        value: `Current medications on file: ${currentMeds}.`,
+        source: "standing-facts",
+      }
+    }
   }
 
   return resolved

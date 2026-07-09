@@ -65,6 +65,7 @@ import { GraduationPanel } from "@/components/journey/graduation-panel"
 import { IntakeChecklist } from "@/components/intake/intake-checklist"
 import { NotesSplitView } from "@/components/notes/notes-split-view"
 import { ExpandableNoteList } from "@/components/notes/expandable-note-card"
+import { MedReconciliationCard } from "@/components/medications/med-reconciliation-card"
 import type { Patient, AdverseEvent, Appointment, PatientNote } from "@/lib/types"
 
 // Extended patient data with contact info (mocked)
@@ -991,6 +992,9 @@ export function PatientProfile({ patientId }: PatientProfileProps) {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Medication Reconciliation */}
+            <MedReconciliationCard patientId={patient.id} />
           </TabsContent>
 
           {/* Care Plan Tab */}

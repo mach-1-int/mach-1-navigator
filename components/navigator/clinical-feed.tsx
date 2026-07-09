@@ -1,6 +1,6 @@
 "use client"
 
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,10 +24,17 @@ import {
   ChevronRight,
   Clock,
   User,
-  Pin
+  Pin,
+  TriangleAlert,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { PatientNote } from "@/lib/types"
+import { EscalationDialog } from "@/components/escalations/escalation-dialog"
+
+const ESCALATION_STATUS_STYLE: Record<string, string> = {
+  open: "bg-destructive/10 text-destructive border-destructive/20",
+  acknowledged: "bg-amber-100 text-amber-700 border-amber-200",
+}
 
 const noteTypeConfig: Record<PatientNote["type"], { icon: typeof FileText; label: string; color: string }> = {
   general: { icon: FileText, label: "General", color: "bg-muted text-muted-foreground" },
@@ -40,13 +47,18 @@ const noteTypeConfig: Record<PatientNote["type"], { icon: typeof FileText; label
 
 export function ClinicalFeed() {
   const { navigateTo } = useRole()
-  const { notes, patients, navigators } = useDemoData()
+  const { notes, patients, navigators, escalations } = useDemoData()
   const currentNavigator = navigators[0] // Emily Rodriguez
   const myPatients = patients.filter((p) => p.assignedNavigator === currentNavigator.id)
   const myPatientIds = new Set(myPatients.map(p => p.id))
-  
+  const myEscalations = escalations
+    .filter((e) => e.navigatorId === currentNavigator.id)
+    .sort((a, b) => new Date(b.raisedAt).getTime() - new Date(a.raisedAt).getTime())
+  const myOpenEscalations = myEscalations.filter((e) => e.status !== "resolved")
+
   const [searchQuery, setSearchQuery] = useState("")
   const [filterType, setFilterType] = useState<PatientNote["type"] | "all">("all")
+  const [escalationDialogOpen, setEscalationDialogOpen] = useState(false)
 
   // Get all notes for my patients, sorted by date
   const myNotes = notes
@@ -102,6 +114,50 @@ export function ClinicalFeed() {
 
   return (
     <div className="space-y-6">
+      {/* Escalations */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <TriangleAlert className="h-4 w-4 text-destructive" />
+                My Escalations
+                {myOpenEscalations.length > 0 && (
+                  <Badge variant="destructive">{myOpenEscalations.length} open</Badge>
+                )}
+              </CardTitle>
+              <CardDescription>Raise a clinical concern to your supervisor</CardDescription>
+            </div>
+            <Button size="sm" onClick={() => setEscalationDialogOpen(true)}>
+              <TriangleAlert className="h-4 w-4 mr-1.5" />
+              Raise escalation
+            </Button>
+          </div>
+        </CardHeader>
+        {myEscalations.length > 0 && (
+          <CardContent className="pt-0 space-y-2">
+            {myEscalations.slice(0, 3).map((e) => {
+              const patient = patients.find((p) => p.id === e.patientId)
+              return (
+                <div key={e.id} className="flex items-center justify-between gap-2 rounded-lg border border-border p-2.5 text-sm">
+                  <div className="min-w-0">
+                    <span className="font-medium text-card-foreground">{patient?.name ?? e.patientId}</span>
+                    <span className="text-muted-foreground"> — {e.reason.replace(/_/g, " ")}</span>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={cn("text-xs shrink-0", ESCALATION_STATUS_STYLE[e.status] ?? "bg-emerald-100 text-emerald-700 border-emerald-200")}
+                  >
+                    {e.status}
+                  </Badge>
+                </div>
+              )
+            })}
+          </CardContent>
+        )}
+      </Card>
+      <EscalationDialog open={escalationDialogOpen} onOpenChange={setEscalationDialogOpen} roster={myPatients} />
+
       {/* Filters */}
       <Card>
         <CardContent className="p-4">

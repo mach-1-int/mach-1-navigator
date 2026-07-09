@@ -15,7 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { CalendarClock, CheckCircle2, ClipboardCheck, Send, UserX } from "lucide-react"
+import { CalendarClock, CheckCircle2, ClipboardCheck, FileText, Send, UserX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { useRole } from "@/lib/role-context"
@@ -26,7 +26,16 @@ import {
   isIntakeVisitComplete,
   pcpDueStatus,
 } from "@/lib/journey"
-import type { IntakeVisit } from "@/lib/types"
+import { documentForChecklistItem } from "@/lib/document-definitions"
+import { DocumentDialog } from "@/components/documents/document-dialog"
+import type { IntakeVisit, PatientDocument } from "@/lib/types"
+
+const DOCUMENT_STATUS_BADGES: Record<PatientDocument["status"], { label: string; className: string }> = {
+  not_started: { label: "Not started", className: "bg-slate-100 text-slate-600 border-slate-200" },
+  draft: { label: "Draft", className: "bg-amber-100 text-amber-700 border-amber-200" },
+  completed: { label: "Completed", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  signed: { label: "Signed", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+}
 
 const VISIT_STATUS_BADGES: Record<IntakeVisit["status"], { label: string; className: string }> = {
   not_scheduled: { label: "Not scheduled", className: "bg-slate-100 text-slate-600 border-slate-200" },
@@ -62,13 +71,18 @@ export function IntakeChecklist({ patientId }: { patientId: string }) {
     completeIntakeVisit,
     recordIntakeNoShow,
     notifyReferringProvider,
+    patientDocuments,
   } = useDemoData()
 
   const [noShowDialogVisit, setNoShowDialogVisit] = useState<1 | 2 | null>(null)
+  const [openDocId, setOpenDocId] = useState<string | null>(null)
 
   const patient = getPatient(patientId)
   const intake = getPatientIntake(patientId)
   if (!patient || !intake || !intake.intake1 || !intake.intake2) return null
+
+  const patientDocs = patientDocuments.filter((d) => d.patientId === patientId)
+  const openDoc = openDocId ? patientDocs.find((d) => d.id === openDocId) ?? null : null
 
   const byId = currentUser?.id ?? "system"
   const byName = currentUser?.name ?? "System"
@@ -137,27 +151,64 @@ export function IntakeChecklist({ patientId }: { patientId: string }) {
         )}
 
         <div className="space-y-2">
-          {data.checklist.map((item) => (
-            <div key={item.key} className="flex items-center gap-2">
-              <Checkbox
-                id={`intake${visit}-${item.key}`}
-                checked={item.done}
-                disabled={completed || patient.journeyPhase !== "intake"}
-                onCheckedChange={(checked) =>
-                  updateIntakeChecklistItem(patientId, visit, item.key, checked === true, byId, byName)
-                }
-              />
-              <label
-                htmlFor={`intake${visit}-${item.key}`}
-                className={cn(
-                  "text-sm cursor-pointer",
-                  item.done && "text-muted-foreground line-through",
-                )}
-              >
-                {item.label}
-              </label>
-            </div>
-          ))}
+          {data.checklist.map((item) => {
+            const docType = documentForChecklistItem(item.key)
+            const doc = docType ? patientDocs.find((d) => d.type === docType) : undefined
+
+            if (docType && doc) {
+              const badge = DOCUMENT_STATUS_BADGES[doc.status]
+              return (
+                <div key={item.key} className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <CheckCircle2
+                      className={cn(
+                        "h-4 w-4 shrink-0",
+                        item.done ? "text-emerald-600" : "text-muted-foreground/40",
+                      )}
+                    />
+                    <span className={cn("text-sm truncate", item.done && "text-muted-foreground")}>
+                      {item.label}
+                    </span>
+                    <Badge variant="outline" className={cn("shrink-0 text-[10px]", badge.className)}>
+                      {badge.label}
+                    </Badge>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 shrink-0"
+                    disabled={patient.journeyPhase !== "intake"}
+                    onClick={() => setOpenDocId(doc.id)}
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Open document
+                  </Button>
+                </div>
+              )
+            }
+
+            return (
+              <div key={item.key} className="flex items-center gap-2">
+                <Checkbox
+                  id={`intake${visit}-${item.key}`}
+                  checked={item.done}
+                  disabled={completed || patient.journeyPhase !== "intake"}
+                  onCheckedChange={(checked) =>
+                    updateIntakeChecklistItem(patientId, visit, item.key, checked === true, byId, byName)
+                  }
+                />
+                <label
+                  htmlFor={`intake${visit}-${item.key}`}
+                  className={cn(
+                    "text-sm cursor-pointer",
+                    item.done && "text-muted-foreground line-through",
+                  )}
+                >
+                  {item.label}
+                </label>
+              </div>
+            )
+          })}
         </div>
 
         {!completed && patient.journeyPhase === "intake" && (
@@ -278,6 +329,8 @@ export function IntakeChecklist({ patientId }: { patientId: string }) {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <DocumentDialog doc={openDoc} open={openDocId !== null} onOpenChange={(open) => !open && setOpenDocId(null)} />
       </CardContent>
     </Card>
   )

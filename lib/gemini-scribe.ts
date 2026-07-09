@@ -48,6 +48,7 @@ const MOCK_DATA: Record<string, unknown> = {
   "transport-provided": true,
   "pickup-time": "9:40AM",
   "pickup-location": "Patient's home",
+  "in-transit-coaching": ["Connection — rapport check-in", "Preparation — what to expect"],
   // Gellert - medical appointment
   "arrival-time": "10:05AM",
   "provider-guidance": "Continue lisinopril every morning, reduce dietary sodium, and repeat labs before the next visit.",

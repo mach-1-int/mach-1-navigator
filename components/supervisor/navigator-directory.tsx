@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -12,9 +13,25 @@ import { calculateDurationMinutes } from "@/lib/store"
 import { computeZoneCoverage } from "@/lib/zones"
 import { cn } from "@/lib/utils"
 
+function onboardingStatusBadge(navigatorId: string, navigatorOnboarding: ReturnType<typeof useDemoData>["navigatorOnboarding"], now: number) {
+  const record = navigatorOnboarding.find(r => r.navigatorId === navigatorId)
+  if (!record) return null
+  const daysInProgram = Math.max(0, Math.floor((now - new Date(record.startDate).getTime()) / (1000 * 60 * 60 * 24)))
+  switch (record.status) {
+    case "certified":
+      return { label: "Certified", className: "bg-emerald-100 text-emerald-700", daysInProgram }
+    case "lead":
+      return { label: "Lead", className: "bg-blue-100 text-blue-700", daysInProgram }
+    default:
+      return { label: "Developmental", className: "bg-amber-100 text-amber-700", daysInProgram }
+  }
+}
+
 export function NavigatorDirectory() {
-  const { navigators, patients, appointments, timeLogs, users, zones, getNudgesForNavigator } = useDemoData()
+  const { navigators, patients, appointments, timeLogs, users, zones, navigatorOnboarding, getNudgesForNavigator } = useDemoData()
   const { navigateTo, currentUser } = useRole()
+  // Stable "now" for days-in-program math (Date.now() is impure during render)
+  const [now] = useState(() => Date.now())
 
   // Filter navigators under the current supervisor
   const teamNavigators = navigators.filter(nav => nav.supervisorId === currentUser?.id)
@@ -163,6 +180,7 @@ export function NavigatorDirectory() {
                 <TableHead className="text-center text-muted-foreground">Compliance %</TableHead>
                 <TableHead className="text-center text-muted-foreground">Avg Visit Time</TableHead>
                 <TableHead className="text-center text-muted-foreground">MTD Units</TableHead>
+                <TableHead className="text-center text-muted-foreground">Onboarding</TableHead>
                 <TableHead className="text-center text-muted-foreground">Messages</TableHead>
                 <TableHead className="w-[50px]"></TableHead>
               </TableRow>
@@ -173,6 +191,7 @@ export function NavigatorDirectory() {
                 const trend = getComplianceTrend(navigator.avgCompliance)
                 const TrendIcon = trend.icon
                 const zone = zoneForNavigator(navigator.id)
+                const onboarding = onboardingStatusBadge(navigator.id, navigatorOnboarding, now)
 
                 return (
                   <TableRow 
@@ -234,6 +253,20 @@ export function NavigatorDirectory() {
                       )}>
                         {navigator.mtdUnits}
                       </span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {onboarding ? (
+                        <div className="flex flex-col items-center gap-1">
+                          <Badge variant="secondary" className={onboarding.className}>
+                            {onboarding.label}
+                          </Badge>
+                          {onboarding.label === "Developmental" && (
+                            <span className="text-xs text-muted-foreground">{onboarding.daysInProgram}d in program</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-center">
                       {navigator.pendingMessages > 0 ? (

@@ -11,14 +11,17 @@ import { PROGRAM_TARGETS } from "@/lib/executive-metrics"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { ReferralQueue } from "@/components/dashboards/referral-queue"
+import { EscalationList } from "@/components/escalations/escalation-list"
 import { attemptsRemaining, outreachSla } from "@/lib/referral-pipeline"
 import { cn } from "@/lib/utils"
 
 export function SupervisorDashboard() {
-  const { patients, navigators, adverseEvents, referrals, intakeRecords } = useDemoData()
+  const { patients, navigators, adverseEvents, referrals, intakeRecords, escalations } = useDemoData()
   const { currentUser } = useRole()
   const teamNavigators = navigators.filter((nav) => nav.supervisorId === currentUser?.id)
   const teamPatients = patients.filter((p) => teamNavigators.some((n) => n.id === p.assignedNavigator))
+  const teamPatientIds = new Set(teamPatients.map((p) => p.id))
+  const teamEscalations = escalations.filter((e) => teamPatientIds.has(e.patientId))
   const avgMedicationCompliance = Math.round(
     teamNavigators.reduce((sum, n) => sum + n.medicationCompliance, 0) / teamNavigators.length
   )
@@ -142,6 +145,14 @@ export function SupervisorDashboard() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Escalations */}
+      <EscalationList
+        escalations={teamEscalations}
+        roster={teamPatients}
+        title="Escalations"
+        description="Closed-loop clinical escalations for your team"
+      />
 
       {/* Referral Queue */}
       <ReferralQueue />

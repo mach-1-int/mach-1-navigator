@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -36,7 +36,7 @@ import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { useToast } from "@/hooks/use-toast"
 import { getCurrentPositionSafe } from "@/lib/geo"
-import { Plus, Home, Phone, Video, Building, ChevronLeft, ChevronRight, AlertTriangle, Calendar, Clock, Map, List, LogIn, LogOut, MapPin, BadgeCheck, CalendarClock, Info, Users, Siren, FileText } from "lucide-react"
+import { Plus, Home, Phone, Video, Building, ChevronLeft, ChevronRight, AlertTriangle, Calendar, Clock, Map, List, LogIn, LogOut, MapPin, BadgeCheck, CalendarClock, Info, Users, Siren, FileText, CheckCircle2, PhoneCall } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Appointment, EncounterType, NavigatorShift, DayOfWeek } from "@/lib/types"
 import { RouteMap } from "./route-map"
@@ -44,6 +44,7 @@ import { appointmentDraftToEvent, todayISO } from "@/lib/schedule-utils"
 import { validateScheduleEvent } from "@/lib/schedule-validation"
 import { ENCOUNTER_TYPE_LABELS, encounterTypeForAppointment, templateIdForEncounterType } from "@/lib/note-taxonomy"
 import { NoteBuilder } from "@/components/notes/note-builder"
+import { appointmentDateTime, taskId } from "@/lib/task-engine"
 
 const TIME_SLOTS = [
   "8:00 AM", "9:00 AM", "10:00 AM", "11:00 AM", 
@@ -89,6 +90,39 @@ interface AppointmentWithPatient extends Appointment {
   patientId: string
 }
 
+const CONFIRMATION_WINDOW_DISPLAY: { window: "48h" | "24h" | "day_of"; taskType: "confirmation_48h" | "confirmation_24h" | "confirmation_day_of"; label: string; msBefore: number | null }[] = [
+  { window: "48h", taskType: "confirmation_48h", label: "48-hour", msBefore: 48 * 60 * 60 * 1000 },
+  { window: "24h", taskType: "confirmation_24h", label: "24-hour", msBefore: 24 * 60 * 60 * 1000 },
+  { window: "day_of", taskType: "confirmation_day_of", label: "Day-of", msBefore: null },
+]
+
+type ConfirmationRowStatus = "confirmed" | "pending" | "missed" | "not_open"
+
+/** When the NEXT window opens (or the appointment starts, for day-of) — the point a window closes unstamped */
+function windowClosesAt(appointment: Appointment, index: number): Date {
+  const at = appointmentDateTime(appointment)
+  const next = CONFIRMATION_WINDOW_DISPLAY[index + 1]
+  if (!next) return at // day-of: closes at appointment start
+  return next.msBefore !== null ? new Date(at.getTime() - next.msBefore) : new Date(`${appointment.date}T08:00:00`)
+}
+
+function confirmationRowStatus(
+  appointment: Appointment,
+  spec: (typeof CONFIRMATION_WINDOW_DISPLAY)[number],
+  index: number,
+  now: Date
+): ConfirmationRowStatus {
+  const confirmed = appointment.confirmations?.find((c) => c.window === spec.window)
+  if (confirmed) return "confirmed"
+  const at = appointmentDateTime(appointment)
+  const windowOpensAt =
+    spec.msBefore !== null ? new Date(at.getTime() - spec.msBefore) : new Date(`${appointment.date}T08:00:00`)
+  if (now.getTime() < windowOpensAt.getTime()) return "not_open"
+  // Window has opened and not stamped — missed once the window has CLOSED (next window opened,
+  // or the appointment itself started for day-of); otherwise it's still actionable "pending"
+  return now.getTime() >= windowClosesAt(appointment, index).getTime() ? "missed" : "pending"
+}
+
 type ViewMode = "list" | "map" | "dual-track"
 
 const DAY_MAP: Record<number, DayOfWeek> = {
@@ -102,11 +136,16 @@ const DAY_MAP: Record<number, DayOfWeek> = {
 }
 
 export function NavigatorSchedule() {
-  const { patients, navigators, scheduleAppointment, checkInAppointment, checkOutAppointment, getSupervisor, scheduleEvents, navigatorShifts, updateNavigatorLocation, triggerSOS, isHydrated } = useDemoData()
+  const { patients, navigators, scheduleAppointment, checkInAppointment, checkOutAppointment, getSupervisor, scheduleEvents, navigatorShifts, updateNavigatorLocation, triggerSOS, isHydrated, completeTask, generateDueTasks } = useDemoData()
   const { currentUser } = useRole()
   const { toast } = useToast()
   const currentNavigator = navigators.find((n) => n.id === currentUser?.id) ?? navigators[0]
   const myPatients = patients.filter((p) => p.assignedNavigator === currentNavigator?.id)
+
+  useEffect(() => {
+    generateDueTasks()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false)
@@ -290,6 +329,28 @@ export function NavigatorSchedule() {
   const handleAppointmentClick = (appointment: AppointmentWithPatient) => {
     setSelectedAppointment(appointment)
     setDetailsDialogOpen(true)
+  }
+
+  // "Confirm now" quick action (SOP 3.3): completes the matching open task if
+  // one exists (stamps the appointment via completeTask), otherwise stamps
+  // the appointment's confirmations[] directly through the same deterministic
+  // task id so regeneration never duplicates the touch.
+  const handleConfirmNow = (appointment: AppointmentWithPatient, window: "48h" | "24h" | "day_of") => {
+    if (!currentNavigator) return
+    const taskType =
+      window === "48h" ? "confirmation_48h" : window === "24h" ? "confirmation_24h" : "confirmation_day_of"
+    generateDueTasks()
+    const id = taskId(taskType, appointment.id)
+    completeTask(id, currentNavigator.id, "confirmed")
+    toast({
+      title: "Confirmation recorded",
+      description: (
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-green-500" />
+          <span>{CONFIRMATION_WINDOW_DISPLAY.find((w) => w.window === window)?.label} touch confirmed.</span>
+        </div>
+      ),
+    })
   }
 
   // EVV Check-In handler - real device GPS when available, fallback otherwise
@@ -974,6 +1035,66 @@ export function NavigatorSchedule() {
                   </div>
                 )}
               </div>
+              {/* Confirmation status (SOP 3.3 multi-touch protocol) */}
+              {selectedAppointment.status === "scheduled" && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Confirmation touches</p>
+                  <div className="space-y-1.5">
+                    {CONFIRMATION_WINDOW_DISPLAY.map((spec, index) => {
+                      const status = confirmationRowStatus(selectedAppointment, spec, index, new Date())
+                      const confirmation = selectedAppointment.confirmations?.find((c) => c.window === spec.window)
+                      return (
+                        <div
+                          key={spec.window}
+                          className={cn(
+                            "flex items-center justify-between rounded-md border px-3 py-2 text-xs",
+                            status === "confirmed" && "border-green-200 bg-green-50",
+                            (status === "pending" || status === "not_open") && "border-border bg-muted/30",
+                            status === "missed" && "border-red-200 bg-red-50"
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <PhoneCall className={cn(
+                              "h-3.5 w-3.5",
+                              status === "confirmed" && "text-green-600",
+                              (status === "pending" || status === "not_open") && "text-muted-foreground",
+                              status === "missed" && "text-red-600"
+                            )} />
+                            <span className="font-medium">{spec.label}</span>
+                            {confirmation && (
+                              <span className="text-muted-foreground">
+                                — {confirmation.outcome.replace(/_/g, " ")} {new Date(confirmation.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              </span>
+                            )}
+                          </div>
+                          {status === "confirmed" ? (
+                            <Badge className="bg-green-500 text-white text-[10px]">Confirmed</Badge>
+                          ) : status === "not_open" ? (
+                            <Badge variant="outline" className="text-[10px] text-muted-foreground">Pending</Badge>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant={status === "missed" ? "destructive" : "outline"}
+                                className={cn("text-[10px]", status === "pending" && "text-muted-foreground")}
+                              >
+                                {status === "missed" ? "Missed" : "Pending"}
+                              </Badge>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 px-2 text-[10px]"
+                                onClick={() => handleConfirmNow(selectedAppointment, spec.window)}
+                              >
+                                Confirm now
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
               {selectedAppointment.notes && (
                 <div className="text-sm">
                   <p className="font-medium mb-1">Notes</p>
