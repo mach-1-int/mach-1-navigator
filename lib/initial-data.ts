@@ -34,8 +34,19 @@ import type {
   StandingPatientFacts,
   ChargeSlip,
   Zone,
+  // Gellert ops blitz (tasks / documents / escalations / comms / training)
+  NavigatorTask,
+  PatientDocument,
+  MedReconciliationEvent,
+  Escalation,
+  ProviderCommunication,
+  NavigatorOnboarding,
+  OnboardingMilestoneKey,
 } from "./types"
 import { gellertNoteTemplates } from "./gellert-templates"
+import { ROI_ATTESTATION_TEXT, CONTRACT_ATTESTATION_TEXT } from "./document-definitions"
+import { renderProviderComm } from "./provider-comms"
+import { ONBOARDING_CURRICULUM, SHADOW_CHECKLIST } from "./onboarding"
 
 // ============================================================================
 // USERS
@@ -289,7 +300,8 @@ export const initialPatients: Patient[] = [
     assignedNavigator: "nav1", assignedSupervisor: "sup1", healthPlan: "United Healthcare", enrollmentDate: "2024-06-01",
     lastContactDate: "2026-01-24", medicationCompliance: 85, pcpCompliance: true,
     providerIds: ["prov-pcp-smith", "prov-cardio-patel", "prov-lab-labcorp", "prov-pharm-walgreens"],
-    upcomingAppointments: [{ id: "apt1", patientId: "pt1", navigatorId: "nav1", date: "2026-01-30", time: "10:00", type: "home_visit", status: "scheduled", encounterType: "medical_appointment" }],
+    upcomingAppointments: [{ id: "apt1", patientId: "pt1", navigatorId: "nav1", date: "2026-01-30", time: "10:00", type: "home_visit", status: "scheduled", encounterType: "medical_appointment",
+      confirmations: [{ window: "48h", at: "2026-01-28T10:05:00-07:00", by: "nav1", outcome: "confirmed" }] }],
     medications: [
       { id: "med1", name: "Metformin", dosage: "500mg", frequency: "Twice daily", nextRefillDate: "2026-02-01", compliance: true },
       { id: "med2", name: "Lisinopril", dosage: "10mg", frequency: "Once daily", nextRefillDate: "2026-01-30", compliance: false },
@@ -310,7 +322,8 @@ export const initialPatients: Patient[] = [
     assignedNavigator: "nav1", assignedSupervisor: "sup1", healthPlan: "Mercy Care", enrollmentDate: "2024-08-15",
     lastContactDate: "2026-01-22", medicationCompliance: 92, pcpCompliance: true,
     providerIds: ["prov-pcp-okafor", "prov-cardio-patel", "prov-pharm-cvs"],
-    upcomingAppointments: [{ id: "apt2", patientId: "pt2", navigatorId: "nav1", date: "2026-01-29", time: "14:00", type: "phone_call", status: "scheduled", encounterType: "phone_call" }],
+    upcomingAppointments: [{ id: "apt2", patientId: "pt2", navigatorId: "nav1", date: "2026-01-29", time: "14:00", type: "phone_call", status: "scheduled", encounterType: "phone_call",
+      confirmations: [{ window: "48h", at: "2026-01-27T14:10:00-07:00", by: "nav1", outcome: "confirmed" }] }],
     medications: [
       { id: "med3", name: "Atorvastatin", dosage: "20mg", frequency: "Once daily", nextRefillDate: "2026-02-10", compliance: true },
     ],
@@ -605,9 +618,18 @@ export const initialPatients: Patient[] = [
 // ============================================================================
 
 export const initialAppointments: Appointment[] = [
-  { id: "apt1", patientId: "pt1", navigatorId: "nav1", date: "2026-01-30", time: "10:00", type: "home_visit", status: "scheduled", encounterType: "medical_appointment" },
-  { id: "apt2", patientId: "pt2", navigatorId: "nav1", date: "2026-01-29", time: "14:00", type: "phone_call", status: "scheduled", encounterType: "phone_call" },
+  // apt1 carries a confirmed 48h touch; the 24h touch was missed (seeded as the overdue red task)
+  { id: "apt1", patientId: "pt1", navigatorId: "nav1", date: "2026-01-30", time: "10:00", type: "home_visit", status: "scheduled", encounterType: "medical_appointment",
+    confirmations: [{ window: "48h", at: "2026-01-28T10:05:00-07:00", by: "nav1", outcome: "confirmed" }] },
+  { id: "apt2", patientId: "pt2", navigatorId: "nav1", date: "2026-01-29", time: "14:00", type: "phone_call", status: "scheduled", encounterType: "phone_call",
+    confirmations: [{ window: "48h", at: "2026-01-27T14:10:00-07:00", by: "nav1", outcome: "confirmed" }] },
   { id: "apt3", patientId: "pt4", navigatorId: "nav2", date: "2026-02-01", time: "09:00", type: "video_call", status: "scheduled", encounterType: "phone_call" },
+  // Gellert ops blitz: visit outcomes that feed the task engine
+  // Completed yesterday -> seeded post_visit_followup task due today (SOP 3.6)
+  { id: "apt-completed-pt2", patientId: "pt2", navigatorId: "nav1", date: "2026-01-29", time: "11:00", type: "home_visit", status: "completed", encounterType: "medical_appointment",
+    confirmations: [{ window: "48h", at: "2026-01-27T11:00:00-07:00", by: "nav1", outcome: "confirmed" }] },
+  // No-show this morning -> seeded same-day recovery task due 6pm (SOP 3.10)
+  { id: "apt-noshow-pt5", patientId: "pt5", navigatorId: "nav3", date: "2026-01-30", time: "09:00", type: "home_visit", status: "no_show", encounterType: "medical_appointment" },
   // Elena's pharmacy pickup for Patient Portal demo
   { id: "apt-elena-pharmacy", patientId: "pt-elena", navigatorId: "nav-maria", date: "2026-02-02", time: "14:00", type: "clinic", status: "scheduled", notes: "Pharmacy Pickup - CVS on Glendale Ave", encounterType: "medication_assistance" },
   // Journey engine demo: intake visits for the two in-intake patients
@@ -705,6 +727,7 @@ export const initialReferrals: Referral[] = [
     acceptedAt: "2026-01-28T10:30:00Z",
     outreachAttempts: mkAttempts("ref-elena", "2026-01-28", ["agreed"]),
     agreedAt: "2026-01-28T14:30:00Z",
+    decisionCapacityConfirmed: { confirmedAt: "2026-01-28T14:35:00Z", confirmedBy: "sup1" },
     patientId: "pt-elena",
     patientName: "Elena Rodriguez",
     dob: "1958-06-12",
@@ -761,6 +784,7 @@ export const initialReferrals: Referral[] = [
     acceptedAt: "2026-01-28T13:05:00Z",
     outreachAttempts: mkAttempts("ref-david", "2026-01-29", ["agreed"]),
     agreedAt: "2026-01-29T10:00:00Z",
+    decisionCapacityConfirmed: { confirmedAt: "2026-01-29T10:05:00Z", confirmedBy: "sup1" },
     patientName: "David Jones",
     dob: "1945-02-14",
     referralSource: "Valleywise Health",
@@ -872,6 +896,7 @@ export const initialReferrals: Referral[] = [
     acceptedAt: "2026-01-25T09:00:00Z",
     outreachAttempts: mkAttempts("ref-sjh-intake-sched", "2026-01-26", ["voicemail", "agreed"]),
     agreedAt: "2026-01-28T10:00:00Z",
+    decisionCapacityConfirmed: { confirmedAt: "2026-01-28T10:05:00Z", confirmedBy: "sup1" },
     patientName: "Teresa Nguyen",
     dob: "1959-04-11",
     referralSource: "St. Joseph's Hospital",
@@ -903,6 +928,7 @@ export const initialReferrals: Referral[] = [
     acceptedAt: "2025-12-27T09:00:00Z",
     outreachAttempts: mkAttempts("ref-sjh-conv1", "2025-12-28", ["voicemail", "agreed"]),
     agreedAt: "2025-12-30T11:00:00Z",
+    decisionCapacityConfirmed: { confirmedAt: "2025-12-30T11:05:00Z", confirmedBy: "sup1" },
     patientId: "pt-billing",
     patientName: "Sam Underwood",
     dob: "1960-05-14",
@@ -932,6 +958,7 @@ export const initialReferrals: Referral[] = [
     acceptedAt: "2026-01-23T09:30:00Z",
     outreachAttempts: mkAttempts("ref-sjh-conv2", "2026-01-24", ["no_answer", "agreed"]),
     agreedAt: "2026-01-26T10:00:00Z",
+    decisionCapacityConfirmed: { confirmedAt: "2026-01-26T10:05:00Z", confirmedBy: "sup1" },
     patientId: "pt-journey-intake1",
     patientName: "Rosa Delgado",
     dob: "1954-02-09",
@@ -961,6 +988,7 @@ export const initialReferrals: Referral[] = [
     acceptedAt: "2026-01-10T10:00:00Z",
     outreachAttempts: mkAttempts("ref-sjh-conv3", "2026-01-11", ["voicemail", "agreed"]),
     agreedAt: "2026-01-13T15:00:00Z",
+    decisionCapacityConfirmed: { confirmedAt: "2026-01-13T15:05:00Z", confirmedBy: "sup1" },
     patientId: "pt-journey-intake2",
     patientName: "Walter Briggs",
     dob: "1949-08-17",
@@ -990,6 +1018,7 @@ export const initialReferrals: Referral[] = [
     acceptedAt: "2025-12-06T09:00:00Z",
     outreachAttempts: mkAttempts("ref-mercy-conv", "2025-12-07", ["agreed"]),
     agreedAt: "2025-12-07T10:00:00Z",
+    decisionCapacityConfirmed: { confirmedAt: "2025-12-07T10:05:00Z", confirmedBy: "sup1" },
     patientId: "pt-journey-exited",
     patientName: "Gloria Sandoval",
     dob: "1957-12-03",
@@ -4324,5 +4353,501 @@ export const initialStandingFacts: StandingPatientFacts[] = [
     preferredPharmacyProviderId: "prov-pharm-walgreens",
     updatedAt: "2026-01-21T22:00:00Z",
     updatedBy: "nav3",
+  },
+]
+
+// ============================================================================
+// PATIENT DOCUMENTS (Gellert ops blitz — SOPs 2.3/2.7; billing gate §4)
+// Every pre-existing ACTIVE patient carries a SIGNED navigation contract +
+// SIGNED ROI (the billing gate stays green for all seeded claims) plus the
+// completed Intake-1 paperwork. The two in-intake journey patients are the
+// live tension states: Rosa (all not_started) and Walter (contract in draft —
+// signable live in the demo, which is exactly what unblocks his billing).
+// ============================================================================
+
+/** The standard six intake documents, completed/signed near enrollment */
+function standardIntakeDocuments(o: {
+  patientId: string
+  patientName: string
+  navId: string
+  date: string // YYYY-MM-DD (intake / initiating visit date)
+  insurance: string
+  pharmacy: string
+}): PatientDocument[] {
+  const createdAt = `${o.date}T10:00:00-07:00`
+  const completedAt = `${o.date}T11:30:00-07:00`
+  const signedAt = `${o.date}T11:00:00-07:00`
+  return [
+    {
+      id: `doc-${o.patientId}-roi`,
+      patientId: o.patientId,
+      type: "roi",
+      status: "signed",
+      fields: { "insurance-company": o.insurance, "pharmacy": o.pharmacy, "referring-provider": "Referring provider on file" },
+      signature: { signedByName: o.patientName, relationship: "patient", signedAt, attestationText: ROI_ATTESTATION_TEXT },
+      createdAt,
+      updatedAt: signedAt,
+      completedBy: o.navId,
+    },
+    {
+      id: `doc-${o.patientId}-navigation_contract`,
+      patientId: o.patientId,
+      type: "navigation_contract",
+      status: "signed",
+      fields: { "services-reviewed": true, "non-clinical-role-explained": true, "zero-tolerance-reviewed": true },
+      signature: { signedByName: o.patientName, relationship: "patient", signedAt, attestationText: CONTRACT_ATTESTATION_TEXT },
+      createdAt,
+      updatedAt: signedAt,
+      completedBy: o.navId,
+    },
+    {
+      id: `doc-${o.patientId}-intake_survey`,
+      patientId: o.patientId,
+      type: "intake_survey",
+      status: "completed",
+      fields: {
+        "living-situation": "Lives alone",
+        "support-system": "Family nearby",
+        "transport-access": "No reliable option",
+        "health-confidence": "Somewhat confident",
+        "biggest-barrier": "Transportation",
+        "patient-goal": "Get to my appointments and understand what my doctors tell me.",
+      },
+      createdAt,
+      updatedAt: completedAt,
+      completedBy: o.navId,
+    },
+    {
+      id: `doc-${o.patientId}-medication_list`,
+      patientId: o.patientId,
+      type: "medication_list",
+      status: "completed",
+      fields: { "reconciliation-note": "Medication list reconciled at Intake 1; live list maintained on the patient record." },
+      createdAt,
+      updatedAt: completedAt,
+      completedBy: o.navId,
+    },
+    {
+      id: `doc-${o.patientId}-patient_photo`,
+      patientId: o.patientId,
+      type: "patient_photo",
+      status: "completed",
+      fields: { "consent-to-photo": true },
+      createdAt,
+      updatedAt: completedAt,
+      completedBy: o.navId,
+    },
+    {
+      id: `doc-${o.patientId}-onboarding_packet`,
+      patientId: o.patientId,
+      type: "onboarding_packet",
+      status: "completed",
+      fields: {
+        "welcome-letter": true,
+        "contact-card": true,
+        "rights-responsibilities": true,
+        "privacy-practices": true,
+        "emergency-instructions": true,
+      },
+      createdAt,
+      updatedAt: completedAt,
+      completedBy: o.navId,
+    },
+  ]
+}
+
+/** All six documents untouched (fresh conversion — Rosa's tension state) */
+function untouchedIntakeDocuments(patientId: string, date: string): PatientDocument[] {
+  const at = `${date}T10:00:00-07:00`
+  return (["roi", "navigation_contract", "intake_survey", "medication_list", "patient_photo", "onboarding_packet"] as const).map(
+    (type) => ({
+      id: `doc-${patientId}-${type}`,
+      patientId,
+      type,
+      status: "not_started" as const,
+      fields: {},
+      createdAt: at,
+      updatedAt: at,
+    })
+  )
+}
+
+export const initialPatientDocuments: PatientDocument[] = [
+  ...standardIntakeDocuments({ patientId: "pt1", patientName: "James Thompson", navId: "nav-maria", date: "2025-12-01", insurance: "United Healthcare", pharmacy: "Walgreens #04521" }),
+  ...standardIntakeDocuments({ patientId: "pt2", patientName: "Dorothy Martinez", navId: "nav-maria", date: "2025-12-05", insurance: "Mercy Care", pharmacy: "CVS #08842" }),
+  ...standardIntakeDocuments({ patientId: "pt3", patientName: "Robert Wilson", navId: "nav2", date: "2025-12-28", insurance: "United Healthcare", pharmacy: "LabCorp — n/a" }),
+  ...standardIntakeDocuments({ patientId: "pt4", patientName: "Helen Garcia", navId: "nav2", date: "2025-12-20", insurance: "Molina Healthcare", pharmacy: "CVS #08842" }),
+  ...standardIntakeDocuments({ patientId: "pt5", patientName: "Frank Anderson", navId: "nav3", date: "2025-12-30", insurance: "United Healthcare", pharmacy: "Walgreens #04521" }),
+  ...standardIntakeDocuments({ patientId: "pt-billing", patientName: "Sam Underwood", navId: "nav-john", date: "2026-01-10", insurance: "Mercy Care", pharmacy: "CVS #08842" }),
+  ...standardIntakeDocuments({ patientId: "pt-validation-test", patientName: "Mary Jenkins", navId: "nav-maria", date: "2026-01-05", insurance: "United Healthcare", pharmacy: "Walgreens #04521" }),
+  ...standardIntakeDocuments({ patientId: "pt-elena", patientName: "Elena Rodriguez", navId: "nav-maria", date: "2026-01-28", insurance: "Mercy Care", pharmacy: "CVS #08842" }),
+  // Rosa Delgado — fresh conversion, nothing started (Intake 1 in 2 days)
+  ...untouchedIntakeDocuments("pt-journey-intake1", "2026-01-28"),
+  // Walter Briggs — Intake 1 paperwork done; Intake 2 documents pending, with
+  // the navigation contract sitting in DRAFT (signable live; billing gated on it)
+  {
+    id: "doc-pt-journey-intake2-roi",
+    patientId: "pt-journey-intake2",
+    type: "roi",
+    status: "signed",
+    fields: { "insurance-company": "AHCCCS", "pharmacy": "Walgreens #04521" },
+    signature: { signedByName: "Walter Briggs", relationship: "patient", signedAt: "2026-01-17T11:00:00-07:00", attestationText: ROI_ATTESTATION_TEXT },
+    createdAt: "2026-01-17T10:00:00-07:00",
+    updatedAt: "2026-01-17T11:00:00-07:00",
+    completedBy: "nav3",
+  },
+  {
+    id: "doc-pt-journey-intake2-medication_list",
+    patientId: "pt-journey-intake2",
+    type: "medication_list",
+    status: "completed",
+    fields: { "reconciliation-note": "Initial medication reconciliation completed at Intake 1." },
+    createdAt: "2026-01-17T10:00:00-07:00",
+    updatedAt: "2026-01-17T11:20:00-07:00",
+    completedBy: "nav3",
+  },
+  {
+    id: "doc-pt-journey-intake2-patient_photo",
+    patientId: "pt-journey-intake2",
+    type: "patient_photo",
+    status: "completed",
+    fields: { "consent-to-photo": true },
+    createdAt: "2026-01-17T10:00:00-07:00",
+    updatedAt: "2026-01-17T11:25:00-07:00",
+    completedBy: "nav3",
+  },
+  {
+    id: "doc-pt-journey-intake2-onboarding_packet",
+    patientId: "pt-journey-intake2",
+    type: "onboarding_packet",
+    status: "completed",
+    fields: {
+      "welcome-letter": true,
+      "contact-card": true,
+      "rights-responsibilities": true,
+      "privacy-practices": true,
+      "emergency-instructions": true,
+    },
+    createdAt: "2026-01-17T10:00:00-07:00",
+    updatedAt: "2026-01-17T11:30:00-07:00",
+    completedBy: "nav3",
+  },
+  {
+    id: "doc-pt-journey-intake2-navigation_contract",
+    patientId: "pt-journey-intake2",
+    type: "navigation_contract",
+    status: "draft",
+    fields: { "services-reviewed": true, "non-clinical-role-explained": true },
+    createdAt: "2026-01-17T10:00:00-07:00",
+    updatedAt: "2026-01-22T09:00:00-07:00",
+  },
+  {
+    id: "doc-pt-journey-intake2-intake_survey",
+    patientId: "pt-journey-intake2",
+    type: "intake_survey",
+    status: "not_started",
+    fields: {},
+    createdAt: "2026-01-17T10:00:00-07:00",
+    updatedAt: "2026-01-17T10:00:00-07:00",
+  },
+]
+
+// ============================================================================
+// NAVIGATOR TASKS (Gellert ops blitz — SOPs 3.3/3.6/3.10, 4.1-4.6)
+// Ids follow the task-engine deterministic scheme `task-{type}-{refId}` so
+// seeded tasks and engine regeneration share one idempotency space.
+// dueAt semantics per lib/task-engine.ts (window entry; overdue = due DATE
+// before today). Authored vs ANCHOR_DATE 2026-01-30.
+// ============================================================================
+
+export const initialNavigatorTasks: NavigatorTask[] = [
+  // --- apt1 (pt1 James Thompson, home visit TODAY 10:00, nav1) ---
+  // 48h touch: done + stamped on the appointment (see initialAppointments)
+  {
+    id: "task-confirmation_48h-apt1", type: "confirmation_48h", patientId: "pt1", navigatorId: "nav1",
+    appointmentId: "apt1", dueAt: "2026-01-28T10:00:00-07:00", status: "done",
+    completedAt: "2026-01-28T10:05:00-07:00", completedBy: "nav1", outcome: "confirmed",
+    createdAt: "2026-01-28T10:00:00-07:00", source: "system",
+  },
+  // 24h touch: MISSED — the red overdue task on load
+  {
+    id: "task-confirmation_24h-apt1", type: "confirmation_24h", patientId: "pt1", navigatorId: "nav1",
+    appointmentId: "apt1", dueAt: "2026-01-29T10:00:00-07:00", status: "open",
+    createdAt: "2026-01-29T10:00:00-07:00", source: "system",
+  },
+  // Day-of touch: due this morning
+  {
+    id: "task-confirmation_day_of-apt1", type: "confirmation_day_of", patientId: "pt1", navigatorId: "nav1",
+    appointmentId: "apt1", dueAt: "2026-01-30T08:00:00-07:00", status: "open",
+    createdAt: "2026-01-30T08:00:00-07:00", source: "system",
+  },
+  // --- apt2 (pt2 Dorothy Martinez) — completed 48h touch for history ---
+  {
+    id: "task-confirmation_48h-apt2", type: "confirmation_48h", patientId: "pt2", navigatorId: "nav1",
+    appointmentId: "apt2", dueAt: "2026-01-27T14:00:00-07:00", status: "done",
+    completedAt: "2026-01-27T14:10:00-07:00", completedBy: "nav1", outcome: "confirmed",
+    createdAt: "2026-01-27T14:00:00-07:00", source: "system",
+  },
+  // --- apt3 (pt4 Helen Garcia, video call Feb 1 09:00, nav2): 48h window opens today ---
+  {
+    id: "task-confirmation_48h-apt3", type: "confirmation_48h", patientId: "pt4", navigatorId: "nav2",
+    appointmentId: "apt3", dueAt: "2026-01-30T09:00:00-07:00", status: "open",
+    createdAt: "2026-01-30T09:00:00-07:00", source: "system",
+  },
+  // --- Post-visit follow-up (apt-completed-pt2 completed yesterday 11:00) — due today ---
+  {
+    id: "task-post_visit_followup-apt-completed-pt2", type: "post_visit_followup", patientId: "pt2", navigatorId: "nav1",
+    appointmentId: "apt-completed-pt2", dueAt: "2026-01-30T11:00:00-07:00", status: "open",
+    createdAt: "2026-01-29T13:00:00-07:00", source: "system",
+  },
+  // --- No-show recovery (apt-noshow-pt5 missed this morning) — due 6pm today ---
+  {
+    id: "task-no_show_recovery-apt-noshow-pt5", type: "no_show_recovery", patientId: "pt5", navigatorId: "nav3",
+    appointmentId: "apt-noshow-pt5", dueAt: "2026-01-30T18:00:00-07:00", status: "open",
+    createdAt: "2026-01-30T09:30:00-07:00", source: "system",
+  },
+  // --- Adverse-event response set for ae2 (pt5 fall, ended 2026-01-22) ---
+  {
+    id: "task-post_event_contact-ae2", type: "post_event_contact", patientId: "pt5", navigatorId: "nav3",
+    adverseEventId: "ae2", dueAt: "2026-01-21T09:00:00-07:00", status: "done",
+    completedAt: "2026-01-20T16:30:00-07:00", completedBy: "nav3",
+    note: "Spoke with patient and daughter at the ED; care plan reviewed.",
+    createdAt: "2026-01-20T12:00:00-07:00", source: "system",
+  },
+  {
+    id: "task-post_discharge_pcp-ae2", type: "post_discharge_pcp", patientId: "pt5", navigatorId: "nav3",
+    adverseEventId: "ae2", dueAt: "2026-02-02T17:00:00-07:00", status: "open",
+    createdAt: "2026-01-22T12:00:00-07:00", source: "system",
+  },
+  {
+    id: "task-post_discharge_med_rec-ae2", type: "post_discharge_med_rec", patientId: "pt5", navigatorId: "nav3",
+    adverseEventId: "ae2", dueAt: "2026-01-24T09:00:00-07:00", status: "done",
+    completedAt: "2026-01-23T14:00:00-07:00", completedBy: "nav3",
+    note: "Discharge meds reconciled against the home list; no changes from the hospital.",
+    createdAt: "2026-01-22T12:00:00-07:00", source: "system",
+  },
+  {
+    id: "task-risk_reduction_education-ae2", type: "risk_reduction_education", patientId: "pt5", navigatorId: "nav3",
+    adverseEventId: "ae2", dueAt: "2026-01-29T09:00:00-07:00", status: "done",
+    completedAt: "2026-01-28T15:00:00-07:00", completedBy: "nav3",
+    note: "Fall-prevention education delivered: footwear, night lighting, grab-bar referral submitted.",
+    createdAt: "2026-01-22T12:00:00-07:00", source: "system",
+  },
+]
+
+// ============================================================================
+// MEDICATION RECONCILIATIONS (Gellert ops blitz — SOPs 2.3/3.7)
+// Snapshots of the med list AFTER each reconciliation; the live list stays
+// on the patient record.
+// ============================================================================
+
+export const initialMedReconciliations: MedReconciliationEvent[] = [
+  {
+    id: "medrec-pt1-1",
+    patientId: "pt1",
+    at: "2026-01-05T18:30:00Z",
+    by: "nav1",
+    byName: "Emily Rodriguez",
+    medications: [
+      { id: "med1", name: "Metformin", dosage: "500mg", frequency: "Twice daily", nextRefillDate: "2026-02-01", compliance: true },
+      { id: "med2", name: "Lisinopril", dosage: "10mg", frequency: "Once daily", nextRefillDate: "2026-01-30", compliance: false },
+    ],
+    changes: [
+      { medication: "Metformin 500mg", action: "confirmed" },
+      { medication: "Lisinopril 10mg", action: "confirmed" },
+    ],
+    note: "Reconciled at the January PCP visit; both medications verified against Dr. Smith's list.",
+  },
+  {
+    id: "medrec-pt5-1",
+    patientId: "pt5",
+    at: "2026-01-23T21:15:00Z",
+    by: "nav3",
+    byName: "Maria Santos",
+    medications: [
+      { id: "med7", name: "Insulin Glargine", dosage: "20 units", frequency: "Once daily", nextRefillDate: "2026-01-28", compliance: false },
+      { id: "med8", name: "Gabapentin", dosage: "300mg", frequency: "Three times daily", nextRefillDate: "2026-02-03", compliance: true },
+    ],
+    changes: [
+      { medication: "Insulin Glargine 20 units", action: "confirmed" },
+      { medication: "Gabapentin 300mg", action: "dose_changed" },
+    ],
+    note: "Post-discharge reconciliation after the January fall; gabapentin stepped up to three times daily per discharge summary.",
+  },
+]
+
+// ============================================================================
+// ESCALATIONS (Gellert ops blitz — field guide §1.2; distinct from SOS)
+// ============================================================================
+
+export const initialEscalations: Escalation[] = [
+  // OPEN on load — the live demo beat (supervisor acknowledges/resolves)
+  {
+    id: "esc-pt5-sdoh",
+    patientId: "pt5",
+    navigatorId: "nav3",
+    reason: "unresolved_sdoh",
+    description:
+      "Utility shutoff notice received and insulin refrigeration at risk; patient declined the community-action referral twice. Navigator needs supervisor support on next steps before the Feb PCP visit.",
+    raisedAt: "2026-01-28T16:45:00Z",
+    status: "open",
+  },
+  // Resolved historical — shows the closed loop
+  {
+    id: "esc-pt3-clinical",
+    patientId: "pt3",
+    navigatorId: "nav2",
+    reason: "clinical_risk",
+    description:
+      "Patient admitted to Banner Desert with a COPD exacerbation while INR management was already unstable; navigator flagged risk of losing the anticoagulation follow-up chain during admission.",
+    raisedAt: "2026-01-15T10:30:00Z",
+    status: "resolved",
+    acknowledgedBy: "sup1",
+    acknowledgedAt: "2026-01-15T11:10:00Z",
+    resolvedBy: "sup1",
+    resolvedAt: "2026-01-18T09:00:00Z",
+    resolutionNote:
+      "Coordinated with the discharge planner: INR recheck scheduled within 72h of discharge and transport arranged. Navigator to resume standard cadence.",
+  },
+]
+
+// ============================================================================
+// PROVIDER COMMUNICATIONS (Gellert ops blitz — playbook §3.3)
+// Rendered through lib/provider-comms.ts so seed bodies match the live
+// renderer exactly. Always simulated (honest demo tier).
+// ============================================================================
+
+function seededComm(o: {
+  id: string
+  type: ProviderCommunication["type"]
+  referralId?: string
+  patientId?: string
+  sentAt: string
+  ctx: Parameters<typeof renderProviderComm>[1]
+}): ProviderCommunication {
+  const { subject, body } = renderProviderComm(o.type, o.ctx)
+  return {
+    id: o.id,
+    referralId: o.referralId,
+    patientId: o.patientId,
+    type: o.type,
+    subject,
+    body,
+    sentAt: o.sentAt,
+    sentBy: "sup1",
+    sentByName: "Marcus Williams",
+    simulated: true,
+  }
+}
+
+export const initialProviderCommunications: ProviderCommunication[] = [
+  seededComm({
+    id: "pcomm-intake-elena",
+    type: "intake_notification",
+    referralId: "ref-elena",
+    patientId: "pt-elena",
+    sentAt: "2026-01-30T13:00:00Z",
+    ctx: {
+      patientName: "Elena Rodriguez",
+      referringProvider: "Dr. Ana Martinez",
+      facilityName: "Banner Estrella Medical Center",
+      intakeCompletedDate: "January 30",
+      pcpAppointmentDate: "February 5",
+      clinicalSummary: "Type 2 Diabetes with peripheral neuropathy (E11.42)",
+    },
+  }),
+  seededComm({
+    id: "pcomm-intake-billing",
+    type: "intake_notification",
+    referralId: "ref-sjh-conv1",
+    patientId: "pt-billing",
+    sentAt: "2026-01-10T15:00:00Z",
+    ctx: {
+      patientName: "Sam Underwood",
+      referringProvider: "Dr. Owen Blake",
+      facilityName: "Dignity Health St. Joseph's",
+      intakeCompletedDate: "January 10",
+      pcpAppointmentDate: "January 16",
+      clinicalSummary: "Type 2 diabetes (E11.9)",
+    },
+  }),
+  seededComm({
+    id: "pcomm-unreach-torres",
+    type: "unreachable_notification",
+    referralId: "ref-sjh-unreach",
+    sentAt: "2025-12-30T10:00:00Z",
+    ctx: {
+      patientName: "Angela Torres",
+      referringProvider: "Dr. Sarah Kim",
+      facilityName: "Dignity Health St. Joseph's",
+      outreachAttempts: 7,
+      closedDate: "December 30",
+    },
+  }),
+]
+
+// ============================================================================
+// NAVIGATOR ONBOARDING (Gellert ops blitz — playbook §10; STATIC, not rebased)
+// Statuses stay consistent with Navigator.level: developmental records belong
+// to level-1 navigators; nav2 (level 3, 36 months) is certified-and-lead.
+// ============================================================================
+
+type MilestoneOverride = { status: "pending" | "in_progress" | "completed"; completedAt?: string; note?: string }
+
+function onboardingMilestones(
+  overrides: Partial<Record<OnboardingMilestoneKey, MilestoneOverride>>
+): NavigatorOnboarding["milestones"] {
+  return ONBOARDING_CURRICULUM.map(({ key, label }) => ({ key, label, status: "pending" as const, ...overrides[key] }))
+}
+
+function shadowChecklist(done: boolean): NavigatorOnboarding["shadowChecklist"] {
+  return SHADOW_CHECKLIST.map(({ key, label }) => ({ key, label, done }))
+}
+
+export const initialNavigatorOnboarding: NavigatorOnboarding[] = [
+  // Week-1 new hire persona: Sarah Thompson (level 1, shortest tenure, light caseload)
+  {
+    navigatorId: "nav-sarah",
+    startDate: "2026-01-26",
+    milestones: onboardingMilestones({
+      orientation_week1: { status: "in_progress", note: "Day 3 of orientation; HIPAA + field-safety modules complete" },
+    }),
+    shadowChecklist: shadowChecklist(false),
+    status: "developmental",
+    unitsTargetPhase: 16,
+  },
+  // At the 60-day review: Sarah Johnson (level 1, developmental metrics)
+  {
+    navigatorId: "nav7",
+    startDate: "2025-12-01",
+    milestones: onboardingMilestones({
+      orientation_week1: { status: "completed", completedAt: "2025-12-05" },
+      cpss_exam: { status: "completed", completedAt: "2025-12-05", note: "Passed, 88%" },
+      gellert_exam: { status: "completed", completedAt: "2025-12-04", note: "Passed, 92%" },
+      shadowing: { status: "completed", completedAt: "2025-12-24" },
+      review_30: { status: "completed", completedAt: "2025-12-30", note: "On track; units ramp behind target — coaching plan set" },
+      review_60: { status: "in_progress", note: "Scheduled with supervisor; units/day and no-show recovery under review" },
+    }),
+    shadowChecklist: shadowChecklist(true),
+    status: "developmental",
+    unitsTargetPhase: 16,
+  },
+  // Certified → Lead: David Chen (level 3, 36 months)
+  {
+    navigatorId: "nav2",
+    startDate: "2023-01-30",
+    milestones: onboardingMilestones({
+      orientation_week1: { status: "completed", completedAt: "2023-02-03" },
+      cpss_exam: { status: "completed", completedAt: "2023-02-03" },
+      gellert_exam: { status: "completed", completedAt: "2023-02-02" },
+      shadowing: { status: "completed", completedAt: "2023-02-24" },
+      review_30: { status: "completed", completedAt: "2023-03-01" },
+      review_60: { status: "completed", completedAt: "2023-03-30" },
+      review_90: { status: "completed", completedAt: "2023-04-28" },
+      certification: { status: "completed", completedAt: "2023-05-01", note: "Certified Health Navigator (+$2,500); later promoted to Lead" },
+    }),
+    shadowChecklist: shadowChecklist(true),
+    status: "lead",
+    unitsTargetPhase: 20,
   },
 ]

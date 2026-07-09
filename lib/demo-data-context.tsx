@@ -1,7 +1,8 @@
 "use client"
 
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
-import type { Patient, PatientNote, Appointment, Navigator, User, Supervisor, NavigatorAttributes, AdverseEvent, Referral, Message, UserRole, RiskAssessmentData, CareTemplate, CarePlan, Payer, RemarkCode, OrganizationSettings, AuditLog, AuditAction, NoteTemplate, NoteDraft, IntakeRecord, ZCode, TimeLog, ServiceType, PayerConfig, NavigatorLocation, SafetyStatus, BillableClaim, ClaimRecord, ClaimRecordStatus, ClaimWorkStatus, SOSEvent, GeoPoint, ScheduleEvent, NavigatorShift, TimeOffRequest, EligibilityCheck, OutreachAttempt, JourneyEvent, JourneyPhase, ProgramExit, IntakeChecklistKey, EncounterType, Provider, StandingPatientFacts, ChargeSlip, Zone } from "./types"
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, type ReactNode } from "react"
+import { toast } from "sonner"
+import type { Patient, PatientNote, Appointment, Navigator, User, Supervisor, NavigatorAttributes, AdverseEvent, Referral, Message, UserRole, RiskAssessmentData, CareTemplate, CarePlan, Payer, RemarkCode, OrganizationSettings, AuditLog, AuditAction, NoteTemplate, NoteDraft, IntakeRecord, ZCode, TimeLog, ServiceType, PayerConfig, NavigatorLocation, SafetyStatus, BillableClaim, ClaimRecord, ClaimRecordStatus, ClaimWorkStatus, SOSEvent, GeoPoint, ScheduleEvent, NavigatorShift, TimeOffRequest, EligibilityCheck, OutreachAttempt, JourneyEvent, JourneyPhase, ProgramExit, IntakeChecklistKey, EncounterType, Provider, StandingPatientFacts, ChargeSlip, Zone, NavigatorTask, PatientDocument, MedReconciliationEvent, Escalation, ProviderCommunication, NavigatorOnboarding, OnboardingMilestoneKey, Medication } from "./types"
 import { getPayerConfig, getAllPayerConfigs, resolvePayerByName, getPayerForPatient } from "./payer-config"
 import { acuityLevelToRiskLevel, lineToRiskLevel } from "./acuity"
 import {
@@ -20,6 +21,17 @@ import {
 } from "./journey"
 import { addBusinessDays } from "./business-days"
 import { chargeSlipId } from "./charge-slips"
+import {
+  deriveDueConfirmationTasks,
+  taskForCompletedVisit,
+  taskForNoShow,
+  tasksForAdverseEvent,
+  taskKey,
+  confirmationWindowForType,
+  TASK_TYPE_CONFIG,
+} from "./task-engine"
+import { checklistItemForDocument, isDocumentSatisfied, DOCUMENT_DEFINITIONS } from "./document-definitions"
+import { renderProviderComm, type ProviderCommContext } from "./provider-comms"
 import { findUnknownCodes } from "./remittance-review"
 import {
   createClaimRecords,
@@ -95,6 +107,20 @@ interface DemoDataContextType {
   // Gellert billing mode
   chargeSlips: ChargeSlip[]
   zones: Zone[]
+  // Gellert ops blitz (tasks / documents / escalations / comms / training)
+  navigatorTasks: NavigatorTask[]
+  patientDocuments: PatientDocument[]
+  medReconciliations: MedReconciliationEvent[]
+  escalations: Escalation[]
+  providerCommunications: ProviderCommunication[]
+  navigatorOnboarding: NavigatorOnboarding[]
+  /**
+   * Patient ids with a SIGNED navigation contract (Patient Agreement) —
+   * the playbook §4 billing gate set. Pass to generateMonthlyClaims /
+   * computeRevenue / calculateEstimatedMonthlyRevenue wherever claims are
+   * generated for the UI.
+   */
+  signedContractPatientIds: Set<string>
   lastAssignedPatientId: string | null
   isHydrated: boolean
 
@@ -125,11 +151,101 @@ interface DemoDataContextType {
     attempt: Omit<OutreachAttempt, "id" | "attemptNumber">
   ) => void
   scheduleIntakeVisit: (referralId: string, date: string, time: string, navigatorId: string) => void
+  /**
+   * SOP 1.7 gate: confirm the patient's decision-making capacity on a
+   * referral. scheduleIntakeVisit refuses (with a toast) until this is set.
+   */
+  confirmDecisionCapacity: (referralId: string, by: string) => void
+  /**
+   * Render + store a referring-provider communication (simulated), stamp
+   * providerNotifiedAt, and audit. `type` defaults from the entity's state
+   * (closed-ineligible / unreachable / exited / otherwise intake). `override`
+   * sends an edited subject/body instead of the rendered template.
+   */
   notifyReferringProvider: (
     entity: { referralId?: string; patientId?: string },
     byId: string,
+    byName: string,
+    type?: ProviderCommunication["type"],
+    override?: { subject: string; body: string }
+  ) => void
+
+  // Navigator tasks (Gellert ops blitz — engagement engine)
+  /**
+   * Run the task engine over current state and insert any newly-due tasks
+   * (confirmation windows, post-visit follow-ups, no-show recoveries).
+   * Idempotent by (type, appointmentId) — safe to call on every mount.
+   * Returns the number of tasks inserted.
+   */
+  generateDueTasks: () => number
+  /**
+   * Insert the SOP 4.x response task set for one adverse event (skipping any
+   * that already exist). Returns the number of tasks inserted.
+   */
+  generateAdverseEventTasks: (adverseEventId: string, byId: string, byName: string) => number
+  /**
+   * Complete a task. For confirmation tasks, also stamps the appointment's
+   * confirmations[] with the window + outcome ("confirmed" when omitted;
+   * valid outcomes: "confirmed" | "no_answer" | "reschedule_requested").
+   */
+  completeTask: (taskId: string, by: string, outcome?: string, note?: string) => void
+  dismissTask: (taskId: string, by: string, note: string) => void
+
+  // Patient documents & e-sign (Gellert ops blitz)
+  /** Create or update (upsert by id) a document draft; stamps updatedAt. */
+  savePatientDocument: (doc: PatientDocument) => void
+  /** Mark a non-signature document completed; auto-checks its intake checklist item. */
+  completePatientDocument: (docId: string, by: string) => void
+  /** Sign roi / navigation_contract; auto-checks its intake checklist item. */
+  signPatientDocument: (docId: string, signature: NonNullable<PatientDocument["signature"]>, by: string) => void
+
+  // Medication reconciliation (Gellert ops blitz)
+  /** Replace the patient's LIVE medication list (no snapshot; see recordMedReconciliation). */
+  updatePatientMedications: (patientId: string, meds: Medication[], by: string) => void
+  /**
+   * Record a reconciliation event: snapshots the patient's CURRENT med list
+   * plus the diff, audits, and auto-checks the med_reconciliation intake item.
+   */
+  recordMedReconciliation: (
+    patientId: string,
+    changes: MedReconciliationEvent["changes"],
+    note: string | undefined,
+    by: string,
     byName: string
   ) => void
+
+  // Escalations (Gellert ops blitz — closed loop, distinct from SOS)
+  /** Raise an escalation; the patient's supervisor gets a nudge. */
+  raiseEscalation: (patientId: string, navigatorId: string, reason: Escalation["reason"], description: string) => void
+  /** open -> acknowledged (no-op from any other status). */
+  acknowledgeEscalation: (escalationId: string, by: string) => void
+  /**
+   * open|acknowledged -> resolved. Resolving an un-acknowledged escalation
+   * stamps the acknowledgment with the resolver too (forward-only lifecycle).
+   */
+  resolveEscalation: (escalationId: string, by: string, resolutionNote: string) => void
+
+  // Navigator onboarding (Gellert ops blitz — playbook §10 training)
+  /**
+   * Set a milestone's status (stamps completedAt when completed; audits).
+   * Completing "certification" bumps a developmental record to "certified".
+   */
+  updateOnboardingMilestone: (
+    navigatorId: string,
+    key: OnboardingMilestoneKey,
+    status: "pending" | "in_progress" | "completed",
+    note?: string
+  ) => void
+  toggleShadowItem: (navigatorId: string, key: string) => void
+
+  // Note templates (Gellert ops blitz — template editor)
+  /** Upsert a note template by id; newly created templates get isCustom: true. */
+  saveNoteTemplate: (template: NoteTemplate) => void
+  /**
+   * Delete a template. Returns false (no-op) when the template is referenced
+   * by any existing note or does not exist.
+   */
+  deleteNoteTemplate: (templateId: string) => boolean
 
   // Journey actions (post-conversion)
   updateIntakeChecklistItem: (
@@ -310,6 +426,9 @@ interface DemoDataContextType {
 
 const DemoDataContext = createContext<DemoDataContextType | undefined>(undefined)
 
+/** Valid appointment-confirmation outcomes (completeTask defaults to "confirmed") */
+const CONFIRMATION_OUTCOMES = ["confirmed", "no_answer", "reschedule_requested"] as const
+
 // ============================================================================
 // PROVIDER COMPONENT
 // ============================================================================
@@ -347,7 +466,20 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
   }, [state, isHydrated])
 
   // Destructure state for easier access
-  const { patients, notes, navigators, users, supervisors, adverseEvents, referrals, directMessages, appointments, careTemplates, carePlans, payers, remarkCodes, organizationSettings, claimRecords, auditLogs, noteTemplates, noteDrafts, zCodes, intakeRecords, timeLogs, scheduleEvents, navigatorShifts, timeOffRequests, navigatorLocations, sosEvents, journeyEvents, providers, standingFacts, chargeSlips, zones, lastAssignedPatientId } = state
+  const { patients, notes, navigators, users, supervisors, adverseEvents, referrals, directMessages, appointments, careTemplates, carePlans, payers, remarkCodes, organizationSettings, claimRecords, auditLogs, noteTemplates, noteDrafts, zCodes, intakeRecords, timeLogs, scheduleEvents, navigatorShifts, timeOffRequests, navigatorLocations, sosEvents, journeyEvents, providers, standingFacts, chargeSlips, zones, navigatorTasks, patientDocuments, medReconciliations, escalations, providerCommunications, navigatorOnboarding, lastAssignedPatientId } = state
+
+  /**
+   * Playbook §4 billing gate set: patients with a SIGNED navigation contract.
+   * Derived once per patientDocuments change; components pass this into
+   * generateMonthlyClaims / computeRevenue / calculateEstimatedMonthlyRevenue.
+   */
+  const signedContractPatientIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const doc of patientDocuments) {
+      if (doc.type === "navigation_contract" && doc.status === "signed") ids.add(doc.patientId)
+    }
+    return ids
+  }, [patientDocuments])
 
   // ============================================================================
   // IDENTITY SELECTORS
@@ -604,6 +736,14 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
     time: string,
     navigatorId: string
   ) => {
+    // SOP 1.7 gate: decision-making capacity must be confirmed before intake
+    const gated = referrals.find(r => r.id === referralId)
+    if (gated && !gated.decisionCapacityConfirmed) {
+      toast.error("Decision-making capacity not confirmed", {
+        description: `Confirm ${gated.patientName}'s capacity to decide on services (SOP 1.7) before scheduling Intake 1.`,
+      })
+      return
+    }
     setState(prev => {
       const referral = prev.referrals.find(r => r.id === referralId)
       if (!referral || referral.status !== "agreed") return prev
@@ -635,39 +775,105 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
         auditLogs: [auditEntry, ...prev.auditLogs],
       }
     })
-  }, [makeAudit, getNavigatorDisplayName])
+  }, [referrals, makeAudit, getNavigatorDisplayName])
+
+  /** SOP 1.7: confirm decision-making capacity on a referral (gates intake scheduling). */
+  const confirmDecisionCapacity = useCallback((referralId: string, by: string) => {
+    const now = new Date().toISOString()
+    setState(prev => ({
+      ...prev,
+      referrals: prev.referrals.map(r =>
+        r.id === referralId && !r.decisionCapacityConfirmed
+          ? { ...r, decisionCapacityConfirmed: { confirmedAt: now, confirmedBy: by } }
+          : r
+      ),
+    }))
+  }, [])
 
   /**
-   * 8. Stamp the referring-provider notification on a referral or a patient's
-   * intake record. Demo-honest: audit event + timestamp, clearly a stand-in
-   * for a fax / Direct message integration.
+   * 8. Notify the referring provider: renders the playbook §3.3 message for
+   * the entity's state (or a caller-supplied type/override), stores it as a
+   * ProviderCommunication (always simulated — honest stand-in for fax/Direct),
+   * stamps providerNotifiedAt, and audits both the stamp and the send.
    */
   const notifyReferringProvider = useCallback((
     entity: { referralId?: string; patientId?: string },
     byId: string,
-    byName: string
+    byName: string,
+    type?: ProviderCommunication["type"],
+    override?: { subject: string; body: string }
   ) => {
     const now = new Date().toISOString()
     setState(prev => {
-      const subject = entity.referralId
-        ? prev.referrals.find(r => r.id === entity.referralId)?.patientName
-        : prev.patients.find(p => p.id === entity.patientId)?.name
-      if (!subject) return prev
+      const referral = entity.referralId ? prev.referrals.find(r => r.id === entity.referralId) : undefined
+      const patient = entity.patientId
+        ? prev.patients.find(p => p.id === entity.patientId)
+        : referral?.patientId
+          ? prev.patients.find(p => p.id === referral.patientId)
+          : undefined
+      const subjectName = referral?.patientName ?? patient?.name
+      if (!subjectName) return prev
 
-      const auditEntry = makeAudit(byId, byName, "supervisor", "provider_notified",
-        `Referring provider notified regarding ${subject}`,
-        entity.referralId ? "referral" : "patient",
-        entity.referralId ?? entity.patientId)
+      // Default the communication type from the entity's state
+      const resolvedType: ProviderCommunication["type"] =
+        type ??
+        (referral?.closeReason === "ineligible"
+          ? "ineligible_notification"
+          : referral?.closeReason === "unreachable"
+            ? "unreachable_notification"
+            : patient?.journeyPhase === "exited"
+              ? "exit_notification"
+              : "intake_notification")
+
+      const intake = patient ? prev.intakeRecords.find(ir => ir.patientId === patient.id) : undefined
+      const ctx: ProviderCommContext = {
+        patientName: subjectName,
+        referringProvider: referral?.rawData?.PV1?.referringPhysician,
+        facilityName: referral?.rawData?.PV1?.facilityName ?? referral?.source ?? patient?.referralSource,
+        intakeCompletedDate: intake?.date,
+        pcpAppointmentDate: intake?.pcpApptDate,
+        clinicalSummary: patient?.primaryDiagnosis ?? referral?.diagnosis,
+        exitReason: patient?.exit?.pathway,
+        exitDate: patient?.exit?.exitedAt?.slice(0, 10),
+        ineligibilityReason: referral?.eligibility?.ineligibilityReason,
+        outreachAttempts: referral?.outreachAttempts.length,
+        closedDate: referral?.closedAt?.slice(0, 10),
+      }
+      const rendered = override ?? renderProviderComm(resolvedType, ctx)
+
+      const comm: ProviderCommunication = {
+        id: generateId(),
+        referralId: entity.referralId,
+        patientId: entity.patientId ?? referral?.patientId,
+        type: resolvedType,
+        subject: rendered.subject,
+        body: rendered.body,
+        sentAt: now,
+        sentBy: byId,
+        sentByName: byName,
+        simulated: true,
+      }
+
+      const auditEntries: AuditLog[] = [
+        makeAudit(byId, byName, "supervisor", "provider_comm_sent",
+          `${resolvedType.replace(/_/g, " ")} sent (simulated) regarding ${subjectName}`,
+          "provider_communication", comm.id),
+        makeAudit(byId, byName, "supervisor", "provider_notified",
+          `Referring provider notified regarding ${subjectName}`,
+          entity.referralId ? "referral" : "patient",
+          entity.referralId ?? entity.patientId),
+      ]
 
       return {
         ...prev,
+        providerCommunications: [...prev.providerCommunications, comm],
         referrals: entity.referralId
           ? prev.referrals.map(r => (r.id === entity.referralId ? { ...r, providerNotifiedAt: now } : r))
           : prev.referrals,
         intakeRecords: entity.patientId
           ? prev.intakeRecords.map(ir => (ir.patientId === entity.patientId ? { ...ir, providerNotifiedAt: now } : ir))
           : prev.intakeRecords,
-        auditLogs: [auditEntry, ...prev.auditLogs],
+        auditLogs: [...auditEntries, ...prev.auditLogs],
       }
     })
   }, [makeAudit])
@@ -1242,6 +1448,504 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
       .filter(m => m.receiverId === navigatorId && m.type === "nudge")
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
   }, [directMessages])
+
+  // ============================================================================
+  // NAVIGATOR TASKS (Gellert ops blitz — thin wrappers over lib/task-engine.ts)
+  // ============================================================================
+
+  /**
+   * Run the task engine over current state and insert newly-due tasks:
+   * confirmation windows entered (SOP 3.3), post-visit follow-ups for
+   * completed appointments (SOP 3.6), and same-day no-show recoveries
+   * (SOP 3.10). Idempotent by (type, appointmentId); returns inserted count.
+   */
+  const generateDueTasks = useCallback((): number => {
+    let inserted = 0
+    setState(prev => {
+      const now = new Date()
+      const candidates: NavigatorTask[] = [
+        ...deriveDueConfirmationTasks(prev.appointments, prev.navigatorTasks, now),
+      ]
+      for (const appt of prev.appointments) {
+        if (appt.status === "completed") candidates.push(taskForCompletedVisit(appt, now))
+        else if (appt.status === "no_show") candidates.push(taskForNoShow(appt, now))
+      }
+
+      const existingKeys = new Set(prev.navigatorTasks.map(taskKey))
+      const fresh = candidates.filter(t => {
+        const key = taskKey(t)
+        if (existingKeys.has(key)) return false
+        existingKeys.add(key)
+        return true
+      })
+      inserted = fresh.length
+      if (fresh.length === 0) return prev
+      return { ...prev, navigatorTasks: [...prev.navigatorTasks, ...fresh] }
+    })
+    return inserted
+  }, [])
+
+  /**
+   * Insert the SOP 4.x response task set for one adverse event (post-event
+   * contact; PCP-in-7-business-days, med rec, and education once ended).
+   * Idempotent by (type, adverseEventId); returns inserted count.
+   */
+  const generateAdverseEventTasks = useCallback((adverseEventId: string, byId: string, byName: string): number => {
+    let inserted = 0
+    setState(prev => {
+      const event = prev.adverseEvents.find(e => e.id === adverseEventId)
+      const patient = event ? prev.patients.find(p => p.id === event.patientId) : undefined
+      if (!event || !patient) return prev
+
+      const existingKeys = new Set(prev.navigatorTasks.map(taskKey))
+      const fresh = tasksForAdverseEvent(event, patient).filter(t => !existingKeys.has(taskKey(t)))
+      inserted = fresh.length
+      if (fresh.length === 0) return prev
+
+      const auditEntry = makeAudit(byId, byName, "supervisor", "task_completed",
+        `Adverse-event response tasks generated for ${patient.name} (${fresh.length} task${fresh.length === 1 ? "" : "s"})`,
+        "adverse_event", adverseEventId)
+      return {
+        ...prev,
+        navigatorTasks: [...prev.navigatorTasks, ...fresh],
+        auditLogs: [auditEntry, ...prev.auditLogs],
+      }
+    })
+    return inserted
+  }, [makeAudit])
+
+  /**
+   * Complete an open task. Confirmation tasks also stamp the appointment's
+   * confirmations[] (window from the task type, outcome defaulting to
+   * "confirmed") so the engine never regenerates that window.
+   */
+  const completeTask = useCallback((taskId: string, by: string, outcome?: string, note?: string) => {
+    setState(prev => {
+      const task = prev.navigatorTasks.find(t => t.id === taskId)
+      if (!task || task.status !== "open") return prev
+
+      const now = new Date().toISOString()
+      const window = confirmationWindowForType(task.type)
+      const resolvedOutcome = outcome ?? (window ? "confirmed" : undefined)
+      const updatedTask: NavigatorTask = {
+        ...task,
+        status: "done",
+        completedAt: now,
+        completedBy: by,
+        outcome: resolvedOutcome,
+        note: note ?? task.note,
+      }
+
+      let nextAppointments = prev.appointments
+      let nextPatients = prev.patients
+      if (window && task.appointmentId) {
+        const appt = prev.appointments.find(a => a.id === task.appointmentId)
+        if (appt && !appt.confirmations?.some(c => c.window === window)) {
+          const confirmationOutcome = (CONFIRMATION_OUTCOMES as readonly string[]).includes(resolvedOutcome ?? "")
+            ? (resolvedOutcome as (typeof CONFIRMATION_OUTCOMES)[number])
+            : "confirmed"
+          const updatedAppt: Appointment = {
+            ...appt,
+            confirmations: [...(appt.confirmations ?? []), { window, at: now, by, outcome: confirmationOutcome }],
+          }
+          nextAppointments = prev.appointments.map(a => (a.id === appt.id ? updatedAppt : a))
+          nextPatients = syncAppointmentToPatient(prev.patients, updatedAppt)
+        }
+      }
+
+      const patient = prev.patients.find(p => p.id === task.patientId)
+      const auditEntry = makeAudit(by, getNavigatorDisplayName(by), "navigator", "task_completed",
+        `${TASK_TYPE_CONFIG[task.type].label} completed for ${patient?.name ?? task.patientId}${resolvedOutcome ? ` — ${resolvedOutcome.replace(/_/g, " ")}` : ""}`,
+        "navigator_task", taskId)
+
+      return {
+        ...prev,
+        navigatorTasks: prev.navigatorTasks.map(t => (t.id === taskId ? updatedTask : t)),
+        appointments: nextAppointments,
+        patients: nextPatients,
+        auditLogs: [auditEntry, ...prev.auditLogs],
+      }
+    })
+  }, [makeAudit, getNavigatorDisplayName])
+
+  /** Dismiss an open task with a reason note. */
+  const dismissTask = useCallback((taskId: string, by: string, note: string) => {
+    setState(prev => {
+      const task = prev.navigatorTasks.find(t => t.id === taskId)
+      if (!task || task.status !== "open") return prev
+
+      const patient = prev.patients.find(p => p.id === task.patientId)
+      const auditEntry = makeAudit(by, getNavigatorDisplayName(by), "navigator", "task_dismissed",
+        `${TASK_TYPE_CONFIG[task.type].label} dismissed for ${patient?.name ?? task.patientId}: ${note}`,
+        "navigator_task", taskId)
+
+      return {
+        ...prev,
+        navigatorTasks: prev.navigatorTasks.map(t =>
+          t.id === taskId
+            ? { ...t, status: "dismissed" as const, completedAt: new Date().toISOString(), completedBy: by, note }
+            : t
+        ),
+        auditLogs: [auditEntry, ...prev.auditLogs],
+      }
+    })
+  }, [makeAudit, getNavigatorDisplayName])
+
+  // ============================================================================
+  // PATIENT DOCUMENTS & E-SIGN (Gellert ops blitz)
+  // ============================================================================
+
+  /**
+   * Auto-check the intake checklist item a document satisfies (via the
+   * existing updateIntakeChecklistItem so the audit trail stays uniform).
+   * No-ops when the patient has no intake record or the item is already done.
+   */
+  const autoCheckChecklistForDocument = useCallback((doc: PatientDocument, byId: string) => {
+    if (!isDocumentSatisfied(doc)) return
+    const mapping = checklistItemForDocument(doc.type)
+    const intake = intakeRecords.find(ir => ir.patientId === doc.patientId)
+    const visit = mapping.visit === 1 ? intake?.intake1 : intake?.intake2
+    const item = visit?.checklist.find(i => i.key === mapping.key)
+    if (!item || item.done) return
+    updateIntakeChecklistItem(doc.patientId, mapping.visit, mapping.key, true, byId, getNavigatorDisplayName(byId))
+  }, [intakeRecords, updateIntakeChecklistItem, getNavigatorDisplayName])
+
+  /** Create or update (upsert by id) a patient document; stamps updatedAt. */
+  const savePatientDocument = useCallback((doc: PatientDocument) => {
+    const now = new Date().toISOString()
+    setState(prev => {
+      const exists = prev.patientDocuments.some(d => d.id === doc.id)
+      const saved: PatientDocument = { ...doc, createdAt: doc.createdAt || now, updatedAt: now }
+      return {
+        ...prev,
+        patientDocuments: exists
+          ? prev.patientDocuments.map(d => (d.id === doc.id ? saved : d))
+          : [...prev.patientDocuments, saved],
+      }
+    })
+  }, [])
+
+  /**
+   * Mark a document completed (terminal for non-signature types) and
+   * auto-check its intake checklist item.
+   */
+  const completePatientDocument = useCallback((docId: string, by: string) => {
+    const doc = patientDocuments.find(d => d.id === docId)
+    if (!doc || doc.status === "completed" || doc.status === "signed") return
+
+    const now = new Date().toISOString()
+    const updated: PatientDocument = { ...doc, status: "completed", completedBy: by, updatedAt: now }
+    const patient = patients.find(p => p.id === doc.patientId)
+    const auditEntry = makeAudit(by, getNavigatorDisplayName(by), "navigator", "document_completed",
+      `${DOCUMENT_DEFINITIONS[doc.type].title} completed for ${patient?.name ?? doc.patientId}`,
+      "patient_document", docId)
+
+    setState(prev => ({
+      ...prev,
+      patientDocuments: prev.patientDocuments.map(d => (d.id === docId ? updated : d)),
+      auditLogs: [auditEntry, ...prev.auditLogs],
+    }))
+    autoCheckChecklistForDocument(updated, by)
+  }, [patientDocuments, patients, makeAudit, getNavigatorDisplayName, autoCheckChecklistForDocument])
+
+  /**
+   * Sign a signature-bearing document (roi / navigation_contract) with the
+   * typed-name demo e-signature, and auto-check its intake checklist item.
+   * Signing the navigation contract is what opens the billing gate.
+   */
+  const signPatientDocument = useCallback((
+    docId: string,
+    signature: NonNullable<PatientDocument["signature"]>,
+    by: string
+  ) => {
+    const doc = patientDocuments.find(d => d.id === docId)
+    if (!doc || doc.status === "signed") return
+    if (!DOCUMENT_DEFINITIONS[doc.type].requiresSignature) return
+
+    const now = new Date().toISOString()
+    const updated: PatientDocument = {
+      ...doc,
+      status: "signed",
+      signature: { ...signature, signedAt: signature.signedAt || now },
+      completedBy: by,
+      updatedAt: now,
+    }
+    const patient = patients.find(p => p.id === doc.patientId)
+    const auditEntry = makeAudit(by, getNavigatorDisplayName(by), "navigator", "document_signed",
+      `${DOCUMENT_DEFINITIONS[doc.type].title} signed by ${signature.signedByName} (${signature.relationship}) for ${patient?.name ?? doc.patientId}${doc.type === "navigation_contract" ? " — billing gate open" : ""}`,
+      "patient_document", docId)
+
+    setState(prev => ({
+      ...prev,
+      patientDocuments: prev.patientDocuments.map(d => (d.id === docId ? updated : d)),
+      auditLogs: [auditEntry, ...prev.auditLogs],
+    }))
+    autoCheckChecklistForDocument(updated, by)
+  }, [patientDocuments, patients, makeAudit, getNavigatorDisplayName, autoCheckChecklistForDocument])
+
+  // ============================================================================
+  // MEDICATION RECONCILIATION (Gellert ops blitz)
+  // ============================================================================
+
+  /** Replace the patient's LIVE medication list (snapshots happen at reconciliation). */
+  const updatePatientMedications = useCallback((patientId: string, meds: Medication[], by: string) => {
+    void by // actor recorded on the reconciliation event, not the raw list edit
+    setState(prev => ({
+      ...prev,
+      patients: prev.patients.map(p => (p.id === patientId ? { ...p, medications: meds } : p)),
+    }))
+  }, [])
+
+  /**
+   * Record a reconciliation: snapshots the patient's CURRENT medications plus
+   * the change diff, audits, and auto-checks the med_reconciliation item.
+   */
+  const recordMedReconciliation = useCallback((
+    patientId: string,
+    changes: MedReconciliationEvent["changes"],
+    note: string | undefined,
+    by: string,
+    byName: string
+  ) => {
+    setState(prev => {
+      const patient = prev.patients.find(p => p.id === patientId)
+      if (!patient) return prev
+
+      const event: MedReconciliationEvent = {
+        id: generateId(),
+        patientId,
+        at: new Date().toISOString(),
+        by,
+        byName,
+        medications: patient.medications.map(m => ({ ...m })),
+        changes,
+        note,
+      }
+      const auditEntry = makeAudit(by, byName, "navigator", "med_reconciliation_recorded",
+        `Medication reconciliation recorded for ${patient.name} (${changes.length} change${changes.length === 1 ? "" : "s"})`,
+        "med_reconciliation", event.id)
+
+      return {
+        ...prev,
+        medReconciliations: [...prev.medReconciliations, event],
+        auditLogs: [auditEntry, ...prev.auditLogs],
+      }
+    })
+
+    // Auto-check the Intake 1 med_reconciliation item (uniform audit trail)
+    const mapping = checklistItemForDocument("medication_list")
+    const intake = intakeRecords.find(ir => ir.patientId === patientId)
+    const item = intake?.intake1?.checklist.find(i => i.key === mapping.key)
+    if (item && !item.done) {
+      updateIntakeChecklistItem(patientId, mapping.visit, mapping.key, true, by, byName)
+    }
+  }, [makeAudit, intakeRecords, updateIntakeChecklistItem])
+
+  // ============================================================================
+  // ESCALATIONS (Gellert ops blitz — closed loop; distinct from SOS)
+  // ============================================================================
+
+  /** Raise an escalation; the patient's assigned supervisor gets a nudge. */
+  const raiseEscalation = useCallback((
+    patientId: string,
+    navigatorId: string,
+    reason: Escalation["reason"],
+    description: string
+  ) => {
+    setState(prev => {
+      const patient = prev.patients.find(p => p.id === patientId)
+      if (!patient) return prev
+
+      const now = new Date().toISOString()
+      const navigatorName = prev.navigators.find(n => n.id === navigatorId)?.name ?? "Navigator"
+      const supervisorId = patient.assignedSupervisor
+      const supervisor = prev.supervisors.find(s => s.id === supervisorId)
+
+      const escalation: Escalation = {
+        id: generateId(),
+        patientId,
+        navigatorId,
+        reason,
+        description,
+        raisedAt: now,
+        status: "open",
+      }
+      const nudge: Message = {
+        id: generateId(),
+        senderId: navigatorId,
+        senderName: navigatorName,
+        senderRole: "navigator",
+        receiverId: supervisorId,
+        receiverName: supervisor?.name ?? "Supervisor",
+        receiverRole: "supervisor",
+        content: `Escalation raised for ${patient.name} (${reason.replace(/_/g, " ")}): ${description}`,
+        timestamp: now,
+        readStatus: false,
+        type: "nudge",
+        patientId,
+        patientName: patient.name,
+      }
+      const auditEntry = makeAudit(navigatorId, navigatorName, "navigator", "escalation_raised",
+        `Escalation raised for ${patient.name}: ${reason.replace(/_/g, " ")}`,
+        "escalation", escalation.id)
+
+      return {
+        ...prev,
+        escalations: [...prev.escalations, escalation],
+        directMessages: [...prev.directMessages, nudge],
+        auditLogs: [auditEntry, ...prev.auditLogs],
+      }
+    })
+  }, [makeAudit])
+
+  /** open -> acknowledged. */
+  const acknowledgeEscalation = useCallback((escalationId: string, by: string) => {
+    setState(prev => {
+      const escalation = prev.escalations.find(e => e.id === escalationId)
+      if (!escalation || escalation.status !== "open") return prev
+
+      const now = new Date().toISOString()
+      const patient = prev.patients.find(p => p.id === escalation.patientId)
+      const auditEntry = makeAudit(by, getNavigatorDisplayName(by), "supervisor", "escalation_acknowledged",
+        `Escalation for ${patient?.name ?? escalation.patientId} acknowledged`,
+        "escalation", escalationId)
+
+      return {
+        ...prev,
+        escalations: prev.escalations.map(e =>
+          e.id === escalationId
+            ? { ...e, status: "acknowledged" as const, acknowledgedBy: by, acknowledgedAt: now }
+            : e
+        ),
+        auditLogs: [auditEntry, ...prev.auditLogs],
+      }
+    })
+  }, [makeAudit, getNavigatorDisplayName])
+
+  /**
+   * open|acknowledged -> resolved (forward-only). Resolving straight from
+   * open stamps the acknowledgment with the resolver as well.
+   */
+  const resolveEscalation = useCallback((escalationId: string, by: string, resolutionNote: string) => {
+    setState(prev => {
+      const escalation = prev.escalations.find(e => e.id === escalationId)
+      if (!escalation || escalation.status === "resolved") return prev
+
+      const now = new Date().toISOString()
+      const patient = prev.patients.find(p => p.id === escalation.patientId)
+      const auditEntry = makeAudit(by, getNavigatorDisplayName(by), "supervisor", "escalation_resolved",
+        `Escalation for ${patient?.name ?? escalation.patientId} resolved: ${resolutionNote}`,
+        "escalation", escalationId)
+
+      return {
+        ...prev,
+        escalations: prev.escalations.map(e =>
+          e.id === escalationId
+            ? {
+                ...e,
+                status: "resolved" as const,
+                acknowledgedBy: e.acknowledgedBy ?? by,
+                acknowledgedAt: e.acknowledgedAt ?? now,
+                resolvedBy: by,
+                resolvedAt: now,
+                resolutionNote,
+              }
+            : e
+        ),
+        auditLogs: [auditEntry, ...prev.auditLogs],
+      }
+    })
+  }, [makeAudit, getNavigatorDisplayName])
+
+  // ============================================================================
+  // NAVIGATOR ONBOARDING (Gellert ops blitz — playbook §10 training)
+  // ============================================================================
+
+  /**
+   * Set a milestone's status. Completing "certification" bumps a
+   * developmental record to "certified" and ramps unitsTargetPhase 16 -> 18.
+   */
+  const updateOnboardingMilestone = useCallback((
+    navigatorId: string,
+    key: OnboardingMilestoneKey,
+    status: "pending" | "in_progress" | "completed",
+    note?: string
+  ) => {
+    setState(prev => {
+      const record = prev.navigatorOnboarding.find(r => r.navigatorId === navigatorId)
+      const milestone = record?.milestones.find(m => m.key === key)
+      if (!record || !milestone || milestone.status === status) return prev
+
+      const today = new Date().toISOString().slice(0, 10)
+      const certifying = key === "certification" && status === "completed" && record.status === "developmental"
+      const updatedRecord: NavigatorOnboarding = {
+        ...record,
+        milestones: record.milestones.map(m =>
+          m.key === key
+            ? { ...m, status, completedAt: status === "completed" ? today : undefined, note: note ?? m.note }
+            : m
+        ),
+        status: certifying ? "certified" : record.status,
+        unitsTargetPhase: certifying ? 18 : record.unitsTargetPhase,
+      }
+
+      const navigatorName = getNavigatorDisplayName(navigatorId)
+      const auditEntries: AuditLog[] = status === "completed"
+        ? [makeAudit(navigatorId, navigatorName, "supervisor", "onboarding_milestone_completed",
+            `${milestone.label} completed for ${navigatorName}${certifying ? " — Certified Health Navigator (+$2,500); units target ramps to 18/day" : ""}`,
+            "navigator_onboarding", navigatorId)]
+        : []
+
+      return {
+        ...prev,
+        navigatorOnboarding: prev.navigatorOnboarding.map(r => (r.navigatorId === navigatorId ? updatedRecord : r)),
+        auditLogs: [...auditEntries, ...prev.auditLogs],
+      }
+    })
+  }, [makeAudit, getNavigatorDisplayName])
+
+  /** Toggle one Weeks-2-4 shadowing checklist item. */
+  const toggleShadowItem = useCallback((navigatorId: string, key: string) => {
+    setState(prev => ({
+      ...prev,
+      navigatorOnboarding: prev.navigatorOnboarding.map(r =>
+        r.navigatorId === navigatorId
+          ? { ...r, shadowChecklist: r.shadowChecklist.map(i => (i.key === key ? { ...i, done: !i.done } : i)) }
+          : r
+      ),
+    }))
+  }, [])
+
+  // ============================================================================
+  // NOTE TEMPLATES (Gellert ops blitz — template editor CRUD)
+  // ============================================================================
+
+  /** Upsert a note template by id; newly created templates get isCustom: true. */
+  const saveNoteTemplate = useCallback((template: NoteTemplate) => {
+    setState(prev => {
+      const exists = prev.noteTemplates.some(t => t.id === template.id)
+      return {
+        ...prev,
+        noteTemplates: exists
+          ? prev.noteTemplates.map(t => (t.id === template.id ? { ...t, ...template } : t))
+          : [...prev.noteTemplates, { ...template, isCustom: true }],
+      }
+    })
+  }, [])
+
+  /**
+   * Delete a template unless any existing note references it (in-use guard).
+   * Returns true when deleted.
+   */
+  const deleteNoteTemplate = useCallback((templateId: string): boolean => {
+    if (!noteTemplates.some(t => t.id === templateId)) return false
+    if (notes.some(n => n.templateId === templateId)) return false
+    setState(prev => ({
+      ...prev,
+      noteTemplates: prev.noteTemplates.filter(t => t.id !== templateId),
+    }))
+    return true
+  }, [noteTemplates, notes])
 
   /**
    * Ingest a referral from an external source (HL7 adapter / simulated feed)
@@ -2934,6 +3638,13 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
       standingFacts,
       chargeSlips,
       zones,
+      navigatorTasks,
+      patientDocuments,
+      medReconciliations,
+      escalations,
+      providerCommunications,
+      navigatorOnboarding,
+      signedContractPatientIds,
       lastAssignedPatientId,
       isHydrated,
 
@@ -2957,7 +3668,26 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
       completeEligibilityCheck,
       logOutreachAttempt,
       scheduleIntakeVisit,
+      confirmDecisionCapacity,
       notifyReferringProvider,
+
+      // Gellert ops blitz: tasks / documents / meds / escalations / onboarding / templates
+      generateDueTasks,
+      generateAdverseEventTasks,
+      completeTask,
+      dismissTask,
+      savePatientDocument,
+      completePatientDocument,
+      signPatientDocument,
+      updatePatientMedications,
+      recordMedReconciliation,
+      raiseEscalation,
+      acknowledgeEscalation,
+      resolveEscalation,
+      updateOnboardingMilestone,
+      toggleShadowItem,
+      saveNoteTemplate,
+      deleteNoteTemplate,
 
       // Journey actions (post-conversion)
       updateIntakeChecklistItem,

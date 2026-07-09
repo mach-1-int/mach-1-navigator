@@ -114,6 +114,8 @@ export function calculateClaimValue(
  * - Initiating visit within 12 months of the claim month (re-initiation rule)
  * - CHI claims carry at least one SDOH Z-code in the combined diagnosis set
  * - Patient has an assigned payer (payerId FK)
+ * - Signed Patient Agreement on file (playbook §4 billing gate) — ONLY when
+ *   the caller provides the signed-contract set; omitted = legacy behavior
  *
  * @param patient Patient record
  * @param intakeRecord Intake record for the patient (consent/initiating visit)
@@ -122,6 +124,10 @@ export function calculateClaimValue(
  * @param month Claim billing month ("YYYY-MM")
  * @param serviceType Claim service type (PIN or CHI)
  * @param diagnosisCodes Combined diagnosis set (patient ICD + intake Z-codes)
+ * @param signedContractPatientIds Patient ids with a SIGNED navigation
+ *   contract (Patient Agreement). When provided and the patient is absent,
+ *   the claim fails with "Patient Agreement not signed". Undefined preserves
+ *   pre-gate behavior (verify harnesses call without it).
  */
 function validateClaimData(
   patient: Patient | undefined,
@@ -130,13 +136,20 @@ function validateClaimData(
   payerConfig: PayerConfig,
   month: string,
   serviceType: ServiceType,
-  diagnosisCodes: string[]
+  diagnosisCodes: string[],
+  signedContractPatientIds?: Set<string>
 ): string[] {
   const errors: string[] = []
 
   if (!patient) {
     errors.push("Patient record not found")
     return errors
+  }
+
+  // Billing gate (playbook §4): nothing bills before the signed Patient
+  // Agreement. Enforced only when the caller supplies the signed set.
+  if (signedContractPatientIds && !signedContractPatientIds.has(patient.id)) {
+    errors.push("Patient Agreement not signed")
   }
 
   // Check for minimum time requirement (payer-specific threshold)
@@ -224,6 +237,10 @@ function getPrimaryNavigator(timeLogs: TimeLog[]): string {
  * @param timeLogs - Array of time log entries
  * @param payerConfig - Payer configuration (thresholds, codes, rates)
  * @param intakeRecords - Intake records (consent, initiating visit, SDOH Z-codes)
+ * @param signedContractPatientIds - Optional Patient-Agreement gate (playbook
+ *   §4): ids of patients with a SIGNED navigation contract. When provided,
+ *   claims for patients outside the set fail validation with "Patient
+ *   Agreement not signed". Omitted = pre-gate behavior.
  * @returns Array of BillableClaim objects
  */
 export function generateMonthlyClaims(
@@ -231,7 +248,8 @@ export function generateMonthlyClaims(
   patients: Patient[],
   timeLogs: TimeLog[],
   payerConfig: PayerConfig,
-  intakeRecords: IntakeRecord[]
+  intakeRecords: IntakeRecord[],
+  signedContractPatientIds?: Set<string>
 ): BillableClaim[] {
   // Create patient and intake lookup maps
   const patientMap = new Map(patients.map((p) => [p.id, p]))
@@ -300,7 +318,8 @@ export function generateMonthlyClaims(
       payerConfig,
       month,
       serviceType,
-      uniqueDiagnosisCodes
+      uniqueDiagnosisCodes,
+      signedContractPatientIds
     )
 
     // Supervisor-verification guardrail: unverified minutes are never exportable.

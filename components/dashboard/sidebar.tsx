@@ -25,6 +25,8 @@ import {
   UserPlus,
   Map,
   Route,
+  ListChecks,
+  Monitor,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -36,6 +38,7 @@ const roleNavItems: Record<string, { name: string; view: ViewType; icon: typeof 
     { name: "Revenue", view: "revenue", icon: TrendingUp },
     { name: "Performance", view: "performance", icon: Activity },
     { name: "Patients", view: "patients", icon: Users },
+    { name: "Wallboard", view: "wallboard", icon: Monitor },
   ],
   supervisor: [
     { name: "Overview", view: "dashboard", icon: LayoutDashboard },
@@ -46,10 +49,12 @@ const roleNavItems: Record<string, { name: string; view: ViewType; icon: typeof 
     { name: "Team Schedule", view: "team-schedule", icon: CalendarDays },
     { name: "Compliance", view: "compliance", icon: ClipboardList },
     { name: "Adverse Events", view: "events", icon: AlertTriangle },
+    { name: "Wallboard", view: "wallboard", icon: Monitor },
     { name: "Messages", view: "messages", icon: MessageSquare, showBadge: true },
   ],
   navigator: [
     { name: "Overview", view: "dashboard", icon: LayoutDashboard },
+    { name: "My Tasks", view: "tasks", icon: ListChecks },
     { name: "My Patients", view: "patients", icon: Users },
     { name: "Schedule", view: "schedule", icon: Calendar },
     { name: "Notes", view: "notes", icon: FileText },
@@ -65,6 +70,7 @@ const roleNavItems: Record<string, { name: string; view: ViewType; icon: typeof 
   admin: [
     { name: "Overview", view: "dashboard", icon: Shield },
     { name: "Revenue Cycle Manager", view: "revenue-cycle", icon: DollarSign },
+    { name: "Note Templates", view: "template-editor", icon: FileText },
     { name: "Payer Rates", view: "admin-payer-rates", icon: Settings },
     { name: "Audit Log", view: "admin-audit-log", icon: History },
   ],

@@ -49,6 +49,13 @@ import type {
   StandingPatientFacts,
   ChargeSlip,
   Zone,
+  // Gellert ops blitz (tasks / documents / escalations / comms / training)
+  NavigatorTask,
+  PatientDocument,
+  MedReconciliationEvent,
+  Escalation,
+  ProviderCommunication,
+  NavigatorOnboarding,
 } from "./types"
 import {
   initialPatients,
@@ -84,6 +91,13 @@ import {
   initialStandingFacts,
   initialChargeSlips,
   initialZones,
+  // Gellert ops blitz (tasks / documents / escalations / comms / training)
+  initialNavigatorTasks,
+  initialPatientDocuments,
+  initialMedReconciliations,
+  initialEscalations,
+  initialProviderCommunications,
+  initialNavigatorOnboarding,
 } from "./initial-data"
 import { rebaseToToday } from "./date-rebase"
 
@@ -140,6 +154,13 @@ export interface StoreState {
   // Gellert billing mode
   chargeSlips: ChargeSlip[]
   zones: Zone[]
+  // Gellert ops blitz (tasks / documents / escalations / comms / training)
+  navigatorTasks: NavigatorTask[]
+  patientDocuments: PatientDocument[]
+  medReconciliations: MedReconciliationEvent[]
+  escalations: Escalation[]
+  providerCommunications: ProviderCommunication[]
+  navigatorOnboarding: NavigatorOnboarding[]
   lastAssignedPatientId: string | null
   _version: number // For future migrations
 }
@@ -151,7 +172,7 @@ export interface StoreState {
 // Current schema version - bump this when seed data changes to force refresh.
 // MUST be defined above createInitialState so fresh state is stamped with it;
 // a stale literal here once caused every reload to wipe localStorage.
-const CURRENT_VERSION = 13 // Gellert blitz: journey pipeline, providers/standing facts, charge slips, zones
+const CURRENT_VERSION = 14 // Gellert ops blitz: tasks, patient documents, med recs, escalations, provider comms, onboarding
 
 // ============================================================================
 // INITIAL STATE
@@ -202,6 +223,13 @@ export const createInitialState = (): StoreState => ({
   // Gellert billing mode (slips rebase with their time logs; zones are static)
   chargeSlips: rebaseToToday(initialChargeSlips),
   zones: initialZones,
+  // Gellert ops blitz (onboarding is static curriculum state - no rebasing)
+  navigatorTasks: rebaseToToday(initialNavigatorTasks),
+  patientDocuments: rebaseToToday(initialPatientDocuments),
+  medReconciliations: rebaseToToday(initialMedReconciliations),
+  escalations: rebaseToToday(initialEscalations),
+  providerCommunications: rebaseToToday(initialProviderCommunications),
+  navigatorOnboarding: initialNavigatorOnboarding,
   lastAssignedPatientId: null,
   _version: CURRENT_VERSION,
 })
@@ -286,6 +314,13 @@ export function loadState(): StoreState {
           standingFacts: parsed.standingFacts || initialState.standingFacts,
           chargeSlips: parsed.chargeSlips || initialState.chargeSlips,
           zones: parsed.zones || initialState.zones,
+          // Gellert ops blitz slices
+          navigatorTasks: parsed.navigatorTasks || initialState.navigatorTasks,
+          patientDocuments: parsed.patientDocuments || initialState.patientDocuments,
+          medReconciliations: parsed.medReconciliations || initialState.medReconciliations,
+          escalations: parsed.escalations || initialState.escalations,
+          providerCommunications: parsed.providerCommunications || initialState.providerCommunications,
+          navigatorOnboarding: parsed.navigatorOnboarding || initialState.navigatorOnboarding,
           _version: CURRENT_VERSION,
         }
       }

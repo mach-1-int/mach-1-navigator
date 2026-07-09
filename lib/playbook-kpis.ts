@@ -45,6 +45,8 @@ export interface PlaybookKpiInput {
   /** Optional revenue inputs — enables the cost-per-engaged-patient KPI */
   intakeRecords?: IntakeRecord[]
   payers?: Payer[]
+  /** Optional Patient-Agreement billing gate set (playbook §4) */
+  signedContractPatientIds?: Set<string>
 }
 
 const KPI_WINDOW_DAYS = 14
@@ -68,6 +70,7 @@ export function computePlaybookKpis(input: PlaybookKpiInput): PlaybookKpi[] {
     payerConfig,
     intakeRecords,
     payers,
+    signedContractPatientIds,
   } = input
 
   const kpis: PlaybookKpi[] = []
@@ -178,7 +181,8 @@ export function computePlaybookKpis(input: PlaybookKpiInput): PlaybookKpi[] {
       intakeRecords,
       payerConfig,
       appointments,
-      payers
+      payers,
+      signedContractPatientIds
     )
     kpis.push({
       id: "cost-per-engaged",

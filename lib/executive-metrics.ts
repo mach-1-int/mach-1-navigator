@@ -111,14 +111,16 @@ export function computeRevenue(
   intakeRecords: IntakeRecord[],
   payerConfig: PayerConfig,
   appointments: Appointment[],
-  payers: Payer[]
+  payers: Payer[],
+  signedContractPatientIds?: Set<string>
 ): RevenueBreakdown {
   const claims = generateMonthlyClaims(
     navigators,
     patients,
     timeLogs,
     payerConfig,
-    intakeRecords
+    intakeRecords,
+    signedContractPatientIds
   )
   const month = resolveBillingMonth(getAvailableMonths(claims))
   const monthClaims = filterClaimsByMonth(claims, month)

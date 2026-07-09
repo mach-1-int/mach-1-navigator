@@ -51,6 +51,12 @@ import {
   Calendar,
   Plus,
   RotateCcw,
+  ListChecks,
+  FileSignature,
+  Pill,
+  Megaphone,
+  Send,
+  GraduationCap,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { AuditAction, OrganizationSettings, Payer, RemarkClassification, RemarkCode } from "@/lib/types"
@@ -99,6 +105,17 @@ const actionConfig: Record<AuditAction, { label: string; icon: typeof Edit2; col
   remittance_pended: { label: "Remittance Pended", icon: AlertCircle, color: "bg-amber-100 text-amber-700 border-amber-200" },
   remittance_reprocessed: { label: "Remittance Reprocessed", icon: RotateCcw, color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
   denial_work_status_changed: { label: "Denial Work Status", icon: History, color: "bg-indigo-100 text-indigo-700 border-indigo-200" },
+  // Gellert ops blitz (tasks / documents / meds / escalations / comms / training)
+  task_completed: { label: "Task Completed", icon: ListChecks, color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  task_dismissed: { label: "Task Dismissed", icon: X, color: "bg-slate-100 text-slate-700 border-slate-200" },
+  document_completed: { label: "Document Completed", icon: FileText, color: "bg-blue-100 text-blue-700 border-blue-200" },
+  document_signed: { label: "Document Signed", icon: FileSignature, color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  med_reconciliation_recorded: { label: "Med Reconciliation", icon: Pill, color: "bg-violet-100 text-violet-700 border-violet-200" },
+  escalation_raised: { label: "Escalation Raised", icon: Megaphone, color: "bg-red-100 text-red-700 border-red-200" },
+  escalation_acknowledged: { label: "Escalation Acknowledged", icon: Check, color: "bg-orange-100 text-orange-700 border-orange-200" },
+  escalation_resolved: { label: "Escalation Resolved", icon: Check, color: "bg-green-100 text-green-700 border-green-200" },
+  provider_comm_sent: { label: "Provider Comm Sent", icon: Send, color: "bg-blue-100 text-blue-700 border-blue-200" },
+  onboarding_milestone_completed: { label: "Onboarding Milestone", icon: GraduationCap, color: "bg-violet-100 text-violet-700 border-violet-200" },
 }
 
 /** Blank form used before the org settings load into the edit dialog */

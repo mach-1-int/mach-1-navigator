@@ -32,16 +32,19 @@ import { AdminDashboard } from "@/components/dashboards/admin-dashboard"
 import { ClaimsManager } from "@/components/billing/claims-manager"
 import { SchedulingView } from "@/components/schedule/scheduling-view"
 import { NavigatorSafetyMap } from "@/components/supervisor/navigator-safety-map"
+import { TemplateEditorView } from "@/components/admin/template-editor-view"
+import { TasksView } from "@/components/tasks/tasks-view"
+import { WallboardView } from "@/components/wallboard/wallboard-view"
 import { InDevelopment } from "@/components/in-development"
 import { Toaster } from "@/components/ui/sonner"
 
 // Define which views are implemented for each role
 const implementedViews: Record<string, ViewType[]> = {
-  executive: ["dashboard", "revenue-cycle", "revenue", "performance", "patients"],
-  supervisor: ["dashboard", "safety-map", "referrals", "journey-board", "navigators", "navigator-detail", "team-schedule", "compliance", "events", "patient-detail", "messages", "intake-workspace"],
-  navigator: ["dashboard", "patients", "patient-detail", "schedule", "notes", "messages", "assessment-wizard"],
+  executive: ["dashboard", "revenue-cycle", "revenue", "performance", "patients", "wallboard"],
+  supervisor: ["dashboard", "safety-map", "referrals", "journey-board", "navigators", "navigator-detail", "team-schedule", "compliance", "events", "patient-detail", "messages", "intake-workspace", "wallboard"],
+  navigator: ["dashboard", "patients", "patient-detail", "schedule", "notes", "messages", "assessment-wizard", "tasks"],
   patient: ["dashboard", "appointments", "medications", "profile", "messages"],
-  admin: ["dashboard", "admin-payer-rates", "admin-audit-log", "revenue-cycle"],
+  admin: ["dashboard", "admin-payer-rates", "admin-audit-log", "revenue-cycle", "template-editor"],
   biller: ["dashboard"],
 }
 
@@ -72,6 +75,9 @@ const viewTitles: Record<ViewType, { title: string; subtitle: string }> = {
   "admin-audit-log": { title: "Audit Log", subtitle: "System activity and user actions" },
   "revenue-cycle": { title: "Revenue Cycle Manager", subtitle: "Claims validation and CSV export" },
   "safety-map": { title: "Navigator Safety Map", subtitle: "Real-time field team location tracking" },
+  "template-editor": { title: "Note Templates", subtitle: "Create and edit note templates — fields, narrative, encounter mapping" },
+  tasks: { title: "My Tasks", subtitle: "Confirmations, follow-ups, and response tasks" },
+  wallboard: { title: "Wallboard", subtitle: "Daily KPI board — playbook §9.1" },
 }
 
 // Role-specific dashboard titles
@@ -128,6 +134,11 @@ function DashboardContent() {
       }
     }
 
+    // Handle wallboard (supervisor + executive)
+    if (navigation.view === "wallboard" && (currentUser.role === "supervisor" || currentUser.role === "executive")) {
+      return <WallboardView />
+    }
+
     // Handle admin-specific views
     if (currentUser.role === "admin") {
       if (navigation.view === "admin-payer-rates" || navigation.view === "admin-audit-log") {
@@ -135,6 +146,9 @@ function DashboardContent() {
       }
       if (navigation.view === "revenue-cycle") {
         return <ClaimsManager />
+      }
+      if (navigation.view === "template-editor") {
+        return <TemplateEditorView />
       }
     }
 
@@ -168,6 +182,9 @@ function DashboardContent() {
 
     // Handle navigator-specific views
     if (currentUser.role === "navigator") {
+      if (navigation.view === "tasks") {
+        return <TasksView />
+      }
       if (navigation.view === "schedule") {
         return <NavigatorSchedule />
       }

@@ -30,6 +30,9 @@ export type ViewType =
   | "admin-audit-log"
   | "revenue-cycle"
   | "safety-map"
+  | "template-editor"
+  | "tasks"
+  | "wallboard"
 
 interface NavigationState {
   view: ViewType

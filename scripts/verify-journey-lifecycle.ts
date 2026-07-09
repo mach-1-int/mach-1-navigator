@@ -312,7 +312,7 @@ run("Block 9: Store persistence carries journey slices", () => {
     state.journeyEvents.length === initialJourneyEvents.length,
     `journeyEvents fully seeded (${state.journeyEvents.length} events)`
   )
-  assert(state._version === 13, `store version lock: _version === 13 (got ${state._version})`)
+  assert(state._version === 14, `store version lock: _version === 14 (got ${state._version})`)
   assert(
     state.patients.every((p) => PHASES.includes(p.journeyPhase)),
     "rebased store patients keep valid journey phases"

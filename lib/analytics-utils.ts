@@ -30,6 +30,7 @@ import { localCurrentMonth } from "./date-rebase"
  * @param timeLogs - Array of time log entries
  * @param intakeRecords - Intake records (consent, initiating visit, Z-codes)
  * @param payerConfig - Active payer configuration
+ * @param signedContractPatientIds - Optional Patient-Agreement billing gate set
  * @returns Total estimated claim value for the current billing month
  */
 export function calculateEstimatedMonthlyRevenue(
@@ -37,13 +38,14 @@ export function calculateEstimatedMonthlyRevenue(
   patients: Patient[],
   timeLogs: TimeLog[],
   intakeRecords: IntakeRecord[],
-  payerConfig: PayerConfig
+  payerConfig: PayerConfig,
+  signedContractPatientIds?: Set<string>
 ): number {
   if (!timeLogs || timeLogs.length === 0) {
     return 0
   }
 
-  const claims = generateMonthlyClaims(navigators, patients, timeLogs, payerConfig, intakeRecords)
+  const claims = generateMonthlyClaims(navigators, patients, timeLogs, payerConfig, intakeRecords, signedContractPatientIds)
   // Local-calendar month (UTC would flip a month early for evening users);
   // fall back to the latest month on record when the current month is empty.
   const currentMonth = localCurrentMonth()
@@ -340,6 +342,7 @@ export interface DashboardSummary {
  * @param intakeRecords - Intake records (consent, initiating visit, Z-codes)
  * @param payerConfig - Active payer configuration
  * @param navigatorUsers - Array of users with navigator role (for caseload stats)
+ * @param signedContractPatientIds - Optional Patient-Agreement billing gate set
  * @returns Summary statistics object
  */
 export function getDashboardSummary(
@@ -348,7 +351,8 @@ export function getDashboardSummary(
   timeLogs: TimeLog[],
   intakeRecords: IntakeRecord[],
   payerConfig: PayerConfig,
-  navigatorUsers: User[]
+  navigatorUsers: User[],
+  signedContractPatientIds?: Set<string>
 ): DashboardSummary {
   const activePatients = patients.filter((p) => p.survivalStatus === "active")
   const totalActivePatients = activePatients.length
@@ -358,7 +362,8 @@ export function getDashboardSummary(
     patients,
     timeLogs,
     intakeRecords,
-    payerConfig
+    payerConfig,
+    signedContractPatientIds
   )
 
   // Time-log verification rate: % of logs verified by a supervisor

@@ -48,6 +48,7 @@ export function ExecutiveDashboard() {
     adverseEvents,
     payers,
     activePayerConfig,
+    signedContractPatientIds,
     getLastAssignedPatient,
   } = useDemoData()
 
@@ -57,8 +58,8 @@ export function ExecutiveDashboard() {
   // validates every monthly claim — without memoization that repeats on every
   // chat message or note-draft autosave.
   const revenue = useMemo(
-    () => computeRevenue(navigators, patients, timeLogs, intakeRecords, activePayerConfig, appointments, payers),
-    [navigators, patients, timeLogs, intakeRecords, activePayerConfig, appointments, payers]
+    () => computeRevenue(navigators, patients, timeLogs, intakeRecords, activePayerConfig, appointments, payers, signedContractPatientIds),
+    [navigators, patients, timeLogs, intakeRecords, activePayerConfig, appointments, payers, signedContractPatientIds]
   )
   const dailyUnits = useMemo(
     () => computeDailyUnits(timeLogs, activePayerConfig),

@@ -90,6 +90,7 @@ export function ClaimsManager() {
     claimRecords,
     payers,
     organizationSettings,
+    signedContractPatientIds,
     exportClaims,
     reopenClaimRecord,
     getNavigatorDisplayName,
@@ -103,10 +104,12 @@ export function ClaimsManager() {
   const [nudgeDialogOpen, setNudgeDialogOpen] = useState(false)
   const [claimToNudge, setClaimToNudge] = useState<BillableClaim | null>(null)
 
-  // Generate all claims using active payer configuration
+  // Generate all claims using active payer configuration.
+  // signedContractPatientIds enforces the playbook §4 gate: no billing before
+  // the signed Patient Agreement (navigation contract).
   const allClaims = useMemo(() => {
-    return generateMonthlyClaims(navigators, patients, timeLogs, activePayerConfig, intakeRecords)
-  }, [navigators, patients, timeLogs, activePayerConfig, intakeRecords])
+    return generateMonthlyClaims(navigators, patients, timeLogs, activePayerConfig, intakeRecords, signedContractPatientIds)
+  }, [navigators, patients, timeLogs, activePayerConfig, intakeRecords, signedContractPatientIds])
 
   // Get available months
   const availableMonths = useMemo(() => {
