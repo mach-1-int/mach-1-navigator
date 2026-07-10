@@ -646,7 +646,6 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
             eligibility,
             closedAt: now,
             closeReason: "ineligible",
-            providerNotifiedAt: now,
           }
 
       const auditEntries: AuditLog[] = [
@@ -657,7 +656,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
       if (!eligible) {
         auditEntries.push(
           makeAudit(byId, byName, "supervisor", "referral_closed",
-            `Referral for ${referral.patientName} closed: ineligible (${result.ineligibilityReason}); referring provider notified`,
+            `Referral for ${referral.patientName} closed: ineligible (${result.ineligibilityReason}); referring provider notification pending`,
             "referral", referralId)
         )
       }
