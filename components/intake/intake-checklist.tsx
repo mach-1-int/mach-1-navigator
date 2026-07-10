@@ -28,6 +28,7 @@ import {
 } from "@/lib/journey"
 import { documentForChecklistItem } from "@/lib/document-definitions"
 import { DocumentDialog } from "@/components/documents/document-dialog"
+import { ProviderCommDialog } from "@/components/supervisor/provider-comm-dialog"
 import type { IntakeVisit, PatientDocument } from "@/lib/types"
 
 const DOCUMENT_STATUS_BADGES: Record<PatientDocument["status"], { label: string; className: string }> = {
@@ -70,12 +71,12 @@ export function IntakeChecklist({ patientId }: { patientId: string }) {
     updateIntakeChecklistItem,
     completeIntakeVisit,
     recordIntakeNoShow,
-    notifyReferringProvider,
     patientDocuments,
   } = useDemoData()
 
   const [noShowDialogVisit, setNoShowDialogVisit] = useState<1 | 2 | null>(null)
   const [openDocId, setOpenDocId] = useState<string | null>(null)
+  const [commDialogOpen, setCommDialogOpen] = useState(false)
 
   const patient = getPatient(patientId)
   const intake = getPatientIntake(patientId)
@@ -288,12 +289,7 @@ export function IntakeChecklist({ patientId }: { patientId: string }) {
             </p>
             <Button
               size="sm"
-              onClick={() => {
-                notifyReferringProvider({ patientId }, byId, byName)
-                toast.success("Referring provider notified", {
-                  description: "Notification stamped on the intake record (audit-logged).",
-                })
-              }}
+              onClick={() => setCommDialogOpen(true)}
               className="gap-1.5 shrink-0"
             >
               <Send className="h-4 w-4" />
@@ -331,6 +327,13 @@ export function IntakeChecklist({ patientId }: { patientId: string }) {
         </AlertDialog>
 
         <DocumentDialog doc={openDoc} open={openDocId !== null} onOpenChange={(open) => !open && setOpenDocId(null)} />
+
+        <ProviderCommDialog
+          open={commDialogOpen}
+          onOpenChange={setCommDialogOpen}
+          type="intake_notification"
+          entity={{ patientId }}
+        />
       </CardContent>
     </Card>
   )

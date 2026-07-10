@@ -59,6 +59,8 @@ export function PerformanceView() {
     payers,
     activePayerConfig,
     signedContractPatientIds,
+    navigatorTasks,
+    notes,
     isHydrated,
   } = useDemoData()
 
@@ -88,8 +90,10 @@ export function PerformanceView() {
         intakeRecords,
         payers,
         signedContractPatientIds,
+        navigatorTasks,
+        notes,
       }),
-    [referrals, patients, navigators, timeLogs, chargeSlips, appointments, adverseEvents, activePayerConfig, intakeRecords, payers, signedContractPatientIds]
+    [referrals, patients, navigators, timeLogs, chargeSlips, appointments, adverseEvents, activePayerConfig, intakeRecords, payers, signedContractPatientIds, navigatorTasks, notes]
   )
 
   const windshieldByNavigator = useMemo(() => {

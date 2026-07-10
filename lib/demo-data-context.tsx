@@ -699,7 +699,10 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
       if (nextStatus === "agreed") {
         updated = { ...updated, agreedAt: now }
       } else if (nextStatus === "declined" || nextStatus === "unreachable") {
-        updated = { ...updated, closedAt: now, closeReason: nextStatus, providerNotifiedAt: now }
+        // Auto-close does NOT pre-stamp providerNotifiedAt: the notification is
+        // an explicit, reviewable send (ProviderCommDialog -> notifyReferringProvider),
+        // which stamps it and stores the ProviderCommunication record.
+        updated = { ...updated, closedAt: now, closeReason: nextStatus }
       }
 
       const auditEntries: AuditLog[] = [
@@ -710,7 +713,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }) {
       if (nextStatus === "declined" || nextStatus === "unreachable") {
         auditEntries.push(
           makeAudit(attempt.by, attempt.byName, "supervisor", "referral_closed",
-            `Referral for ${referral.patientName} closed: ${nextStatus}; referring provider notified`,
+            `Referral for ${referral.patientName} closed: ${nextStatus}; referring provider notification pending`,
             "referral", referralId)
         )
       }

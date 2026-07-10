@@ -17,17 +17,9 @@ import {
   Users,
   Building2,
   Phone,
-  PhoneCall,
-  CalendarCheck,
-  MessageCircle,
-  HeartPulse,
-  Stethoscope,
-  Pill,
-  BookOpen,
   ListChecks,
   XCircle,
   Sparkles,
-  type LucideIcon,
 } from "lucide-react"
 import { toast } from "sonner"
 import { useDemoData } from "@/lib/demo-data-context"
@@ -36,18 +28,8 @@ import { cn } from "@/lib/utils"
 import { TASK_TYPE_CONFIG } from "@/lib/task-engine"
 import { pcpDueStatus } from "@/lib/journey"
 import { localDateOf } from "@/lib/task-engine"
+import { TASK_ICONS, TASK_ICON_FALLBACK } from "@/components/tasks/task-icons"
 import type { AdverseEvent, NavigatorTask } from "@/lib/types"
-
-const TASK_ICONS: Record<string, LucideIcon> = {
-  PhoneCall,
-  CalendarCheck,
-  AlertTriangle,
-  MessageCircle,
-  HeartPulse,
-  Stethoscope,
-  Pill,
-  BookOpen,
-}
 
 const PCP_STATUS_STYLE: Record<string, string> = {
   ok: "bg-emerald-100 text-emerald-700 border-emerald-200",
@@ -171,7 +153,7 @@ export function AdverseEventsView() {
           <div className="space-y-2">
             {eventTasks.map((task) => {
               const config = TASK_TYPE_CONFIG[task.type]
-              const Icon = TASK_ICONS[config.icon] ?? ListChecks
+              const Icon = TASK_ICONS[config.icon] ?? TASK_ICON_FALLBACK
               const isPcp = task.type === "post_discharge_pcp"
               const pcp = isPcp ? pcpDueStatus(localDateOf(task.dueAt)) : null
               const isDismissing = dismissingTaskId === task.id

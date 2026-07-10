@@ -24,37 +24,13 @@ import {
 } from "@/components/ui/dialog"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import {
-  ListChecks,
-  ChevronRight,
-  CheckCircle2,
-  XCircle,
-  PhoneCall,
-  CalendarCheck,
-  AlertTriangle,
-  MessageCircle,
-  HeartPulse,
-  Stethoscope,
-  Pill,
-  BookOpen,
-  type LucideIcon,
-} from "lucide-react"
+import { ListChecks, ChevronRight, CheckCircle2, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDemoData } from "@/lib/demo-data-context"
 import { useRole } from "@/lib/role-context"
 import { overdueTasks, localDateOf, confirmationWindowForType, TASK_TYPE_CONFIG } from "@/lib/task-engine"
+import { TASK_ICONS, TASK_ICON_FALLBACK } from "@/components/tasks/task-icons"
 import type { NavigatorTask } from "@/lib/types"
-
-const TASK_TYPE_ICONS: Record<string, LucideIcon> = {
-  PhoneCall,
-  CalendarCheck,
-  AlertTriangle,
-  MessageCircle,
-  HeartPulse,
-  Stethoscope,
-  Pill,
-  BookOpen,
-}
 
 const CONFIRMATION_OUTCOMES: { value: "confirmed" | "no_answer" | "reschedule_requested"; label: string }[] = [
   { value: "confirmed", label: "Confirmed" },
@@ -63,7 +39,7 @@ const CONFIRMATION_OUTCOMES: { value: "confirmed" | "no_answer" | "reschedule_re
 ]
 
 function TaskTypeIcon({ type, className }: { type: NavigatorTask["type"]; className?: string }) {
-  const Icon = TASK_TYPE_ICONS[TASK_TYPE_CONFIG[type].icon] ?? ListChecks
+  const Icon = TASK_ICONS[TASK_TYPE_CONFIG[type].icon] ?? TASK_ICON_FALLBACK
   return <Icon className={className} />
 }
 
