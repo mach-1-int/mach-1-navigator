@@ -7,7 +7,10 @@ logical order, with expected results as checkboxes. Use it three ways:
   Golden Thread (Parts 2–4) is the core lifecycle. **Parts 10–15 are the six
   Gellert beats** from the logic-transplant blitz ("you handed us your manual
   and your workflow map; days later the system enforces your manual and runs
-  your workflow") — they can be run standalone after a reset.
+  your workflow"). **Parts 16–22 are the seven Ops Blitz beats** ("you handed
+  us your manual's remaining sections; days later the system runs your
+  engagement cadence, your escalation loop, and your training program too") —
+  all can be run standalone after a reset.
 - **Manual QA pass** — tick every checkbox; any miss is a regression.
 - **Smoke test after changes** — run Part 0 (automated gates) plus whichever
   Part touches the code you changed.
@@ -44,10 +47,15 @@ npm run verify:claims     # 43 passed
 npm run verify:journey    # 5 passed + 9 passed (runs two scripts)
 npm run verify:notes      # 7 passed
 npm run verify:gellert    # 12 passed
+npm run verify:ops        # chains 8 scripts, 67 blocks passed total:
+                           #   verify-gellert-ops (10) + verify-ops-templates (6)
+                           #   + verify-ops-documents (6) + verify-ops-tasks (10)
+                           #   + verify-ops-escalations (6) + verify-ops-meds (6)
+                           #   + verify-ops-comms (3) + verify-ops-onboarding (5)
 npm run build             # compiles
 ```
 
-- [ ] All nine commands green
+- [ ] All ten commands green
 
 ---
 
@@ -629,6 +637,270 @@ exit through the five documented pathways.*
 
 ---
 
+## Part 16 — Ops Blitz Beat 1: A Custom Template in 60 Seconds
+
+*"You don't file a ticket to change a note type; you edit it."*
+
+Log in as **Admin (Alex Rivera)** → sidebar **Note Templates**.
+
+1. Orientation:
+   - [ ] Header reads "Note Templates" with subtitle "**{N} templates on file
+         ({N} system, {N} custom)** — duplicate a manual template to build a
+         practice-specific variant without a code change"
+   - [ ] Table columns: Template / Encounter types / Fields / Notes written /
+         Actions
+2. Pick the **Medical Appointment ± Transit** row → click **Duplicate**
+   (Copy icon).
+   - [ ] Toast: `Editing a copy of "Medical Appointment ± Transit" — nothing
+         is saved until you hit Save`
+   - [ ] The editor opens on the new copy, name suffixed **"(Copy)"**
+3. In the field editor, rename the template (e.g. "Medical Appointment —
+   Home Visit Variant") and add a field via **"Add field"**.
+   - [ ] New field row lets you set label, field type, section, and the
+         **Required**/**Never skip** switches
+   - [ ] The **"Live narrative preview"** panel (Eye icon) updates as you
+         edit — it renders sample responses through the same
+         `generateNarrative` engine that writes saved notes, and surfaces
+         any validation problems under **"Fix before saving"**
+4. Click **"Save template"**.
+   - [ ] Toast: `Saved "{name}"` — "Live in the note builder's template
+         picker now."
+   - [ ] Back on the list, the new row shows under **custom** with a "Notes
+         written: 0" count
+5. Try to delete a system template that already has notes against it (e.g.
+   **Medical Appointment ± Transit** itself, used in Part 11).
+   - [ ] The **Delete** action (Trash2 icon) is disabled with a tooltip
+         reading "**{N} saved notes were written from this template**"
+   - [ ] If you force a delete attempt on any in-use template, the outcome is
+         `Cannot delete "{name}" — existing notes were written from it` — the
+         in-use guard is real, not cosmetic
+6. Delete the new custom copy instead (0 notes written).
+   - [ ] Confirm dialog: `Delete "{name}"?` with body text ending
+         "Templates referenced by saved notes cannot be deleted." → confirm
+         button **"Delete template"**
+   - [ ] Toast: `Deleted "{name}"`
+
+---
+
+## Part 17 — Ops Blitz Beat 2: Documents, E-Sign, and the Billing Gate
+
+*Playbook §4: "no billing before signed Patient Agreement" — now a real
+claim-validation error, not prose.*
+
+Log in as **Supervisor (Marcus Williams)** → header search → open **Walter
+Briggs**.
+
+1. Journey tab → Intake 2 checklist.
+   - [ ] Items with a mapped document (ROI, medication list, patient photo,
+         onboarding packet, navigation contract, intake survey) show a status
+         badge (Not started / Draft / Completed / Signed) and an **"Open
+         document"** button instead of a bare checkbox
+   - [ ] ROI/photo/med-list/packet already read **Signed**/**Completed** —
+         Walter's Intake 1 side is done
+   - [ ] The **navigation contract** row reads **Draft** — this is the live
+         demo beat
+2. Click **"Open document"** on the navigation contract row.
+   - [ ] The dialog shows the **Patient Navigation Agreement** form with an
+         amber banner: "**Billing gate: navigation time cannot bill for this
+         patient until this agreement is signed.**"
+3. Scroll to the signature panel.
+   - [ ] Badge reads "**demo e-signature — DocuSign-class integration slots
+         in later**" — honestly labeled, not pretending to be DocuSign
+   - [ ] A "Signing as" radio: Patient / Guardian / Authorized representative
+   - [ ] A **"Typed name (signature)"** field
+4. Type "Walter Briggs", select **Patient**, click **"Sign Agreement"**.
+   - [ ] Toast: `Patient Navigation Agreement signed by Walter Briggs` —
+         "Billing gate open for this patient."
+   - [ ] The form now reads "Signed by Walter Briggs (Patient) on {date} —
+         billing gate open."
+   - [ ] Back on the checklist, the row flips to **Signed**
+5. Prove the gate was real: as **Revenue Cycle Manager (Biller)**, before
+   Walter's contract is signed his patient-month would show **"Patient
+   Agreement not signed"** in Needs Attention if he had billable time logged
+   (the validation is a real `claims-engine` error, not UI copy) — after
+   signing, that error clears.
+6. Bonus: open **Rosa Delgado** (fresh conversion) — her Intake 1 items are
+   all **Not started**, showing the honest empty state before any document
+   work begins.
+
+---
+
+## Part 18 — Ops Blitz Beat 3: The Navigator's Task Morning
+
+*SOPs 3.3/3.6/3.10 — confirmations, no-show recovery, and post-visit
+follow-up, running as a worklist instead of memory.*
+
+Log in as **Navigator (Emily Rodriguez)** → sidebar **My Tasks**.
+
+1. Orientation:
+   - [ ] Header: "My Tasks" with subtitle "**{N} open task(s) — {N}
+         overdue**"
+   - [ ] Four sections in order: **Overdue** (red), **Due today**,
+         **Upcoming**, **Done recently** (last 10)
+2. Work the **Overdue** lane first (the red one) — pick a confirmation task.
+   - [ ] Card shows a destructive **"Overdue"** badge, the task type label
+         (e.g. "48-hour confirmation"), a due timestamp, and two buttons:
+         **"Complete"** and **"Dismiss"**
+3. Click **"Complete"**.
+   - [ ] Dialog title **"Complete task"**; for confirmation tasks an
+         **Outcome** radio group offers exactly **Confirmed** / **No
+         answer** / **Reschedule requested**, plus an optional **"Note
+         (optional)"** field
+   - [ ] Confirm with **"Mark complete"**
+4. Switch to **Schedule** and open the same patient's appointment.
+   - [ ] The **"Confirmation touches"** section shows 48-hour / 24-hour /
+         Day-of rows; the one you just completed is now green with a
+         **Confirmed** badge — completing from Tasks and confirming from
+         Schedule write to the same `confirmations[]` array, so they can
+         never double-count
+   - [ ] Any row still open shows a **"Confirm now"** button — click it on a
+         different row and watch the toast: "**Confirmation recorded**" /
+         "{window} touch confirmed."
+5. Back in **My Tasks**, find a **"Dismiss"** action on any task.
+   - [ ] Dialog **"Dismiss task"** requires a note (placeholder: "Why is this
+         task being dismissed?"); the **"Dismiss"** button stays disabled
+         until you type one
+6. Dashboard check: navigate to **Overview**.
+   - [ ] A "**{N} task(s) due today**" strip appears (with an "— {N}
+         overdue" suffix when applicable) and a **"View all"** button jumps
+         back into My Tasks
+
+---
+
+## Part 19 — Ops Blitz Beat 4: Adverse-Event Response Tasks
+
+*SOPs 4.1–4.6 — one click turns a closed adverse event into the full
+response-task set, including the post-discharge PCP business-day countdown.*
+
+Log in as **Supervisor (Marcus Williams)** → sidebar **Adverse Events**.
+
+1. Find **Dorothy Martinez** (UTI, ended 2026-01-18) — she has no response
+   tasks generated yet (fresh seed).
+   - [ ] A **"Generate response tasks"** button is visible on her event card
+2. Click it.
+   - [ ] Toast: "**Generated {N} response task(s) for Dorothy Martinez**"
+   - [ ] Task rows appear: **post-event contact** (already past-due, since
+         the event predates today), and — because the event has an
+         `endDate` — **post-discharge PCP visit**, **post-discharge med
+         reconciliation**, **risk-reduction education**
+3. Inspect the post-discharge PCP task.
+   - [ ] Its due badge reads in **business days** (e.g. "{n}bd left" or
+         "{n}bd overdue") — the same `pcpDueStatus` math as the intake-side
+         PCP countdown, but anchored to the adverse event's discharge date,
+         not intake
+4. Each task row offers **Complete**/**Dismiss** exactly like My Tasks.
+   - [ ] Completing the med-reconciliation task is a natural segue into Part
+         20 (open Dorothy's Medications tab next)
+5. Contrast with **Frank Anderson** (fall, ended 2026-01-22) — his response
+   set was already generated at seed time, so no "Generate response tasks"
+   button appears; his tasks show a mix of **Done** and **open** rows,
+   demonstrating the steady-state view after the initial generation.
+
+---
+
+## Part 20 — Ops Blitz Beat 5: The Escalation Closed Loop
+
+*Field guide §1.2 — a first-class escalation object, distinct from SOS, that
+closes the loop: raise → acknowledge → resolve.*
+
+1. As **Navigator (Maria Santos — use the navigator picker on the role
+   selector)**, open **Frank Anderson**'s chart → **Notes**/Clinical Feed
+   tab.
+   - [ ] A **"Raise Escalation"** button is available on the feed
+2. Click it.
+   - [ ] Dialog title **"Raise Escalation — Frank Anderson"**; description
+         states "The assigned supervisor is nudged immediately"
+   - [ ] Reason options: Repeated no-shows / Clinical risk / Unresolved SDOH
+         barrier / Safety concern / Other
+   - Pick a reason, add a description, submit.
+     - [ ] Toast: "**Escalation raised for Frank Anderson**" — "The assigned
+           supervisor has been nudged."
+3. Switch to **Supervisor (Marcus Williams)** — the seeded **open**
+   escalation on Frank Anderson's household (`esc-pt5-sdoh`, an SDOH/utility
+   case) is the fastest live example if you skip step 1–2.
+   - [ ] Status badge **"Open"**; an **"Acknowledge"** button is visible
+4. Click **"Acknowledge"**.
+   - [ ] Status flips to **"Acknowledged"**; the button row now offers
+         **"Resolve"**
+5. Click **"Resolve"**.
+   - [ ] A required resolution-note textarea appears; the confirm button
+         (**"Confirm Resolution"**) stays disabled until you type a note
+   - [ ] Submitting flips status to **"Resolved"** and stamps
+         acknowledged/resolved by + at
+6. For contrast, open the seeded **resolved** escalation on Robert Wilson
+   (`esc-pt3-clinical`) — it shows the full closed-loop history: raised →
+   acknowledged (same day) → resolved (three days later) with its
+   resolution note intact, read-only.
+
+---
+
+## Part 21 — Ops Blitz Beat 6: Onboarding Tracker & the Certification Bump
+
+*Playbook §10 — the 90-day developmental period, made visible, with the
+comp/target consequence of certifying built in.*
+
+Log in as **Supervisor (Marcus Williams)** → sidebar **Navigators**.
+
+1. Directory table.
+   - [ ] A new **"Onboarding"** column shows a badge per navigator:
+         **Developmental** (with "{N}d in program"), **Certified**, or
+         **Lead**
+2. Click into **Sarah Thompson** (`nav-sarah` — true new hire, 0 milestones
+   complete) → her onboarding card.
+   - [ ] 8-milestone curriculum in order: Week-1 orientation, CPSS exam,
+         Gellert exam, Weeks 2-4 shadowing, **30-day review**, **60-day
+         review**, **90-day review**, **Certification**
+   - [ ] Her **next milestone** is Week-1 orientation (nothing completed yet)
+   - [ ] A **shadowing checklist** (7 items: home visit, transport with
+         in-transit coaching, medical appointment ± transit, BH appointment,
+         Intake 1/2 visit, a day-close alongside a mentor, first solo note
+         reviewed against the manual)
+3. Contrast with **Sarah Johnson** (`nav7`) — seeded at the 60-day-review
+   stage, several milestones already complete with `completedAt` stamps.
+4. Open **David Chen**'s (`nav2`) onboarding card — already `certified`/lead.
+   - [ ] His certification milestone shows completed
+   - [ ] His units target sits at 18+/day (already ramped)
+5. Back on a **developmental** navigator's card, inspect the certification
+   milestone row.
+   - [ ] Text states the consequence explicitly: **"+$2,500"** compensation
+         and "Completing this bumps units target **16 → 18**/day"
+   - [ ] The action button reads **"Certify"** — clicking it (on a demo
+         navigator, not a real seeded one you want to preserve) flips status
+         to `certified` and ramps the units target live
+
+---
+
+## Part 22 — Ops Blitz Beat 7: The Wallboard
+
+*Playbook §9.1 — the daily-KPI screen for the office, live from demo data.*
+
+Log in as **Executive (Dr. Sarah Chen)** or **Supervisor (Marcus Williams)**
+→ sidebar **Wallboard**.
+
+1. - [ ] Header **"Daily KPI Board"**, subtitle "Real-time operational
+         metrics"; footer caption "Daily KPI board — Gellert playbook §9.1 ·
+         live from demo data"
+2. Seven tiles, all computed from live state (not random):
+   - [ ] **Units Today** — top 3 navigators by avg units/day
+   - [ ] **Day-Close Rate (30d)** — %
+   - [ ] **Referral Conversion** — %
+   - [ ] **Open Tasks** — count of open `NavigatorTask`s (drops as you clear
+         My Tasks in Part 18)
+   - [ ] **Open Escalations** — count of non-resolved escalations (drops
+         after Part 20's resolve)
+   - [ ] **Active Census** — active patient count
+   - [ ] **Telenav Overdue** — patients whose telenav check-in is overdue
+         (Helen Garcia, from Part 15)
+3. Confirm liveness: complete a task in Part 18 or resolve an escalation in
+   Part 20 first, then reload the Wallboard — **Open Tasks**/**Open
+   Escalations** reflect the change (best demoed as the closing beat after
+   Parts 18–20, to show the board isn't a static mock).
+4. Confirm role scope: the **navigator** role has no Wallboard sidebar item
+   — it's an executive/supervisor office screen, per the playbook's meeting
+   cadence, not a personal dashboard.
+
+---
+
 ## Appendix — Known Demo Constraints
 
 - No backend: state is one browser's localStorage. Two tabs share it (that's
@@ -641,9 +913,14 @@ exit through the five documented pathways.*
   stale (that's how the SLA-breached referral, the overdue telenavigation
   check-in, and today's unsigned charge slips are live on every reset); DOBs
   and enrollment dates stay fixed.
-- Outreach attempts are manual attestations (no telephony/SMS integration),
-  and "Notify Referring Provider" is an audit event + toast — there is no
-  fax/Direct-messaging transport.
+- Outreach attempts are manual attestations (no telephony/SMS integration).
+  Provider communications (intake/exit/ineligible/unreachable) are real
+  rendered/editable messages with a per-referral history, but sending is
+  explicitly labeled **"Send (simulated)"** — no fax/Direct-messaging
+  transport exists yet.
+- Document e-signatures (ROI, navigation contract) are a **typed-name demo
+  signature**, honestly badged "demo e-signature — DocuSign-class
+  integration slots in later" — not a real e-sign provider.
 - The UHC DAP 835 is simulator-generated (no live UHC remit), and zone map
   shapes are circle approximations — real polygons come with a real geo
   provider.
