@@ -7,6 +7,7 @@
     "dev": "next dev",
     "lint": "eslint .",
     "start": "next start",
+    "test": "vitest run",
     "verify:billing": "npx tsx scripts/verify-payer-billing.ts",
     "verify:safety-map": "npx tsx scripts/verify-safety-map.ts",
     "verify:claims": "npx tsx scripts/verify-claims-lifecycle.ts",
@@ -82,6 +83,7 @@
     "tailwindcss": "^4.1.9",
     "tsx": "^4.19.2",
     "tw-animate-css": "1.3.3",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }
