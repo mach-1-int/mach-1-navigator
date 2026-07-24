@@ -1,11 +1,11 @@
 "use client"
 
+import dynamic from "next/dynamic"
 import { RoleProvider, useRole, type ViewType } from "@/lib/role-context"
 import { DemoDataProvider } from "@/lib/demo-data-context"
 import { RoleSelector } from "@/components/role-selector"
 import { DashboardSidebar } from "@/components/dashboard/sidebar"
 import { DashboardHeader } from "@/components/dashboard/header"
-import { ExecutiveDashboard } from "@/components/dashboards/executive-dashboard"
 import { SupervisorDashboard } from "@/components/dashboards/supervisor-dashboard"
 import { NavigatorDashboard } from "@/components/dashboards/navigator-dashboard"
 import { PatientDashboard } from "@/components/dashboards/patient-dashboard"
@@ -37,6 +37,16 @@ import { TasksView } from "@/components/tasks/tasks-view"
 import { WallboardView } from "@/components/wallboard/wallboard-view"
 import { InDevelopment } from "@/components/in-development"
 import { Toaster } from "@/components/ui/sonner"
+
+// Lazy-loaded: pulls in recharts + executive-metrics, only needed for the executive role
+const ExecutiveDashboard = dynamic(
+  () => import("@/components/dashboards/executive-dashboard").then((mod) => mod.ExecutiveDashboard),
+  {
+    loading: () => (
+      <div className="flex h-64 items-center justify-center text-muted-foreground">Loading dashboard...</div>
+    ),
+  },
+)
 
 // Define which views are implemented for each role
 const implementedViews: Record<string, ViewType[]> = {
